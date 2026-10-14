@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>拾帧 FrameSeek · 视频台词素材库</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22fsg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%235aa8ff%22%2F%3E%3Cstop%20offset%3D%22.55%22%20stop-color%3D%22%234d9dff%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%232ec27e%22%2F%3E%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2215%22%20fill%3D%22url(%23fsg)%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%2216%22%20width%3D%2238%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%23ffffff%22%2F%3E%3Cpath%20d%3D%22M26.5%2026%20L37.5%2032%20L26.5%2038%20Z%22%20fill%3D%22%230f1826%22%2F%3E%3Ccircle%20cx%3D%2253%22%20cy%3D%2249%22%20r%3D%222.6%22%20fill%3D%22%23ffffff%22%20opacity%3D%22.65%22%2F%3E%3Ccircle%20cx%3D%2253%22%20cy%3D%2241%22%20r%3D%222.6%22%20fill%3D%22%23ffffff%22%20opacity%3D%22.38%22%2F%3E%3C%2Fsvg%3E">
+</head>
+<body>
+<div class="app">
+
+  <!-- ========== 侧边栏 ========== -->
+  <aside class="side">
+    <div class="logo">
+      <div class="mark">
+        <svg viewBox="0 0 64 64" aria-hidden="true">
+          <defs><linearGradient id="fsgSide" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#5aa8ff"/><stop offset=".55" stop-color="#4d9dff"/><stop offset="1" stop-color="#2ec27e"/>
+          </linearGradient></defs>
+          <rect width="64" height="64" rx="15" fill="url(#fsgSide)"/>
+          <rect x="13" y="16" width="38" height="32" rx="7" fill="#ffffff"/>
+          <path d="M26.5 26 L37.5 32 L26.5 38 Z" fill="#0f1826"/>
+          <circle cx="53" cy="49" r="2.6" fill="#ffffff" opacity=".65"/>
+          <circle cx="53" cy="41" r="2.6" fill="#ffffff" opacity=".38"/>
+        </svg>
+      </div>
+      <div class="lt"><b>拾帧</b><span>FrameSeek</span></div>
+    </div>
+
+    <nav id="nav">
+      <a class="nav-item" data-tab="libs" href="#libs">
+        <svg viewBox="0 0 24 24"><path d="M3 7h7v7H3zM14 7h7v4h-7zM14 14h7v3h-7zM3 17h7v0H3z"/></svg>
+        素材库<i id="badgeLibs">0</i></a>
+      <a class="nav-item" data-tab="search" href="#search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M15.5 15.5 21 21"/></svg>
+        台词检索</a>
+      <a class="nav-item" data-tab="assets" href="#assets">
+        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5 15 12l-5 2.5z"/></svg>
+        素材<i id="badgeVideos">0</i></a>
+      <a class="nav-item" data-tab="gen" href="#gen">
+        <svg viewBox="0 0 24 24"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z"/></svg>
+        AI 生成</a>
+      <a class="nav-item" data-tab="hd" href="#hd">
+        <svg viewBox="0 0 24 24"><path d="M4 19.5 4.6 15l9.9-9.9a1.9 1.9 0 0 1 2.7 0l1.7 1.7a1.9 1.9 0 0 1 0 2.7L9 19.4z"/><path d="M13.5 6.5l4 4"/></svg>
+        手绘</a>
+      <a class="nav-item" data-tab="box" href="#box">
+        <svg viewBox="0 0 24 24"><path d="M3 7V5h8v2"/><path d="M21 7V5h-8v2"/><path d="M3 17v2h8v-2"/><path d="M21 17v2h-8v-2"/><rect x="7" y="9" width="10" height="6" rx="1"/></svg>
+        方框复查<i id="badgeBox">0</i></a>
+      <a class="nav-item" data-tab="clips" href="#clips">
+        <svg viewBox="0 0 24 24"><path d="M6 4v16M18 4v16M6 4h6v5H6zM12 15h6v5h-6z"/></svg>
+        片段<i id="badgeClips">0</i></a>
+    </nav>
+
+    <div class="side-foot">
+      <div id="stats" class="s-stats"></div>
+      <div id="asrDev" class="s-dev"></div>
+    </div>
+  </aside>
+
+  <!-- ========== 主内容 ========== -->
+  <main class="main">
+
+    <!-- ---------- 素材库 ---------- -->
+    <section class="panel on" data-panel="libs">
+      <div class="page-hd">
+        <div><h1>素材库</h1><p>登记本地文件夹，索引出台词与截图</p></div>
+      </div>
+
+      <div class="card addcard">
+        <div class="addrow">
+          <input id="libPath" placeholder="素材文件夹绝对路径，例如 E:\视频\电影" />
+          <input id="libName" class="short" placeholder="备注名（可空）" />
+          <button id="btnAddLib" class="primary"
+            title="把一个本地文件夹登记成素材库。只登记、不扫描——登记完再点「索引」才抽台词和封面">＋ 登记</button>
+          <button id="btnScanAll"
+            title="对所有已登记库跑一遍索引。台词来源优先级：同名 .srt → 内嵌字幕 → OCR 画面硬字幕；同一文件按 md5 去重，不会重复入库">索引全部</button>
+        </div>
+        <div class="card-note">登记信息存在项目目录 <code id="hubDb"></code> · 同一个文件按 md5 去重，不会重复入库</div>
+      </div>
+
+      <div id="libCards" class="libcards"></div>
+    </section>
+
+    <!-- ---------- 台词检索 ---------- -->
+    <section class="panel" data-panel="search">
+      <div class="page-hd">
+        <div><h1>台词检索</h1><p>跨全部素材库搜台词，回车直接搜</p></div>
+      </div>
+
+      <div class="card searchcard">
+        <div class="bigsearch">
+          <svg viewBox="0 0 24 24" class="mag"><circle cx="11" cy="11" r="6"/><path d="M15.5 15.5 21 21"/></svg>
+          <input id="q" placeholder="他在思念什么 / 回家 / 你洗不洗脸…" />
+          <button id="btnSearch" class="primary"
+            title="跨全部已登记库搜台词，中文子串也行（回车等价）。搜到的每句都能一键导出前后各 N 秒">搜索</button>
+        </div>
+        <div class="searchcfg">
+          <span class="cfg-label">导出片段</span>
+          前 <input id="pre" type="number" value="5" min="0" max="60"> 秒
+          后 <input id="post" type="number" value="5" min="0" max="60"> 秒
+          <label class="chk"><input type="checkbox" id="fast" checked
+            title="秒切＝直接拷贝原视频流（快，但只能落在关键帧上，切点可能差半秒）。不勾则重编码，切点帧精确，慢一些"> 秒切</label>
+          <span class="dim cfg-tip">搜到的每句都能一键导出前后各 N 秒，直接拖进剪映</span>
+        </div>
+      </div>
+
+      <!-- 空状态：没搜过的时候给一句"该干什么"，别让用户对着一片空白 -->
+      <div id="results" class="results"></div>
+      <div id="searchEmpty" class="empty-tip">
+        <b>输入关键词，搜全部素材库里的每一句台词</b>
+        <span>支持按台词内容或素材文件名搜；搜到的每句能一键导出前后各 N 秒的片段，直接拖进剪映。</span>
+      </div>
+    </section>
+
+    <!-- ---------- 素材 ---------- -->
+    <section class="panel" data-panel="assets">
+      <div class="page-hd">
+        <div><h1>素材 <span id="vcount" class="dim"></span></h1><p>点卡片预览，右上角 ··· 可重新识别 / 导入字幕 / 移除 / 删文件</p></div>
+        <div class="hd-tools">
+          <input id="vfilter" class="mini" placeholder="过滤文件名或库名…"
+            title="按文件名或库名过滤，边打边生效">
+          <button class="tiny" id="vMoreBtn"
+            title="多维筛选：素材库可多选、台词状态、分辨率、时长、编码、帧率、入库时间、有无动图/封面">筛选 ▾</button>
+          <button class="tiny" id="vResetBtn" title="清空所有筛选条件，回到完整列表">重置</button>
+        </div>
+      </div>
+
+      <!-- 筛选面板 -->
+      <div class="card filtercard hidden" id="vFilterCard">
+        <div class="frow">
+          <span class="cfg-label">素材库</span>
+          <div class="fchips" id="fLibs"></div>
+        </div>
+        <div class="frow">
+          <span class="cfg-label">台词</span>
+          <div class="fchips" id="fLines">
+            <label class="fchip"><input type="checkbox" value="has"><span>有台词</span></label>
+            <label class="fchip"><input type="checkbox" value="none"><span>没台词</span></label>
+            <label class="fchip"><input type="checkbox" value="err"><span>识别失败</span></label>
+          </div>
+        </div>
+        <div class="frow">
+          <span class="cfg-label">分辨率</span>
+          <div class="fchips" id="fRes">
+            <label class="fchip"><input type="checkbox" value="2160"><span>4K / 2160p</span></label>
+            <label class="fchip"><input type="checkbox" value="1080"><span>1080p</span></label>
+            <label class="fchip"><input type="checkbox" value="720"><span>720p</span></label>
+            <label class="fchip"><input type="checkbox" value="sd"><span>标清 / 竖屏</span></label>
+          </div>
+        </div>
+        <div class="frow">
+          <span class="cfg-label">时长</span>
+          <div class="fchips" id="fDur">
+            <label class="fchip"><input type="checkbox" value="s30"><span>30 秒内</span></label>
+            <label class="fchip"><input type="checkbox" value="m30"><span>30 秒 - 5 分</span></label>
+            <label class="fchip"><input type="checkbox" value="m5_20"><span>5 - 20 分</span></label>
+            <label class="fchip"><input type="checkbox" value="l20"><span>20 分以上</span></label>
+          </div>
+        </div>
+        <div class="frow">
+          <span class="cfg-label">编码</span>
+          <select id="fCodec" class="picker narrow">
+            <option value="">全部</option>
+          </select>
+          <span class="cfg-label">帧率</span>
+          <select id="fFps" class="picker narrow">
+            <option value="">全部</option>
+            <option value="23.976">23.976 / 24</option>
+            <option value="25">25</option>
+            <option value="29.97">29.97 / 30</option>
+            <option value="50">50 / 60</option>
+          </select>
+          <span class="cfg-label">入库</span>
+          <select id="fAge" class="picker narrow">
+            <option value="">全部时间</option>
+            <option value="7">最近 7 天</option>
+            <option value="30">最近 30 天</option>
+            <option value="90">最近 90 天</option>
+          </select>
+        </div>
+        <div class="frow">
+          <span class="cfg-label">其它</span>
+          <div class="fchips">
+            <label class="fchip"><input type="checkbox" id="fHasGif"><span>有动图</span></label>
+            <label class="fchip"><input type="checkbox" id="fHasCover"><span>有封面</span></label>
+            <label class="fchip"><input type="checkbox" id="fNoGif"><span>无动图</span></label>
+          </div>
+        </div>
+        <div class="frow fsum dim" id="fSummary"></div>
+      </div>
+
+      <div id="videos" class="videos"></div>
+    </section>
+
+    <!-- ---------- AI 生成（对话窗口） ---------- -->
+    <section class="panel" data-panel="gen">
+      <div class="page-hd">
+        <div><h1>AI 生成</h1><p>对话式出片 · 本地 MiniMax H3 · 成片直接进素材库</p></div>
+        <div class="hd-tools">
+          <span id="genSrv" class="gen-srv"></span>
+        </div>
+      </div>
+
+      <div class="chatlog" id="chatLog">
+        <div class="chat-empty" id="chatEmpty">说一句话就能出片：描述画面、镜头、光线（英文效果最好）。<br>回车发送 · 成片和台词自动进素材库「AI生成」</div>
+      </div>
+
+      <div class="composer">
+        <div class="composer-main">
+          <textarea id="genPrompt" rows="2" placeholder="描述你想要的画面…（Enter 发送，Shift+Enter 换行）"></textarea>
+          <button id="btnGen" class="primary send"
+            title="按提示词生成一段视频（英文描述效果最好）。成片落在项目「生成」目录，不进素材库">发送</button>
+        </div>
+        <div class="composer-row">
+          <button id="btnGenRef" class="tiny" title="参考图：上传后用 &lt;Picture 1&gt; 在提示词里引用，锁形象/风格">参考图</button>
+          <input type="file" id="genRefFile" accept="image/*" hidden>
+          <span id="genRefName" class="dim gen-refname"></span>
+          <select id="genDur" class="picker" title="时长（5~15 秒）">
+            <option value="5">5 秒</option>
+            <option value="8">8 秒</option>
+            <option value="12">12 秒</option>
+            <option value="15">15 秒（上限）</option>
+          </select>
+          <select id="genAspect" class="picker" title="宽高比"></select>
+          <select id="genMp" class="picker" title="清晰度">
+            <option value="0.3">标准 0.3MP（快）</option>
+            <option value="0.5">较好 0.5MP</option>
+            <option value="1">高清 1.0MP（慢）</option>
+          </select>
+          <a href="javascript:;" class="composer-more" id="genMore"
+            title="展开落点目录 / 输出文件名 / 随机种子等高级选项">更多 ▾</a>
+        </div>
+        <div class="composer-adv hidden" id="genAdv">
+          <span class="cfg-label">落点</span>
+          <span class="dim" id="genOutDir" title="生成产物不进素材库，单独放项目目录">—</span>
+          <span class="cfg-label">文件名</span>
+          <input id="genName" class="mini" placeholder="可空，默认按时间戳">
+          <span class="cfg-label">种子</span>
+          <input id="genSeed" type="number" class="mini" value="0" min="0" title="0 = 随机；固定同一个数字可复现同一构图">
+        </div>
+        <div class="composer-row gen-examples">
+          <span class="cfg-label">试试</span>
+          <button class="tiny gen-ex" title="点一下把这段英文示例提示词填进输入框，改改就能发" data-p="Professional digital human news anchor in a modern broadcast studio, speaking calmly to the camera. Medium shot, soft studio lighting, clean background.">演播室口播</button>
+          <button class="tiny gen-ex" title="点一下把这段英文示例提示词填进输入框，改改就能发" data-p="Close-up of a coffee cup on a wooden table, steam rising, morning light through the window, slow zoom in.">咖啡特写</button>
+          <button class="tiny gen-ex" title="点一下把这段英文示例提示词填进输入框，改改就能发" data-p="A drone shot flying over a rice terrace at sunrise, mist in the valleys, cinematic wide shot.">航拍日出</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 白板手绘 ---------- -->
+    <section class="panel" data-panel="hd">
+      <div class="page-hd">
+        <div><h1>白板手绘 <span id="hdSrv" class="dim"></span></h1>
+          <p>文稿 → 分幕 → 线稿 → 区域标注 → 逐笔渲染 → 配音合成（本地 CPU，不占显卡）</p></div>
+        <div class="hd-tools">
+          <span class="dim" id="hdRootDir" title="手绘工程目录">—</span>
+        </div>
+      </div>
+
+      <div class="hd-steps">
+        <div class="hd-step" data-s="1"><b>1</b>建工程<small>文稿 / 字幕</small></div>
+        <div class="hd-arrow">→</div>
+        <div class="hd-step" data-s="2"><b>2</b>分幕建议<small>按 25~35 秒切</small></div>
+        <div class="hd-arrow">→</div>
+        <div class="hd-step" data-s="3"><b>3</b>线稿+标注<small>逐幕标注区域</small></div>
+        <div class="hd-arrow">→</div>
+        <div class="hd-step" data-s="4"><b>4</b>批准时间轴<small>画面≥字幕</small></div>
+        <div class="hd-arrow">→</div>
+        <div class="hd-step" data-s="5"><b>5</b>逐幕渲染<small>逐笔动画</small></div>
+        <div class="hd-arrow">→</div>
+        <div class="hd-step" data-s="6"><b>6</b>配音合成<small>女声+ 伴奏</small></div>
+      </div>
+
+      <div class="hd-proj" id="hdProj">
+        <div class="hd-empty">
+          当前没有手绘工程。第 1 步：上传一个<b>.txt 文稿</b>或 <b>.srt 字幕</b>开始。
+        </div>
+      </div>
+
+      <div class="hd-body" id="hdBody">
+        <!-- 1 建工程 -->
+        <div class="hd-card">
+          <div class="hd-card-hd"><b>1 · 建工程</b>
+            <span class="dim">文稿按句拆字幕并估时间轴；已有字幕直接用</span></div>
+          <div class="hd-row">
+            <button class="tiny" id="hdUpScript"
+              title="上传 .txt/.md 文稿或 .srt 字幕。有字幕就直接用它的时间轴，没有才按句拆文稿并估算时间">上传文稿/字幕</button>
+            <span id="hdUpName" class="dim">未选择</span>
+          </div>
+          <div class="hd-row">
+            <input id="hdProjName" class="inp" placeholder="工程名（如 光电效应）">
+            <input id="hdTitle" class="inp" placeholder="片名（可选）">
+            <button class="primary tiny" id="hdInit"
+              title="按工程名建工程：把文稿拆成字幕并估时间轴。工程落在项目「手绘工程」目录下，不进素材库">建工程</button>
+          </div>
+        </div>
+
+        <!-- 2 分幕建议 -->
+        <div class="hd-card">
+          <div class="hd-card-hd"><b>2 · 分幕建议</b>
+            <span class="dim">读工程字幕，按目标秒数切幕</span></div>
+          <div class="hd-row">
+            <label class="dim">每幕目标秒</label>
+            <input id="hdTargetSec" class="inp narrow" type="number" value="30" min="10" max="120">
+            <button class="tiny" id="hdSuggest"
+              title="读工程里的字幕，按左边填的每幕目标秒数切幕，给出分幕建议（还没渲染画面）">出分幕建议</button>
+            <button class="tiny" id="hdRegions"
+              title="渲染一张分区检查图，看这一幕的画面区域划分对不对。只出图不渲染成片，很快">渲染分区检查图</button>
+          </div>
+          <div id="hdSuggestOut" class="hd-out"></div>
+        </div>
+
+        <!-- 3 线稿 + 标注 -->
+        <div class="hd-card">
+          <div class="hd-card-hd"><b>3 · 线稿 + 区域标注</b>
+            <span class="dim">每幕一张暖米黄纸底线稿 + 区域标注 JSON（决定谁先画、画多久）</span></div>
+          <div class="hd-row">
+            <input id="hdSceneId" class="inp narrow" placeholder="scene-01" value="scene-01">
+            <button class="tiny" id="hdUpImage"
+              title="上传这一幕的线稿图（暖米黄纸底）。不传就用引擎默认的空白纸底">上传线稿图</button>
+            <span id="hdImgName" class="dim">未选择</span>
+          </div>
+          <div class="hd-row">
+            <label class="dim">标注 JSON</label>
+            <button class="tiny" id="hdTplAnn"
+              title="往下面的标注框里填一份模板 JSON，照着改比从零写快">载入模板</button>
+            <span class="dim">canvas 必须等于源图像素，sequence 按字幕叙事顺序</span>
+          </div>
+          <textarea id="hdAnn" class="hd-ann" rows="8" placeholder='{"sceneId":"scene-01","canvas":{"width":1920,"height":1080},"sceneDurationMs":24000,"elements":[...]}'></textarea>
+          <div class="hd-row">
+            <button class="primary tiny" id="hdAnnotate"
+              title="把标注 JSON 写进工程。它决定这一幕谁先画、画多久；canvas 必须等于源图像素">写标注</button>
+            <span id="hdAnnMsg" class="dim"></span>
+          </div>
+        </div>
+
+        <!-- 4 时间轴 + 5 渲染 + 6 合成 -->
+        <div class="hd-card">
+          <div class="hd-card-hd"><b>4~6 · 时间轴 · 渲染 · 合成</b>
+            <span class="dim">画面总时长必须 ≥ 字幕总时长，否则引擎拒绝正式渲染</span></div>
+          <div class="hd-row" id="hdTlRow">
+            <span class="dim">时间轴状态：<b id="hdTlStatus">-</b></span>
+            <span class="dim" id="hdTlAdvice"></span>
+            <button class="tiny" id="hdApprove"
+              title="批准时间轴。画面总时长必须 ≥ 字幕总时长，短了会被引擎拒绝正式渲染">批准时间轴</button>
+            <button class="tiny" id="hdPreview"
+              title="只渲染前 3 秒。想快速看笔迹和构图对不对先用这个，别一上来就整幕渲染">短预览 3s</button>
+            <button class="primary tiny" id="hdRender"
+              title="渲染这一幕的完整画面。本地 CPU 逐笔绘制，不占显卡，一幕通常几分钟">渲染这一幕</button>
+          </div>
+          <div class="hd-row">
+            <input id="hdVoiceText" class="inp" placeholder="试听文案（10~20 秒，含数字和问句）">
+            <button class="tiny" id="hdAudition"
+              title="用左边这段文案试听音色。只出一段试听音频，不写进工程">试听音色</button>
+            <label class="hd-chk"><input type="checkbox" id="hdAllowNet"
+              title="配音要把文本送到云端 TTS。不勾选就无法合成配音"> 联网许可</label>
+            <button class="primary tiny" id="hdMix"
+              title="把配音和已渲染的画面合成为成片，落到项目「生成」目录，不进素材库">配音合成成片</button>
+          </div>
+          <div class="hd-row">
+            <span class="dim" id="hdOutDir" title="手绘工程与成片都在 FrameSeek 项目目录下，不进素材库">—</span>
+            <button class="tiny" id="hdQa"
+              title="对成片跑质检：时长够不够、音画对不对齐、字幕有没有被切掉">质检</button>
+            <button class="tiny" id="hdClear"
+              title="清空当前会话气泡和临时选择。已经落盘的工程和成片不受影响">清空会话</button>
+          </div>
+        </div>
+
+        <!-- 会话气泡 -->
+        <div class="chatlog hd-chat" id="hdChat">
+          <div class="chat-empty" id="hdChatEmpty">操作记录会出现在这里 —— 每步的实际产出（图片 / mp4 / 报错）</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 方框复查 ---------- -->
+    <section class="panel" data-panel="box">
+      <div class="page-hd">
+        <div><h1>方框复查 <span id="bxLib" class="dim"></span></h1>
+          <p>台词帧 · 台词框 · 文字 —— 把框画回画面上，逐句核对圈得对不对</p></div>
+        <div class="hd-tools">
+          <select id="bxLibPick" class="picker"
+            title="只看某个素材库的片子。默认「全部库」= 列出所有库里已索引、且有台词的素材"></select>
+          <input id="bxSearch" class="mini" placeholder="搜索片名…"
+            title="按片名关键字过滤右边的片单，边打边生效。多个词用空格分隔，要全部命中">
+          <select id="bxPick" class="picker"
+            title="选一部片子：会列出它全部台词，逐句核对画面方框圈得对不对"></select>
+          <span id="bxHit" class="dim"></span>
+          <button id="bxReload" class="tiny"
+            title="重新拉这部片子的台词清单和校验结论。刚改过字幕或补过框就点它">刷新</button>
+        </div>
+      </div>
+
+      <div class="bxsum" id="bxSum"></div>
+
+      <div class="bxwrap">
+        <!-- 左：台词清单 -->
+        <div class="bxlist card">
+          <div class="bxbar">
+            <input id="bxFilter" class="mini" placeholder="过滤台词…"
+              title="按台词文字过滤清单，边打边生效">
+            <div class="segs" id="bxSegs">
+              <button data-f="all" class="on" title="显示全部台词">全部</button>
+              <button data-f="bad" title="只看可疑：方框对不上，或字体偏离度跟本部片主流字幕不一致的">可疑</button>
+              <button data-f="nobox" title="只看没有画面方框凭证的。语音转写和外挂字幕来源本来就没有框，属正常">无框</button>
+            </div>
+          </div>
+          <div id="bxRows" class="bxrows"></div>
+        </div>
+
+        <!-- 右：台词帧 + 框 + 文字 -->
+        <div class="bxview card" id="bxView">
+          <div class="empty dim">左边点一条台词</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- 片段 ---------- -->
+    <section class="panel" data-panel="clips">
+      <div class="page-hd">
+        <div><h1>导出片段</h1><p>前后各 <b id="preEcho">5</b> / <b id="postEcho">5</b> 秒（在「台词检索」里改）</p></div>
+      </div>
+      <div id="clips" class="clips"></div>
+    </section>
+
+
+  </main>
+</div>
+
+<!-- 全局进度浮窗：OCR / 截图分片 / 索引 的进度。
+     放在 body 底下而不是素材库页里——在「素材」页点「重新识别台词」时，
+     进度也能当场看见，不用切回素材库页找。没任务时整块不显示。 -->
+<div id="tasksLibs" class="tasks dock hidden"></div>
+
+<!-- 弹窗 -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="mhd"><b id="mTitle"></b><button id="mClose" class="close2">×</button></div>
+    <div class="mbody" id="mBody"></div>
+  </div>
+</div>
+
+<div id="player" class="player hidden">
+  <div class="player-box">
+    <button class="close" id="btnClosePlayer">×</button>
+    <video id="video" controls></video>
+    <div class="pinfo"><span id="ptext"></span><button id="btnClipHere" class="primary">导出此处 ±片段</button></div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# 源码统一 LF；只有 .bat 必须 CRLF（Windows 批处理换行错了会整段当成一行）
+* text=auto eol=lf
+*.bat text eol=crlf

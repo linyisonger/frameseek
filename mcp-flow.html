@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FrameSeek MCP 连接器 · 实现流程图</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --ink:#1f2733; --ink2:#5b6675;
+    --line:#d9dee5; --blue:#1a56db; --blue-bg:#e8f0fe;
+    --purple:#7e3af2; --purple-bg:#f3e8fd;
+    --teal:#0e8f82; --teal-bg:#e6f7f5;
+    --amber:#b45309; --amber-bg:#fdf3e3;
+    --red:#c0392b; --red-bg:#fdecec;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
+       font-size:14px;line-height:1.65;padding:28px 32px 60px}
+  .wrap{max-width:1280px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--ink2);margin:0 0 24px;font-size:13px}
+  h2{font-size:16px;margin:34px 0 12px;padding-left:10px;border-left:4px solid var(--blue)}
+  .fig{background:var(--card);border:1px solid var(--line);border-radius:10px;
+       padding:18px 14px 10px;overflow-x:auto}
+  .cap{color:var(--ink2);font-size:12.5px;padding:8px 6px 4px}
+  table{border-collapse:collapse;width:100%;background:var(--card);font-size:13px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#eef1f5;font-weight:600;white-space:nowrap}
+  td.k{white-space:nowrap;font-weight:600;color:var(--red)}
+  code{background:#eef1f5;border-radius:4px;padding:1px 6px;font-size:12.5px;
+       font-family:Consolas,"Courier New",monospace}
+  .note{background:var(--amber-bg);border:1px solid #f0d9b5;border-radius:8px;
+        padding:10px 14px;font-size:13px;margin-top:14px}
+  svg text{font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>FrameSeek MCP 连接器 · 实现流程图</h1>
+<p class="sub">mcp_server.py（18 工具 · stdio）｜数据直读 hub.db + 各库 index.db，不依赖 Flask Web 服务｜MiniMax H3 视频生成走 ComfyUI 库方式直调（h3gen 子进程，无服务）｜2026-10-14 整理</p>
+
+<h2>一、总体架构：从客户端到数据层的四层链路</h2>
+<div class="fig">
+<svg viewBox="0 0 1240 812" width="100%" style="min-width:1080px;display:block" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+    </marker>
+    <marker id="arrDash" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#7e3af2"/>
+    </marker>
+  </defs>
+
+  <!-- ============ L0 客户端层 ============ -->
+  <rect x="16" y="14" width="1208" height="118" rx="10" fill="#e8f0fe" stroke="#1a56db" stroke-width="1.2"/>
+  <text x="34" y="38" font-size="13" font-weight="700" fill="#1a56db">L0 · 客户端</text>
+  <rect x="34" y="50" width="250" height="66" rx="8" fill="#ffffff" stroke="#1a56db" stroke-width="1"/>
+  <text x="159" y="76" font-size="13.5" font-weight="600" text-anchor="middle" fill="#1f2733">WorkBuddy（本机注册点）</text>
+  <text x="159" y="98" font-size="11.5" text-anchor="middle" fill="#5b6675">~/.workbuddy/mcp.json → 信任后启用</text>
+  <rect x="306" y="50" width="250" height="66" rx="8" fill="#ffffff" stroke="#1a56db" stroke-width="1"/>
+  <text x="431" y="76" font-size="13.5" font-weight="600" text-anchor="middle" fill="#1f2733">其他 MCP 客户端</text>
+  <text x="431" y="98" font-size="11.5" text-anchor="middle" fill="#5b6675">任何支持 stdio 的宿主均可接</text>
+  <rect x="578" y="50" width="628" height="66" rx="8" fill="#ffffff" stroke="#1a56db" stroke-width="1" stroke-dasharray="5 3"/>
+  <text x="892" y="74" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1f2733">mcp.json 注册项：command = venv python，args = mcp_server.py</text>
+  <text x="892" y="96" font-size="11.5" text-anchor="middle" fill="#5b6675">新注册的服务器不会自动激活：连接器管理页 → 自定义连接器 → 点“信任”</text>
+
+  <!-- 箭头 L0 -> L1 -->
+  <line x1="620" y1="132" x2="620" y2="166" stroke="#5b6675" stroke-width="1.4" marker-end="url(#arr)"/>
+
+  <!-- ============ L1 传输层 ============ -->
+  <rect x="16" y="166" width="1208" height="96" rx="10" fill="#f3e8fd" stroke="#7e3af2" stroke-width="1.2"/>
+  <text x="34" y="190" font-size="13" font-weight="700" fill="#7e3af2">L1 · 传输层（stdio JSON-RPC，一行一帧）</text>
+  <rect x="34" y="202" width="560" height="46" rx="8" fill="#ffffff" stroke="#7e3af2" stroke-width="1"/>
+  <text x="314" y="230" font-size="12.5" text-anchor="middle" fill="#1f2733">握手 initialize → tools/list → tools/call … → ping</text>
+  <rect x="614" y="202" width="592" height="46" rx="8" fill="#ffffff" stroke="#c0392b" stroke-width="1"/>
+  <text x="910" y="224" font-size="12" font-weight="600" text-anchor="middle" fill="#c0392b">stdout 归协议，日志一律走 stderr</text>
+  <text x="910" y="240" font-size="11" text-anchor="middle" fill="#5b6675">SDK stdio 传输自带 fd 级隔离，OCR 子进程 print 污染不到协议流，无需自己做重定向</text>
+
+  <!-- 箭头 L1 -> L2 -->
+  <line x1="620" y1="262" x2="620" y2="296" stroke="#5b6675" stroke-width="1.4" marker-end="url(#arr)"/>
+
+  <!-- ============ L2 工具路由层 ============ -->
+  <rect x="16" y="296" width="1208" height="330" rx="10" fill="#e6f7f5" stroke="#0e8f82" stroke-width="1.2"/>
+  <text x="34" y="320" font-size="13" font-weight="700" fill="#0e8f82">L2 · mcp_server.py 工具路由（16 个工具，按返回方式分三组）</text>
+
+  <!-- 列1 只读同步 -->
+  <rect x="34" y="334" width="386" height="272" rx="8" fill="#ffffff" stroke="#0e8f82" stroke-width="1"/>
+  <rect x="34" y="334" width="386" height="30" rx="8" fill="#0e8f82"/>
+  <text x="227" y="354" font-size="12.5" font-weight="700" text-anchor="middle" fill="#ffffff">A · 只读工具 → 同步返回（毫秒级）</text>
+  <g font-size="11.5" fill="#1f2733">
+    <rect x="48" y="376" width="358" height="26" rx="5" fill="#eef7f6" stroke="#bfe3de"/>
+    <text x="60" y="393">state（库+激活库+OCR 引擎+ASR 走 GPU/CPU）</text>
+    <rect x="48" y="408" width="358" height="26" rx="5" fill="#eef7f6" stroke="#bfe3de"/>
+    <text x="60" y="425">stats / list_libraries / add_library / remove_library</text>
+    <rect x="48" y="440" width="358" height="26" rx="5" fill="#eef7f6" stroke="#bfe3de"/>
+    <text x="60" y="457">search（默认跨全部库，结果带 lib / root）</text>
+    <rect x="48" y="472" width="358" height="26" rx="5" fill="#eef7f6" stroke="#bfe3de"/>
+    <text x="60" y="489">list_videos / video_info（boxed/no_box 凭证统计）</text>
+    <rect x="48" y="504" width="358" height="26" rx="5" fill="#eef7f6" stroke="#bfe3de"/>
+    <text x="60" y="521">get_lines（时间码+文本+box 摘要+字体指纹）</text>
+    <rect x="48" y="536" width="358" height="26" rx="5" fill="#eef7f6" stroke="#bfe3de"/>
+    <text x="60" y="553">verify / boxaudit（纯读库计算，不重跑 OCR）</text>
+  </g>
+
+  <!-- 列2 异步长任务 -->
+  <rect x="438" y="334" width="386" height="272" rx="8" fill="#ffffff" stroke="#b45309" stroke-width="1"/>
+  <rect x="438" y="334" width="386" height="30" rx="8" fill="#b45309"/>
+  <text x="631" y="354" font-size="12.5" font-weight="700" text-anchor="middle" fill="#ffffff">B · 长任务 → 立即返回 task_id，轮询 task</text>
+  <g font-size="11.5" fill="#1f2733">
+    <rect x="452" y="376" width="358" height="26" rx="5" fill="#fdf6ea" stroke="#eed9b8"/>
+    <text x="464" y="393">scan（建索引；all_libraries=True 扫全部）</text>
+    <rect x="452" y="408" width="358" height="26" rx="5" fill="#fdf6ea" stroke="#eed9b8"/>
+    <text x="464" y="425">retranscribe（重识别；force=True 强制 OCR）</text>
+    <rect x="452" y="440" width="358" height="26" rx="5" fill="#fdf6ea" stroke="#eed9b8"/>
+    <text x="464" y="457">transcribe_asr（faster-whisper，无硬字幕电影）</text>
+  </g>
+  <rect x="452" y="478" width="358" height="52" rx="6" fill="#ffffff" stroke="#b45309" stroke-width="1" stroke-dasharray="5 3"/>
+  <text x="464" y="497" font-size="11.5" font-weight="600" fill="#b45309">daemon 线程真正干活（不阻塞事件循环）</text>
+  <text x="464" y="515" font-size="11" fill="#5b6675">进度写 hub.db 的 tasks 表 → 与 Web 端同一套，两端任务互可见</text>
+  <rect x="452" y="540" width="358" height="26" rx="5" fill="#fdf6ea" stroke="#eed9b8"/>
+  <text x="464" y="557" font-size="11.5" fill="#1f2733">task（轮询：传 path 看某库 / 不传看全部在跑）</text>
+  <text x="452" y="580" font-size="10.5" fill="#c0392b">ASR 响应带 cuda/device：GPU small 约 8~9 倍实时，CPU 慢得多</text>
+
+  <!-- 列3 导出 -->
+  <rect x="842" y="334" width="364" height="272" rx="8" fill="#ffffff" stroke="#0e8f82" stroke-width="1"/>
+  <rect x="842" y="334" width="364" height="30" rx="8" fill="#0e8f82"/>
+  <text x="1024" y="354" font-size="12.5" font-weight="700" text-anchor="middle" fill="#ffffff">C · 片段导出</text>
+  <rect x="856" y="376" width="336" height="40" rx="5" fill="#eef7f6" stroke="#bfe3de"/>
+  <text x="1024" y="400" font-size="11.5" text-anchor="middle" fill="#1f2733">export_clip（某句台词 ±N 秒）</text>
+  <line x1="1024" y1="416" x2="1024" y2="444" stroke="#5b6675" stroke-width="1.3" marker-end="url(#arr)"/>
+  <rect x="856" y="444" width="336" height="52" rx="6" fill="#ffffff" stroke="#0e8f82"/>
+  <text x="1024" y="465" font-size="11.5" font-weight="600" text-anchor="middle" fill="#1f2733">ffmpeg 切段（-c copy 快剪）</text>
+  <text x="1024" y="484" font-size="11" text-anchor="middle" fill="#5b6675">入参用搜索结果回传的 root（line_id 库内唯一）</text>
+  <rect x="856" y="512" width="336" height="80" rx="6" fill="#f5f6f8" stroke="#d9dee5"/>
+  <text x="868" y="532" font-size="11" font-weight="600" fill="#1f2733">root 省略时的解析链：</text>
+  <text x="868" y="550" font-size="11" fill="#5b6675">① 环境变量 FRAMESEEK_ROOT</text>
+  <text x="868" y="567" font-size="11" fill="#5b6675">② hub.db 激活库</text>
+  <text x="868" y="584" font-size="11" fill="#c0392b">③ 多库场景必须显式回传 root</text>
+
+  <!-- 箭头 L2 -> L3 -->
+  <line x1="620" y1="626" x2="620" y2="660" stroke="#5b6675" stroke-width="1.4" marker-end="url(#arr)"/>
+  <text x="632" y="646" font-size="11" fill="#5b6675">SQLite 直读（sqlite3 标准库，无 ORM）</text>
+
+  <!-- ============ L3 数据层 ============ -->
+  <rect x="16" y="660" width="1208" height="136" rx="10" fill="#fdf3e3" stroke="#b45309" stroke-width="1.2"/>
+  <text x="34" y="684" font-size="13" font-weight="700" fill="#b45309">L3 · 数据层（项目根 hub.db + 每库 .frameseek/index.db）</text>
+  <rect x="34" y="696" width="588" height="82" rx="8" fill="#ffffff" stroke="#b45309" stroke-width="1"/>
+  <text x="48" y="718" font-size="12.5" font-weight="700" fill="#1f2733">hub.db（全局登记）</text>
+  <text x="48" y="738" font-size="11.5" fill="#5b6675">libraries：库路径 / 备注 / 素材数 / 台词数</text>
+  <text x="48" y="755" font-size="11.5" fill="#5b6675">settings：激活库 / use_asr / with_gif</text>
+  <text x="48" y="772" font-size="11.5" fill="#5b6675">tasks：全部库的扫描任务进度（MCP 与 Web 共用）</text>
+  <rect x="640" y="696" width="566" height="82" rx="8" fill="#ffffff" stroke="#b45309" stroke-width="1"/>
+  <text x="654" y="718" font-size="12.5" font-weight="700" fill="#1f2733">&lt;lib&gt;/.frameseek/index.db（单库）</text>
+  <text x="654" y="738" font-size="11.5" fill="#5b6675">videos：md5 去重 / 时长 / 来源（ocr 或 asr）/ 封面动图</text>
+  <text x="654" y="755" font-size="11.5" fill="#5b6675">lines：起止时间码 / 文本 / box JSON（hits、drift）</text>
+  <text x="654" y="772" font-size="11.5" fill="#5b6675">字体指纹 ink / stroke / px_h —— 纠错与二次验证时按偏离度忽略</text>
+</svg>
+<div class="cap">图 1 · 分层链路。虚线框 = 非流程实体（注册项 / 线程）；琥珀色组 = 异步路径，需要 task 轮询；其余同步返回。</div>
+</div>
+
+<h2>一之补 · 视频生成链路（MiniMax H3，ComfyUI 库方式直调）</h2>
+<div class="fig">
+<svg viewBox="0 0 1240 470" width="100%" style="min-width:1080px;display:block" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+    </marker>
+    <marker id="arr3a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+
+  <!-- 两个入口 -->
+  <rect x="16" y="30" width="220" height="56" rx="8" fill="#e8f0fe" stroke="#1a56db"/>
+  <text x="126" y="54" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1f2733">MCP frameseek_generate_video</text>
+  <text x="126" y="73" font-size="11" text-anchor="middle" fill="#5b6675">提示词/时长/宽高比/种子/参考图</text>
+  <rect x="16" y="100" width="220" height="56" rx="8" fill="#e8f0fe" stroke="#1a56db"/>
+  <text x="126" y="124" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1f2733">Web「生成」对话窗口</text>
+  <text x="126" y="143" font-size="11" text-anchor="middle" fill="#5b6675">POST /api/generate + 参考图上传</text>
+
+  <!-- 汇聚 -->
+  <line x1="236" y1="58" x2="286" y2="128" stroke="#5b6675" stroke-width="1.2" marker-end="url(#arr3)"/>
+  <line x1="236" y1="128" x2="286" y2="128" stroke="#5b6675" stroke-width="1.2" marker-end="url(#arr3)"/>
+  <rect x="286" y="86" width="180" height="84" rx="8" fill="#ffffff" stroke="#0e8f82" stroke-width="1.2"/>
+  <text x="376" y="110" font-size="12.5" font-weight="700" text-anchor="middle" fill="#0e8f82">core/gen.py</text>
+  <text x="376" y="129" font-size="11" text-anchor="middle" fill="#5b6675">参数校验 · 帧数换算 5+17k</text>
+  <text x="376" y="146" font-size="11" text-anchor="middle" fill="#5b6675">定落库路径 → spawn 子进程</text>
+  <text x="376" y="163" font-size="11" text-anchor="middle" fill="#5b6675">逐行解析 stdout JSON 进度</text>
+
+  <!-- h3gen 子进程 -->
+  <line x1="466" y1="128" x2="506" y2="128" stroke="#5b6675" stroke-width="1.3" marker-end="url(#arr3)"/>
+  <rect x="506" y="16" width="470" height="224" rx="10" fill="#fdf3e3" stroke="#b45309" stroke-width="1.3"/>
+  <text x="524" y="40" font-size="12.5" font-weight="700" fill="#b45309">h3gen.py（python_embeded 子进程 · import comfy.* 直调，不起服务）</text>
+  <g font-size="11" fill="#1f2733">
+    <rect x="522" y="52" width="130" height="40" rx="6" fill="#ffffff" stroke="#b45309"/>
+    <text x="587" y="70" text-anchor="middle">Resolution</text>
+    <text x="587" y="85" text-anchor="middle">Selector 宽高</text>
+    <rect x="666" y="52" width="150" height="40" rx="6" fill="#ffffff" stroke="#b45309"/>
+    <text x="741" y="70" text-anchor="middle">CLIP/UNET/双 VAE</text>
+    <text x="741" y="85" text-anchor="middle">加载（动态流式上卡）</text>
+    <rect x="830" y="52" width="130" height="40" rx="6" fill="#ffffff" stroke="#b45309"/>
+    <text x="895" y="70" text-anchor="middle">MiniMaxH3</text>
+    <text x="895" y="85" text-anchor="middle">ReferenceToVideo</text>
+    <rect x="522" y="106" width="438" height="40" rx="6" fill="#ffffff" stroke="#b45309"/>
+    <text x="741" y="124" text-anchor="middle" font-weight="600">SamplerCustomAdvanced · res_multistep · 12 步（最耗时）</text>
+    <text x="741" y="139" text-anchor="middle">BasicGuider（无 CFG，纯流匹配）· BasicScheduler 要接 model</text>
+    <rect x="522" y="160" width="210" height="40" rx="6" fill="#ffffff" stroke="#b45309"/>
+    <text x="627" y="178" text-anchor="middle">VAEDecode 画面 + 音频</text>
+    <text x="627" y="193" text-anchor="middle">（两条 latent 各解一次）</text>
+    <rect x="748" y="160" width="212" height="40" rx="6" fill="#ffffff" stroke="#b45309"/>
+    <text x="854" y="178" text-anchor="middle">ffmpeg 合成 mp4</text>
+    <text x="854" y="193" text-anchor="middle">（绕开 SaveVideo 序列化坑）</text>
+  </g>
+  <!-- 协议注释 -->
+  <rect x="522" y="212" width="438" height="20" rx="4" fill="#ffffff" stroke="#d9dee5"/>
+  <text x="534" y="226" font-size="10.5" fill="#5b6675">stdout JSON 行协议回报进度（{"t":"pct"/"phase"/"done"}），日志全走 stderr 不污染协议</text>
+
+  <!-- 输出回FrameSeek -->
+  <line x1="741" y1="240" x2="741" y2="278" stroke="#b45309" stroke-width="1.3" stroke-dasharray="6 3" marker-end="url(#arr3a)"/>
+  <rect x="561" y="278" width="360" height="44" rx="8" fill="#ffffff" stroke="#b45309" stroke-width="1.2"/>
+  <text x="741" y="297" font-size="12" font-weight="600" text-anchor="middle" fill="#1f2733">h3gen 直接写目标路径 → &lt;素材库&gt;/AI生成/</text>
+  <text x="741" y="314" font-size="11" text-anchor="middle" fill="#5b6675">gen.py 传 --out 定落点（setting gen_subdir 可改），无 /history 回捞</text>
+  <line x1="741" y1="322" x2="741" y2="356" stroke="#5b6675" stroke-width="1.3" marker-end="url(#arr3)"/>
+  <rect x="561" y="356" width="360" height="44" rx="8" fill="#e6f7f5" stroke="#0e8f82" stroke-width="1.2"/>
+  <text x="741" y="375" font-size="12" font-weight="600" text-anchor="middle" fill="#1f2733">Indexer 索引入库（封面/截图）</text>
+  <text x="741" y="392" font-size="11" text-anchor="middle" fill="#5b6675">默认 index=asr：生成的视频没硬字幕，语音识别出台词才方便剪辑检索</text>
+  <line x1="921" y1="378" x2="980" y2="378" stroke="#5b6675" stroke-width="1.3" marker-end="url(#arr3)"/>
+  <rect x="980" y="356" width="244" height="44" rx="8" fill="#e8f0fe" stroke="#1a56db"/>
+  <text x="1102" y="375" font-size="12" font-weight="600" text-anchor="middle" fill="#1f2733">和普通素材同等待遇</text>
+  <text x="1102" y="392" font-size="11" text-anchor="middle" fill="#5b6675">台词检索 / 方框校验 / 片段导出</text>
+
+  <!-- 硬约束 -->
+  <rect x="16" y="190" width="440" height="120" rx="8" fill="#fdecec" stroke="#c0392b"/>
+  <text x="30" y="212" font-size="12" font-weight="700" fill="#c0392b">官方硬约束（写死在 h3gen.py 里）</text>
+  <text x="30" y="232" font-size="11" fill="#1f2733">· prompt &lt; 2000 字符；参考图 prompt 里用 &lt;Picture 1&gt; 引用（≤9 张）</text>
+  <text x="30" y="250" font-size="11" fill="#1f2733">· 帧数 ≡ 5 (mod 17)；训练覆盖 124~362 帧（5.2~15.1 秒 @24fps）</text>
+  <text x="30" y="268" font-size="11" fill="#1f2733">· 采样 res_multistep / 12 步；官方 scheduler=simple</text>
+  <text x="30" y="286" font-size="11" fill="#1f2733">· 4060Ti 8G：megapixels 默认 0.3（约 736×416）</text>
+  <text x="30" y="304" font-size="11" fill="#5b6675">提示词最佳实践另见 minimax-h3-prompt skill（风格前置 / CUT 分镜）</text>
+</svg>
+<div class="cap">图 1b · 生成链路。两个入口（MCP / Web）汇到 <code>core/gen.py</code>，<code>h3gen.py</code> 是 ComfyUI 便携版 python 起的独立子进程——<b>不启 ComfyUI 服务、不走 HTTP、不加载工作流 JSON</b>，直接 import comfy.* 按参考工作流同样顺序调节点函数。进度统一走 tasks 表 + 浮窗。</div>
+</div>
+
+<h2>二、异步任务时序（以 scan 为例，transcribe_asr 同构）</h2>
+<div class="fig">
+<svg viewBox="0 0 1240 600" width="100%" style="min-width:1080px;display:block" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+    </marker>
+    <marker id="arr2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
+    </marker>
+  </defs>
+
+  <!-- 生命线 -->
+  <line x1="170" y1="70" x2="170" y2="560" stroke="#1a56db" stroke-width="1.2"/>
+  <line x1="620" y1="70" x2="620" y2="560" stroke="#0e8f82" stroke-width="1.2"/>
+  <line x1="1070" y1="70" x2="1070" y2="560" stroke="#b45309" stroke-width="1.2" stroke-dasharray="6 4"/>
+  <rect x="90" y="34" width="160" height="28" rx="6" fill="#e8f0fe" stroke="#1a56db"/>
+  <text x="170" y="53" font-size="13" font-weight="700" text-anchor="middle" fill="#1a56db">MCP 客户端</text>
+  <rect x="540" y="34" width="160" height="28" rx="6" fill="#e6f7f5" stroke="#0e8f82"/>
+  <text x="620" y="53" font-size="13" font-weight="700" text-anchor="middle" fill="#0e8f82">mcp_server.py</text>
+  <rect x="960" y="34" width="220" height="28" rx="6" fill="#fdf3e3" stroke="#b45309"/>
+  <text x="1070" y="53" font-size="13" font-weight="700" text-anchor="middle" fill="#b45309">daemon 线程 + tasks 表</text>
+
+  <!-- 消息 -->
+  <g font-size="12" fill="#1f2733">
+    <line x1="170" y1="96" x2="612" y2="96" stroke="#5b6675" stroke-width="1.2" marker-end="url(#arr2)"/>
+    <text x="180" y="88">① tools/call frameseek_scan(root=…)</text>
+
+    <line x1="620" y1="132" x2="170" y2="132" stroke="#5b6675" stroke-width="1.2" marker-end="url(#arr2)"/>
+    <text x="180" y="124" fill="#0e8f82" font-weight="600">② 立即返回 {task_id, lib, status:"started"}</text>
+    <text x="180" y="152" font-size="11" fill="#5b6675">（不等结果；客户端此时已可做别的事）</text>
+
+    <line x1="620" y1="178" x2="1062" y2="178" stroke="#b45309" stroke-width="1.2" stroke-dasharray="6 3" marker-end="url(#arr2b)"/>
+    <text x="640" y="170" font-weight="600">③ 起 daemon 线程，事件循环继续服务</text>
+
+    <rect x="700" y="200" width="360" height="120" rx="8" fill="#ffffff" stroke="#b45309" stroke-width="1"/>
+    <text x="716" y="222" font-size="12" font-weight="700" fill="#b45309">线程内干活（与 Web 端扫描同一实现）</text>
+    <text x="716" y="244" font-size="11.5" fill="#1f2733">遍历视频 → md5 命中已入库则跳过</text>
+    <text x="716" y="263" font-size="11.5" fill="#1f2733">OCR 子进程：4 workers × 2 线程，0.2s 步长抽帧</text>
+    <text x="716" y="282" font-size="11.5" fill="#1f2733">多帧投票择优成句 + 字体指纹入库</text>
+    <text x="716" y="301" font-size="11.5" fill="#1f2733">逐条进度写 hub.db 的 tasks 表</text>
+    <text x="716" y="316" font-size="11" fill="#5b6675">transcribe_asr：先 clear_lines 再 asr.transcribe()，写 .srt</text>
+
+    <line x1="170" y1="368" x2="612" y2="368" stroke="#5b6675" stroke-width="1.2" marker-end="url(#arr2)"/>
+    <text x="180" y="360">④ tools/call frameseek_task(path=…) 轮询进度</text>
+
+    <line x1="620" y1="404" x2="170" y2="404" stroke="#5b6675" stroke-width="1.2" marker-end="url(#arr2)"/>
+    <text x="180" y="396" fill="#0e8f82" font-weight="600">⑤ 读 tasks 表返回 {done, total, pct, current}</text>
+
+    <line x1="170" y1="440" x2="612" y2="440" stroke="#5b6675" stroke-width="1.2" marker-end="url(#arr2)"/>
+    <text x="180" y="432">⑥ 反复 ④⑤ 直到 status == "done"</text>
+
+    <line x1="620" y1="480" x2="1062" y2="480" stroke="#b45309" stroke-width="1.2" stroke-dasharray="6 3" marker-end="url(#arr2b)"/>
+    <text x="640" y="472" font-weight="600">⑦ 线程收尾：汇总写回，done 后任务出列</text>
+
+    <line x1="170" y1="524" x2="612" y2="524" stroke="#1a56db" stroke-width="1.2" marker-end="url(#arr2)"/>
+    <text x="180" y="516" font-weight="600" fill="#1a56db">⑧ 拿到终态：新增台词数 / 跳过数 / 失败清单</text>
+    <text x="180" y="540" font-size="11" fill="#5b6675">之后再用只读工具（get_lines / verify / export_clip）验收</text>
+  </g>
+</svg>
+<div class="cap">图 2 · 异步协议。关键约定：异步工具<b>立即返回</b>，之后只轮询 frameseek_task，<b>不要</b>反复调发起端（重复 scan 会起第二个线程）。scan / retranscribe / transcribe_asr / <b>generate_video</b> 四种异步任务同构，只是干活的内容不同。</div>
+</div>
+
+<h2>三、实现决策与踩坑记录（改代码前先看这里）</h2>
+<table>
+  <tr><th style="width:210px">决策 / 坑</th><th>说明</th></tr>
+  <tr><td class="k">stdout 归协议</td>
+      <td>MCP stdio 传输用 stdout 收发 JSON-RPC 帧。SDK 自带 fd 级隔离（服务启动后 fd 1 被改道到 stderr，协议走私有副本），<b>不需要</b>自己做 stdout 重定向；但自己加的日志一律走 stderr。</td></tr>
+  <tr><td class="k">anyio vendor 兜底</td>
+      <td>venv 里 <code>mcp</code> 2.3.0 能 import 但 anyio 半残。mcp_server.py 启动时把 <code>vendor/</code> 插到 sys.path 最前兜底，这也是 core 各模块的同款做法。</td></tr>
+  <tr><td class="k">scan 会设激活库</td>
+      <td>扫描工具沿用 Web 端行为，会把被扫库设为激活库。e2e 测试曾把激活库翻成 <code>_testlib</code>，测完需 <code>HUB.set_active()</code> 还原。</td></tr>
+  <tr><td class="k">fmt_ts 不是 Store 方法</td>
+      <td><code>fmt_ts</code> 是 <code>core/store.py</code> 的模块级函数。<code>st.fmt_ts()</code> 会 AttributeError——app.py 的 <code>/api/lines</code> 曾因此 500（已修），新代码一律 <code>from core import store as store_mod</code> 后 <code>store_mod.fmt_ts()</code>。</td></tr>
+  <tr><td class="k">DynamicVRAM 必须复刻</td>
+      <td>服务端 <code>main.py</code> 在 import torch 前 <code>aimdo.control.init()</code>，加载模型前 <code>init_devices()</code> 并把 <code>CoreModelPatcher</code> 换成 <code>ModelPatcherDynamic</code>。直调跳过这一步 → VAE/CLIP 落静态 <code>ModelPatcher</code>，<code>comfy.ops</code> 逐 op 搬运覆盖不到 <code>ViT3DDecoder.register_tokens</code>（裸 <code>torch.cat</code>），VAE 解码必崩 "tensors is on cpu vs cuda:0"。<code>h3gen.py</code> 1b 节复刻；探针 <code>_vae_probe.py</code> 可单独验证。</td></tr>
+  <tr><td class="k">cudaMallocAsync 必须复刻</td>
+      <td>服务端 import torch 前 <code>import cuda_malloc</code>（torch 2.x+CUDA+卡不在黑名单 → 自动设 <code>PYTORCH_CUDA_ALLOC_CONF=backend:cudaMallocAsync</code>）。缺这一步：流式加载 + VAE 解码大块激活把原生分配器打碎，reserved 几个 G 却连 30MB 都分不出 → OOM。环境变量必须在 import torch <b>之前</b>设。</td></tr>
+  <tr><td class="k">SaveVideo 的 codec 传字符串</td>
+      <td>V3 <code>DynamicCombo</code> 的 API 值是<b>选项键字符串</b>（<code>"codec": "auto"</code>），后端 <code>build_nested_inputs</code> 按 <code>codec.codec</code> 嵌套路径自动包成 execute 要的 dict。传 <code>{"codec":"auto"}</code> 反而匹配不上选项、codec 整个丢失，报 <code>missing 1 required positional argument</code>。直调版已绕开这条——h3gen 用 ffmpeg 直接合成 mp4。</td></tr>
+  <tr><td class="k">模板直调三处改名</td>
+      <td>照 UI 工作流手抄 API 格式会踩：<code>BasicScheduler</code> 新版要接 <code>model</code>；<code>SamplerCustomAdvanced</code> 的 <code>latent</code> 改名 <code>latent_image</code>；<code>ComfyMathExpression</code> 是 V3 autogrow 输入，改成 Python 直算帧数（<code>5+17k</code>）更稳。</td></tr>
+  <tr><td class="k">netstat 按字节读</td>
+      <td>中文 Windows 的 netstat 输出是 GBK，<code>subprocess text=True</code> 按 UTF-8 解会 UnicodeDecodeError。<code>server_pid()</code> 用 <code>decode("utf-8","replace")</code>。</td></tr>
+  <tr><td class="k">root 回传</td>
+      <td>line_id 只在各自库内唯一。多库场景搜索结果里的 <code>root</code> 必须带给后续工具；省略时按 env <code>FRAMESEEK_ROOT</code> → 激活库解析。</td></tr>
+  <tr><td class="k">导入要轻</td>
+      <td>core/verify、boxaudit、store、hub 导入即轻量；ocr 重依赖在工具首次调用时才加载；asr.device_info() 只探测 cuda、不加载模型，可安全放在同步工具里。</td></tr>
+  <tr><td class="k">测试方式</td>
+      <td><code>python _mcp_e2e.py</code>：spawn 子进程走真实 stdio JSON-RPC。客户端侧要持续抽干 stderr 管道，否则服务端事件循环会被背压憋住（表现为“调用卡住不超时”）。</td></tr>
+</table>
+
+<div class="note">接入生效提示：新注册的 MCP 服务器<b>不会自动激活</b>。写入 mcp.json 后，打开 WorkBuddy 连接器管理页 → 自定义连接器 → 对 frameseek 点“信任”，本会话即可通过自然语言调用全部 18 个工具。</div>
+
+</div>
+</body>
+</html>

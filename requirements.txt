@@ -1,0 +1,15 @@
+# 核心依赖（画面硬字幕 OCR 走这套）
+flask>=3.0
+rapidocr-onnxruntime>=1.2
+numpy
+Pillow
+
+# MCP 连接器（mcp_server.py）
+mcp>=2.0
+
+# 实时进度推送：不装也能跑，自动退回 SSE
+flask-sock>=0.7
+
+# 语音识别：config.ASR_ENABLED=False（默认停用）时可不要
+faster-whisper>=1.0
+av

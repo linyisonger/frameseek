@@ -1,0 +1,26 @@
+# 本地状态：含你自己素材库的绝对路径，别入库
+hub.db
+hub.db-shm
+hub.db-wal
+*.db
+*.db-shm
+*.db-wal
+.frameseek/
+frameseek.json
+frameseek.json.bak
+
+# 本机依赖兜底：venv 里 anyio 半残，才把 RapidOCR / onnxruntime / cv2 整包
+# 塞在 vendor（约 259MB）。正常环境 pip install -r requirements.txt 即可。
+vendor/
+
+# 产物 / 中间物 / 缓存
+生成/
+手绘工程/
+_hd_src/
+_out/
+__pycache__/
+*.pyc
+*.log
+
+# 测试素材：96MB 视频，跑回归脚本时自备（README §7 有说明）
+_testlib/
