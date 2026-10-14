@@ -6,6 +6,24 @@
 
 技术栈：Python + Flask（Web） + MCP（给 AI 客户端调用） + SQLite/FFmpeg。
 
+仓库：<https://gitee.com/LinYiSongEr/frameseek>
+
+### 从仓库拉下来怎么跑
+
+```bat
+pip install -r requirements.txt      # flask / rapidocr-onnxruntime / mcp ...
+python app.py                        # http://127.0.0.1:8771
+```
+
+第一次跑 OCR 会加载 RapidOCR 模型（几秒）。仓库里**不带**这些：
+
+| 不入库的东西 | 为什么 |
+| --- | --- |
+| `hub.db` / `*.db` / `.frameseek/` | 本地索引，含你自己素材库的绝对路径 |
+| `vendor/`（约 259MB） | 本机 venv 里 anyio 半残才塞进去的依赖兜底，正常环境用 pip 装 |
+| `生成/` `手绘工程/` `_hd_src/` `_out/` | 产物与日志 |
+| `_testlib/`（96MB 视频） | 回归脚本的测试素材，自备；没有它 UI 回归跑不起来，主程序不受影响 |
+
 ---
 
 ## 0. 两级库（多素材库）
