@@ -6,7 +6,7 @@ rem FrameSeek launcher.
 rem app.py opens the browser itself once the server is ready, so do NOT open it here.
 rem Closing this window stops the server.
 
-set "PY=C://Users//Administrator//.workbuddy//binaries//python//envs//default//Scripts//python.exe"
+set "PY=C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\python.exe"
 if not exist "%PY%" set "PY=python"
 
 rem already running? just open the page instead of fighting for port 8771
