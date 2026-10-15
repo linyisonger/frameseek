@@ -122,6 +122,15 @@ CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT);  -- active_id / use_asr
 python app.py          # 默认 http://127.0.0.1:8771
 ```
 
+`启动服务.bat` 的行为：服务就绪后由 `app.py` 自己打开浏览器（脚本不提前开，
+否则打开的是还没监听的地址）；再双击一次只会打开页面、不会再起一个实例；
+**关掉那个黑窗口 = 停止服务**。
+
+> 改这个脚本时注意：`.bat` 必须 **CRLF 行尾**（cmd 对换行敏感，LF 会让
+> `set` 之类的行整段失效），并且**不要 `chcp 65001`**——改代码页会让 cmd
+> 按字节偏移寻址错位，中文行会被从中间截断。所以要中文提示就存成 GBK，
+> 否则正文用纯 ASCII。`.gitattributes` 已固定 `*.bat text eol=crlf`。
+
 需要本机有 `ffmpeg` / `ffprobe`（已在 PATH）。  
 Python 用本机 venv：`C:\Users\Administrator\.workbuddy\binaries\python\envs\default\Scripts\python.exe`
 
@@ -494,7 +503,7 @@ GPU 帮不上忙，只能靠并发——8 并发实测提速 2.6 倍，再多也
 
 设备选择写在 `core/config.py`：`ASR_DEVICE = "auto"`（先探 GPU，失败回 CPU）、`ASR_COMPUTE = "auto"`（GPU 上取 float16）。想强制 CPU 就改成 `ASR_DEVICE = "cpu"`。页面顶栏会显示当前用的是 GPU 还是 CPU，索引弹窗的耗时预估也跟着变。
 
-GPU 的额外前提：ctranslate2 需要 **CUDA 12 运行时**（`cublas64_12.dll` 等），本机没装 CUDA Toolkit，所以借 Ollama 自带的那套（`...\Ollama\lib\ollama\cuda_v12`），由 `core/asr.py` 的 `_mount_cuda_dir()` 在进程内挂载（PATH 前置 + `add_dll_directory` + ctypes 绝对路径预加载，三重保险）。`启动服务.bat` 里也加了一道 PATH，双保险。
+GPU 的额外前提：ctranslate2 需要 **CUDA 12 运行时**（`cublas64_12.dll` 等），本机没装 CUDA Toolkit，所以借 Ollama 自带的那套（`...\Ollama\lib\ollama\cuda_v12`），由 `core/asr.py` 的 `_mount_cuda_dir()` 在进程内挂载（PATH 前置 + `add_dll_directory` + ctypes 绝对路径预加载，三重保险）。
 
 两个本机坑，已在 `core/asr.py` 里绕开：
 
