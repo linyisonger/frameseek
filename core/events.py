@@ -39,7 +39,11 @@ class _Hub:
         s = _Sub()
         with self.lock:
             self.subs.append(s)
-            backlog = list(self.log)      # 新连接先把最近状态补齐
+            # 新连接先把最近状态补齐，免得刚打开的页面不知道正在跑什么。
+            # 但**一次性通知**（task_done）不能补：补的是一两分钟的日志，
+            # 把「已停止 / 识别完成」再弹一遍，用户刷新页面会看到莫名其妙的旧提示。
+            # progress / video / lines 这类状态和增量补了才有用。
+            backlog = [e for e in self.log if e.get("type") != "task_done"]
         for ev in backlog:
             s.put(ev)
         return s
