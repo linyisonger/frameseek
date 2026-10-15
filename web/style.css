@@ -79,15 +79,23 @@ code {
 .fs-lt b { font-size: 15px; font-weight: 700; }
 .fs-lt span { font-size: 11px; color: var(--fs-dim); letter-spacing: .5px; }
 
-.fs-menu { flex: 1; border-right: none !important; overflow-y: auto; background: transparent; }
+.fs-menu { flex: 1; border-right: none !important; overflow-y: auto; background: transparent; padding-top: 4px; }
 .fs-menu .el-menu-item {
-  height: 40px; line-height: 40px; border-radius: 8px;
-  margin: 2px 8px; font-size: 14px;
+  height: auto; min-height: 50px; border-radius: 10px;
+  margin: 3px 8px; padding: 7px 12px !important;
+  display: flex; align-items: center; gap: 10px;
+  transition: background .15s, color .15s;
 }
+.fs-menu .el-menu-item .el-icon { margin-right: 0; }
+.fs-navtxt { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.fs-navtxt b { font-size: 14px; font-weight: 600; font-style: normal; }
+.fs-navtxt em { font-size: 11px; color: var(--fs-dim); font-style: normal; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fs-menu .el-menu-item.is-active {
   background: rgba(77, 157, 255, .16);
   color: var(--fs-brand); font-weight: 600;
 }
+.fs-menu .el-menu-item.is-active .fs-navtxt em { color: rgba(77, 157, 255, .8); }
+.fs-menu .el-menu-item:not(.is-active):hover { background: rgba(255, 255, 255, .05); }
 
 /* 导航徽标 */
 .fs-badge {
@@ -117,6 +125,14 @@ code {
 .fs-tools .mini { width: 180px; }
 
 .fs-card { margin-bottom: 14px; border-radius: 10px; }
+
+/* 统一的次级按钮悬停：所有非主色 / 非危险 / 非文字按钮，hover 时描边与文字转品牌色，
+   让整站按钮的反馈一致，不靠各自的 title 猜。 */
+.el-button:not(.el-button--primary):not(.el-button--danger):not(.is-link):not(.is-text):hover {
+  border-color: var(--fs-brand); color: var(--fs-brand);
+}
+.el-button { transition: background .15s, border-color .15s, color .15s, transform .12s; }
+.el-button:active { transform: translateY(1px); }
 .fs-hint { color: var(--fs-dim); font-size: 12px; margin: 6px 0 10px; line-height: 1.7; }
 .fs-label { color: var(--fs-dim); font-size: 12.5px; margin-right: 6px; }
 
@@ -129,7 +145,8 @@ code {
   display: grid; gap: 12px;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 }
-.fs-libcard { border-radius: 10px; }
+.fs-libcard { border-radius: 10px; transition: transform .12s, border-color .12s, box-shadow .12s; }
+.fs-libcard:hover { transform: translateY(-2px); border-color: var(--fs-brand); box-shadow: 0 6px 18px rgba(0,0,0,.28); }
 .fs-libcard.is-missing { opacity: .66; }
 .fs-libcard-hd { display: flex; align-items: flex-start; gap: 8px; }
 .fs-libcard-hd .min0 { flex: 1; }
@@ -223,10 +240,15 @@ code {
 }
 .fs-vmore {
   position: absolute; top: 6px; right: 6px;
-  background: rgba(0, 0, 0, .55) !important;
+  background: rgba(10, 16, 22, .6) !important;
   color: #fff !important; font-weight: 700; line-height: 1;
-  width: 26px; height: 26px; min-height: 26px; padding: 0;
+  width: 28px; height: 28px; min-height: 28px; padding: 0;
+  border: 1px solid rgba(255, 255, 255, .18) !important;
+  border-radius: 8px !important;
+  backdrop-filter: blur(2px);
+  transition: background .15s, transform .12s;
 }
+.fs-vmore:hover { background: rgba(10, 16, 22, .85) !important; transform: scale(1.06); }
 .fs-vmeta { padding: 8px 10px 10px; }
 .fs-vmeta b {
   display: block; font-size: 13px; line-height: 1.35;
@@ -438,9 +460,8 @@ code {
 }
 @media (max-width: 820px) {
   .fs-aside { width: 68px !important; }
-  .fs-lt, .fs-foot, .fs-menu .el-menu-item span { display: none; }
-  .fs-badge { display: none; }
-  .fs-menu .el-menu-item { justify-content: center; margin: 2px 6px; }
+  .fs-lt, .fs-foot, .fs-navtxt, .fs-badge { display: none; }
+  .fs-menu .el-menu-item { justify-content: center; margin: 2px 6px; padding: 10px !important; }
   .fs-main { padding: 14px 12px 60px; }
   .fs-bub { max-width: 94%; }
 }

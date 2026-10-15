@@ -34,34 +34,34 @@
       <el-menu class="fs-menu" :default-active="tab" @select="onTab">
         <el-menu-item index="libs" data-tab="libs">
           <el-icon><FolderOpened></FolderOpened></el-icon>
-          <span>素材库</span>
+          <span class="fs-navtxt"><b>素材库</b><em>登记与管理源文件夹</em></span>
           <i class="fs-badge" v-if="libs.length">{{ libs.length }}</i>
         </el-menu-item>
         <el-menu-item index="search" data-tab="search">
           <el-icon><Search></Search></el-icon>
-          <span>台词检索</span>
+          <span class="fs-navtxt"><b>台词检索</b><em>跨库搜字幕片段</em></span>
         </el-menu-item>
         <el-menu-item index="assets" data-tab="assets">
           <el-icon><Film></Film></el-icon>
-          <span>素材</span>
+          <span class="fs-navtxt"><b>素材</b><em>浏览已索引的片子</em></span>
           <i class="fs-badge" v-if="viewCount">{{ viewCount }}</i>
         </el-menu-item>
         <el-menu-item index="gen" data-tab="gen">
           <el-icon><MagicStick></MagicStick></el-icon>
-          <span>AI 生成</span>
+          <span class="fs-navtxt"><b>AI 生成</b><em>对话式出片</em></span>
         </el-menu-item>
         <el-menu-item index="hd" data-tab="hd">
           <el-icon><EditPen></EditPen></el-icon>
-          <span>手绘</span>
+          <span class="fs-navtxt"><b>手绘</b><em>白板动画讲解</em></span>
         </el-menu-item>
         <el-menu-item index="box" data-tab="box">
           <el-icon><Aim></Aim></el-icon>
-          <span>方框复查</span>
+          <span class="fs-navtxt"><b>方框复查</b><em>逐句核对台词框</em></span>
           <i class="fs-badge warn" v-if="boxNoBox">{{ boxNoBox }}</i>
         </el-menu-item>
         <el-menu-item index="clips" data-tab="clips">
           <el-icon><Scissor></Scissor></el-icon>
-          <span>片段</span>
+          <span class="fs-navtxt"><b>片段</b><em>已导出的短片段</em></span>
           <i class="fs-badge" v-if="clips.length">{{ clips.length }}</i>
         </el-menu-item>
       </el-menu>
@@ -93,7 +93,8 @@
 
   <!-- ==================== 全局进度浮窗 ====================
        挂在最外层而不是某个页签里：在「素材」页点「重新识别台词」时
-       进度也能当场看见，不用切回素材库页找。没任务时整块不渲染。 -->
+       进度也能当场看见，不用切回素材库页找。没任务时整块不渲染；
+       AI 生成任务不进来（生成页气泡自带进度）；默认收起只露一条细条。 -->
   <div class="fs-dock" v-if="taskList.length" id="tasksLibs">
     <el-card v-for="t in taskList" :key="t.root" shadow="always" class="fs-dock-card">
       <div class="fs-dock-hd">
@@ -105,7 +106,7 @@
           :title="dockOpen ? '收起详情' : '展开详情'">{{ dockOpen ? '收起' : '展开' }}</el-button>
       </div>
       <el-progress :percentage="dockPct(t)" :stroke-width="8" :show-text="false"/>
-      <div class="fs-dock-msg">{{ t.message }}{{ dockEta(t) }}</div>
+      <div class="fs-dock-msg" v-show="dockOpen">{{ t.message }}{{ dockEta(t) }}</div>
     </el-card>
   </div>
 
@@ -137,9 +138,9 @@
         title="填一个本地文件夹的绝对路径（最后一层就是要登记的库），登记后用它自己的「索引」按钮抽台词"/>
       <el-input id="libName" v-model="form.name" placeholder="备注名（可空）" class="w200" clearable/>
       <el-button id="btnAddLib" type="primary" @click="addLib"
-        title="把一个本地文件夹登记成素材库。只登记、不扫描——登记完再点「索引」才抽台词和封面">＋ 登记</el-button>
+        title="把一个本地文件夹登记成素材库（登记后点「索引」才抽台词）">＋ 登记</el-button>
       <el-button id="btnScanAll" @click="askScanAll"
-        title="对所有已登记库跑一遍索引。台词来源优先级：同名 .srt → 内嵌字幕 → OCR 画面硬字幕；同一文件按 md5 去重，不会重复入库">索引全部</el-button>
+        title="对所有已登记库重跑索引（按 md5 去重，不重复入库）">索引全部</el-button>
     </div>
     <div class="fs-note">
       登记信息存在项目目录 <code>{{ hubDb }}</code> · 同一个文件按 md5 去重，不会重复入库
@@ -168,8 +169,8 @@
       </div>
       <div class="fs-libft">
         <el-button size="small" type="primary" @click="askScan(l)"
-          title="扫描这个库：新增的素材入库、抽台词（同名 .srt → 内嵌字幕 → OCR 画面硬字幕）、生成封面和动图。会先弹设置让你确认">索引</el-button>
-        <el-button size="small" @click="askUpload(l)" title="把本地视频直接传进这个库，传完自动出现在素材页">上传</el-button>
+          title="扫描这个库：抽台词、封面、动图（会先弹设置确认）">索引</el-button>
+        <el-button size="small" @click="askUpload(l)" title="传视频进这个库，传完自动进素材页">上传</el-button>
         <el-button size="small" v-if="l.ignored" @click="askIgnored(l)"
           :title="'这个库里有 ' + l.ignored + ' 个文件被标为忽略（不入库）。点开可以逐个放回'">忽略 {{ l.ignored }}</el-button>
         <el-button size="small" type="danger" plain @click="delLib(l)"
@@ -293,7 +294,7 @@
       <el-input id="vfilter" v-model="kw" class="mini" placeholder="过滤文件名或库名…" clearable
         title="按文件名或库名过滤，边打边生效"/>
       <el-button id="vMoreBtn" size="small" @click="showFilter = !showFilter"
-        title="多维筛选：素材库可多选、台词状态、分辨率、时长、编码、帧率、入库时间、有无动图/封面">
+        title="多维筛选：素材库可多选、按时长分档">
         {{ showFilter ? '筛选 ▴' : '筛选 ▾' }}</el-button>
       <el-button id="vResetBtn" size="small" @click="resetFilters" title="清空所有筛选条件，回到完整列表">重置</el-button>
     </div>
@@ -309,23 +310,6 @@
       </div>
     </div>
     <div class="fs-frow">
-      <span class="fs-label">台词</span>
-      <el-checkbox-group v-model="lineSel" size="small" class="fs-fchips" id="fLines">
-        <el-checkbox label="has" value="has">有台词</el-checkbox>
-        <el-checkbox label="none" value="none">没台词</el-checkbox>
-        <el-checkbox label="err" value="err">识别失败</el-checkbox>
-      </el-checkbox-group>
-    </div>
-    <div class="fs-frow">
-      <span class="fs-label">分辨率</span>
-      <el-checkbox-group v-model="resSel" size="small" class="fs-fchips" id="fRes">
-        <el-checkbox label="2160" value="2160">4K / 2160p</el-checkbox>
-        <el-checkbox label="1080" value="1080">1080p</el-checkbox>
-        <el-checkbox label="720" value="720">720p</el-checkbox>
-        <el-checkbox label="sd" value="sd">标清 / 竖屏</el-checkbox>
-      </el-checkbox-group>
-    </div>
-    <div class="fs-frow">
       <span class="fs-label">时长</span>
       <el-checkbox-group v-model="durSel" size="small" class="fs-fchips" id="fDur">
         <el-checkbox label="s30" value="s30">30 秒内</el-checkbox>
@@ -333,33 +317,6 @@
         <el-checkbox label="m5_20" value="m5_20">5 - 20 分</el-checkbox>
         <el-checkbox label="l20" value="l20">20 分以上</el-checkbox>
       </el-checkbox-group>
-    </div>
-    <div class="fs-frow">
-      <span class="fs-label">编码</span>
-      <el-select id="fCodec" v-model="codec" size="small" clearable placeholder="全部" class="w160">
-        <el-option v-for="c in codecs" :key="c" :label="c" :value="c"/>
-      </el-select>
-      <span class="fs-label">帧率</span>
-      <el-select id="fFps" v-model="fps" size="small" clearable placeholder="全部" class="w160">
-        <el-option label="23.976 / 24" value="23.976"/>
-        <el-option label="25" value="25"/>
-        <el-option label="29.97 / 30" value="29.97"/>
-        <el-option label="50 / 60" value="50"/>
-      </el-select>
-      <span class="fs-label">入库</span>
-      <el-select id="fAge" v-model="age" size="small" clearable placeholder="全部时间" class="w160">
-        <el-option label="最近 7 天" value="7"/>
-        <el-option label="最近 30 天" value="30"/>
-        <el-option label="最近 90 天" value="90"/>
-      </el-select>
-    </div>
-    <div class="fs-frow">
-      <span class="fs-label">其它</span>
-      <div class="fs-fchips">
-        <el-checkbox id="fHasGif" v-model="hasGif" size="small" label="有动图"/>
-        <el-checkbox id="fHasCover" v-model="hasCover" size="small" label="有封面"/>
-        <el-checkbox id="fNoGif" v-model="noGif" size="small" label="无动图"/>
-      </div>
     </div>
     <div class="fs-frow fs-fsum dim" id="fSummary">{{ summary }}</div>
   </el-card>
@@ -370,7 +327,7 @@
            @mouseenter="hoverGif($event, v, true)" @mouseleave="hoverGif($event, v, false)"
            @click="preview(v)"/>
       <el-dropdown trigger="click" placement="bottom-end" @command="cmd => onCmd(cmd, v)">
-        <el-button class="fs-vmore" size="small" text circle
+        <el-button class="fs-vmore" size="small" text
           :title="v.builtin ? '更多操作：打开文件夹 / 从库里移除 / 删除文件（AI 生成产物不做字幕识别）'
                            : '更多操作：重新识别台词 / 导入字幕 / 打开文件夹 / 移除或删除'">···</el-button>
         <template #dropdown>
@@ -450,7 +407,7 @@
 <script type="text/x-template" id="tpl-gen">
 <div class="fs-page fs-page-gen">
   <div class="fs-page-hd">
-    <div><h1>AI 生成</h1><p>对话式出片 · 本地 MiniMax H3 · 成片落在项目「生成」目录</p></div>
+    <div><h1>AI 生成</h1><p>对话式出片 · 本地 MiniMax H3 · 成片落在项目「AI生成」目录</p></div>
     <div class="fs-tools">
       <el-tag v-if="gen.ready" type="success" size="small">H3 引擎就绪 · 直调 ComfyUI 库</el-tag>
       <el-tag v-else type="danger" size="small">引擎未就绪：{{ (gen.missing || []).join('、') }}</el-tag>
@@ -459,7 +416,7 @@
 
   <div class="fs-chat" id="chatLog">
     <div v-if="!msgs.length" class="fs-chat-empty" id="chatEmpty">
-      说一句话就能出片：描述画面、镜头、光线（英文效果最好）。<br>回车发送 · 成片落在项目「生成」目录
+      说一句话就能出片：描述画面、镜头、光线（英文效果最好）。<br>回车发送 · 成片落在项目「AI生成」目录
     </div>
     <div v-for="(m, i) in msgs" :key="i" class="fs-bub" :class="m.role">
       <template v-if="m.role === 'me'">
@@ -492,7 +449,7 @@
         placeholder="描述你想要的画面…（Enter 发送，Shift+Enter 换行）"
         @keydown.enter.exact.prevent="submit"/>
       <el-button id="btnGen" type="primary" :disabled="!gen.ready || !prompt.trim()" @click="submit"
-        title="按提示词生成一段视频（英文描述效果最好）。成片落在项目「生成」目录，不进素材库">发送</el-button>
+        title="按提示词生成一段视频（英文描述效果最好）。成片落在项目「AI生成」目录，不进素材库">发送</el-button>
     </div>
     <div class="fs-composer-row">
       <el-button id="btnGenRef" size="small" @click="pickRef"
@@ -517,7 +474,7 @@
     </div>
     <div v-show="adv" class="fs-composer-adv" id="genAdv">
       <span class="fs-label">落点</span>
-      <span class="dim" id="genOutDir" title="生成产物不进素材库，单独放项目目录">{{ gen.outDir || '项目目录/生成' }}</span>
+      <span class="dim" id="genOutDir" title="生成产物不进素材库，单独放项目目录">{{ gen.outDir || '项目目录/AI生成' }}</span>
       <span class="fs-label">文件名</span>
       <el-input id="genName" v-model="fname" size="small" class="w200" placeholder="可空，默认按时间戳"/>
       <span class="fs-label">种子</span>
@@ -561,7 +518,7 @@
     <span v-else v-html="projText"></span>
     <div class="fs-hd-dirs">
       <span class="dim" id="hdRootDir" title="手绘工程目录">工程 → {{ hd.base || '项目目录/手绘工程' }}</span>
-      <span class="dim" id="hdOutDir" title="手绘工程与成片都在 FrameSeek 项目目录下，不进素材库">成片 → {{ hd.outDir || '项目目录/生成' }}</span>
+      <span class="dim" id="hdOutDir" title="手绘工程与成片都在 FrameSeek 项目目录下，不进素材库">成片 → {{ hd.outDir || '项目目录/AI生成' }}</span>
     </div>
   </el-card>
 
@@ -646,7 +603,7 @@
       <el-checkbox id="hdAllowNet" v-model="allowNet"
         title="配音要把文本送到云端 TTS。不勾选就无法合成配音">联网许可</el-checkbox>
       <el-button id="hdMix" type="primary" size="small" @click="mix"
-        title="把配音和已渲染的画面合成为成片，落到项目「生成」目录，不进素材库">配音合成成片</el-button>
+        title="把配音和已渲染的画面合成为成片，落到项目「AI生成」目录，不进素材库">配音合成成片</el-button>
     </div>
     <div class="fs-hd-row">
       <el-button id="hdQa" size="small" @click="qa"

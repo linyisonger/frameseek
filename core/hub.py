@@ -21,6 +21,12 @@ CFG_FILE = os.path.join(BASE, "frameseek.json")
 # 素材页筛选里能勾选、能预览，但不进「素材库」卡片列表、不能编辑/删除/改名。
 BUILTIN_AI = {"name": "AI 生成", "note": "内置 · 生成产物，只读"}
 
+# 测试/自测用的库不进用户可见列表（回归脚本登记的 _testlib、名字带「测试」的库）。
+# 只影响"列出来"：按 id / 路径直接访问（扫描、激活、删除）照样能用，
+# 这样回归脚本不受影响，用户界面上也不会看到一堆测试库。
+TEST_DIR_HINTS = ("_testlib",)
+TEST_NAME_PREFIX = ("测试", "test")
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS libraries(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -97,16 +103,28 @@ class Hub:
             r = conn.execute("SELECT * FROM libraries WHERE id=?", (lid,)).fetchone()
             return dict(r) if r else None
 
+    def is_test_lib(self, row: Dict[str, Any]) -> bool:
+        """是不是测试/自测库（不进用户可见列表的那种）。"""
+        name = (row.get("name") or "").strip().lower()
+        if name.startswith(TEST_NAME_PREFIX):
+            return True
+        p = os.path.normcase(os.path.abspath(row.get("path") or ""))
+        return any(os.sep + h + os.sep in p + os.sep for h in TEST_DIR_HINTS)
+
     def list(self) -> List[Dict[str, Any]]:
         with self._conn() as conn:
             rows = [dict(r) for r in conn.execute(
                 "SELECT * FROM libraries ORDER BY id")]
+        out = []
         for r in rows:
+            if self.is_test_lib(r):
+                continue
             r["exists"] = os.path.isdir(r["path"])
             r["builtin"] = False
             st = self.stats_of(r["path"])
             r.update(st)
-        return rows
+            out.append(r)
+        return out
 
     def list_all(self, with_builtin: bool = True
                  ) -> List[Dict[str, Any]]:
@@ -165,6 +183,9 @@ class Hub:
             return r["value"] if r else default
 
     def set_active(self, lid: int):
+        row = self.get(lid)
+        if row and self.is_test_lib(row):
+            return          # 测试库不当激活库（用户不该一开机就落在测试库上）
         self.set_setting("active_id", str(lid))
 
     def get_active(self):
@@ -191,6 +212,8 @@ class Hub:
         for r in rows:
             if only and r["path"] not in only:
                 continue
+            if self.is_test_lib(r):
+                continue        # 测试库的台词不出现在用户的跨库搜索里
             if not os.path.isdir(r["path"]):
                 continue
             try:

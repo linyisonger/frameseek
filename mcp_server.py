@@ -62,7 +62,7 @@ server = MCPServer(C.APP_NAME, title=C.APP_LABEL, instructions=(
     "写对了没有，用 frameseek_recog_line（mode=ocr 看画面硬字幕 / mode=asr "
     "只听这一句的音轨），它只报告结果不落库，采纳与否由 edit_line 决定。"
     "frameseek_generate_video 用本地 MiniMax H3（直调 ComfyUI 库，无服务）按提示词"
-    "生成视频，成片落项目目录 生成/（不入库），同样异步 + frameseek_task 轮询；"
+    "生成视频，成片落项目目录 AI生成/（不入库），同样异步 + frameseek_task 轮询；"
     "GPU 同时只能跑一个，发起前先用 frameseek_gen_info 看引擎是否就绪。"
     "白板手绘视频是另一条线（本地 CPU 逐笔渲染，不占 GPU）：frameseek_handdraw_info 看现状 → "
     "frameseek_handdraw_init 用文稿建工程 → frameseek_handdraw_scenes 出分幕建议 → "
@@ -732,7 +732,7 @@ def frameseek_generate_video(prompt: str, duration: float = 5.0,
                              name: str = "", ref_image: str = "",
                              index: str = "none", root: str = "") -> str:
     """用本地 MiniMax H3（直调 ComfyUI 库，无服务、不打开 ComfyUI 界面）按提示词
-    生成视频，成片落 <项目根>/生成/，**不进素材库**（素材库只放原始素材）。
+    生成视频，成片落 <项目根>/AI生成/，**不进素材库**（素材库只放原始素材）。
 
     prompt：英文描述效果最好；<2000 字符；相机运动可用 [slow zoom in] 标注。
     duration：秒，5~15（内部按 24fps 折算成官方帧数约束 124~362 帧）。
@@ -969,7 +969,7 @@ def frameseek_handdraw_mix(project: str, index: str = "none",
     """白板手绘第 7 步：配音 + 伴奏混流，合成最终 mp4。
 
     需要工程时间轴已定（先试听配音再 mix）。成片落工程 output/，
-    同时另存一份到 <项目根>/生成/<工程名>.mp4。不进素材库索引
+    同时另存一份到 <项目根>/AI生成/<工程名>.mp4。不进素材库索引
     （2026-10-15 起 index 参数停用）。
 
     异步：立即返回 task_id，用 frameseek_task 查进度。

@@ -23,7 +23,7 @@ from _pw import launch
 BASE = os.environ.get("FS_BASE", "http://127.0.0.1:8771")
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_out")
 os.makedirs(OUT, exist_ok=True)
-AI_ROOT = r"D:\project\AIProjects\frameseek\生成"
+AI_ROOT = r"D:\project\AIProjects\frameseek\AI生成"
 
 ok = True
 n = 0
@@ -122,15 +122,17 @@ def main():
         pg.mouse.click(700, 60)
         pg.wait_for_timeout(300)
 
-        # 4. 台词筛选对 AI 片不生效
+        # 4. 台词类筛选项已整个移除（AI 片本来就没台词这回事）
+        check(pg.query_selector("#fLines") is None,
+              "台词筛选项已移除（不再有「有台词/没台词」）")
         pg.click("#vResetBtn")
         settle(pg)
-        pg.click('#fLibs .el-checkbox:has-text("AI 生成")')
-        settle(pg)
-        pg.click('#fLines .el-checkbox:has-text("有台词")')
-        settle(pg)
-        c2 = pg.evaluate("__FS.S.viewCount")
-        check(c2 == cnt, f"台词筛「有台词」不影响 AI 片（仍 {c2} 条）")
+        cnt2 = pg.evaluate("__FS.S.viewCount")
+        check(cnt2 >= cnt, f"重置后回到全量且仍含 AI 片（{cnt2} >= {cnt}）")
+        n_ai = pg.evaluate("""document.querySelectorAll('#videos .row2').length
+            && Array.from(document.querySelectorAll('#videos .row2'))
+               .filter(e => e.textContent.includes('AI 生成')).length""")
+        check(n_ai == cnt, f"重置后 AI 片仍全部在位（{n_ai} == {cnt}）")
 
         # 5. 后端兜底
         for path in ("transcribe_asr", "retranscribe", "reimport"):

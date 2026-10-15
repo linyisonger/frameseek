@@ -17,7 +17,7 @@
     mix()               配音 + 伴奏混流合成最终 mp4
     qa()                质检：帧数 / 时长 / 音画长度
 
-工程目录落在 <项目根>/手绘工程/<项目名>/，成片落 <项目根>/生成/（与 h3gen 同目录）。
+工程目录落在 <项目根>/手绘工程/<项目名>/，成片落 <项目根>/AI生成/（与 h3gen 同目录）。
 2026-10-15 起两者都搬出素材库：素材库只放用户自己的原始素材，生成物单独一档。
 注意 root 参数仅为兼容旧调用保留，已不参与路径定位。
 
@@ -41,7 +41,9 @@ STUDIO_PY = os.path.join(STUDIO_SKILL, "scripts", "studio.py")
 STUDIO_VENV_PY = os.path.join(STUDIO_SKILL, ".venv", "Scripts", "python.exe")
 
 PROJECT_ROOT_NAME = "手绘工程"   # <项目根>/手绘工程/<项目名>/
-OUT_DIR_NAME = "生成"            # <项目根>/生成/，与 gen.py 的成片同目录
+# 成片目录名：跟 gen.py 的产物同目录（2026-10-15 从「生成」改名「AI生成」）。
+# 实际落点走 gen.output_dir()，这里只留给 info 展示用。
+OUT_DIR_NAME = "AI生成"
 CANVAS = "#F5EBD7"               # 暖米黄纸张底
 DEFAULT_VOICE = "zh-CN-XiaoxiaoNeural"
 
@@ -175,11 +177,13 @@ def project_json(root: str, project: str) -> str:
 
 
 def dest_path(root: str = "", name: str = "") -> str:
-    """成片落点：<项目根>/生成/（与 H3 成片同目录），同名自动递增。
+    """成片落点：<项目根>/AI生成/（与 H3 成片同目录），同名自动递增。
 
     2026-10-15 改：不再落素材库。root 参数保留只为兼容旧调用。
+    落点跟 gen.output_dir() 走同一处（尊重 hub 的 gen_outdir 设置）。
     """
-    d = os.path.join(BASE, OUT_DIR_NAME)
+    from core import gen as _gen
+    d = _gen.output_dir()
     os.makedirs(d, exist_ok=True)
     fn = os.path.basename((name or "").strip()) or time.strftime("手绘_%Y%m%d_%H%M%S")
     fn = re.sub(r'[\\/:*?"<>|]+', "_", fn).strip(" .")[:80]
@@ -602,7 +606,7 @@ def mix(root: str, project: str, output: str = "",
     """第 7 步：配音 + 伴奏混流，合成最终 mp4（工程 finalPath）。
 
     index：保留兼容参数，现已停用——工程与成片都在项目目录下，不进素材库。
-    成片落 <项目根>/生成/<工程名>.mp4。
+    成片落 <项目根>/AI生成/<工程名>.mp4。
     """
     pdir = project_dir(root, project)
     pj = project_json(root, project)
@@ -615,7 +619,7 @@ def mix(root: str, project: str, output: str = "",
         final = max(cands, key=os.path.getmtime) if cands else final
 
     out = {"ok": True, "file": final}
-    # 成片另存一份到 <项目根>/生成/，方便统一取用
+    # 成片另存一份到 <项目根>/AI生成/，方便统一取用
     if os.path.isfile(final):
         try:
             dst = dest_path(name=os.path.basename(pdir))

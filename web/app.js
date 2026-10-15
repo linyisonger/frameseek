@@ -85,7 +85,7 @@ const S = reactive({
   clips: [],
   pre: 5, post: 5, fast: true,
   tasks: {},
-  dockOpen: true,
+  dockOpen: false,      // 右下角浮窗默认收起（有任务也只露一条细条，要进度展开）
   player: { on: false, title: '', src: '', cur: null },
 });
 
@@ -137,7 +137,7 @@ function onLive(ev) {
     } else if (s.gen) {
       BUS.emit('gen:done', k, s);
       toast(s.error ? `视频生成失败：${s.error}`
-                    : `生成完成：${s.name || ''}（${s.seconds || '?'}s），已落入「生成」目录`,
+                    : `生成完成：${s.name || ''}（${s.seconds || '?'}s），已落入「AI生成」目录`,
             s.error ? 'error' : 'success');
     } else if (s.single) {
       const SRC = { external: '外挂 SRT', embedded: '内嵌字幕',
@@ -470,18 +470,7 @@ const AssetsView = {
     const kw = ref('');
     const showFilter = ref(false);
     const libSel = reactive({});          // { libId: bool }
-    const lineSel = ref([]);
-    const resSel = ref([]);
-    const durSel = ref([]);
-    const codec = ref('');
-    const fps = ref('');
-    const age = ref('');
-    const hasGif = ref(false);
-    const hasCover = ref(false);
-    const noGif = ref(false);
-
-    const codecs = computed(() => [...new Set(
-      S.all.map(r => (r.vcodec || '').trim()).filter(Boolean))].sort());
+    const durSel = ref([]);               // 时长分档
 
     const allLibs = computed(() => (S.libs || []).concat(S.builtinLibs || []));
 
@@ -494,39 +483,11 @@ const AssetsView = {
     const libSet = computed(() => new Set(
       Object.keys(libSel).filter(k => libSel[k]).map(Number)));
 
-    function resBucket(v) {
-      const h = +(v.height || 0);
-      if (!h) return '';
-      if (h >= 2000) return '2160';
-      if (h >= 1000) return '1080';
-      if (h >= 700) return '720';
-      return 'sd';                        // 标清或竖屏（竖屏 1080x1920 归 sd）
-    }
-    function fpsBucket(v) {
-      const f = +(v.fps || 0);
-      if (!f) return '';
-      if (Math.abs(f - 23.976) < 1.2 || Math.abs(f - 24) < 1.2) return '23.976';
-      if (Math.abs(f - 25) < 1.2) return '25';
-      if (Math.abs(f - 29.97) < 1.2 || Math.abs(f - 30) < 1.2) return '29.97';
-      if (f >= 45) return '50';
-      return '';
-    }
-
     const view = computed(() => {
       const f = (kw.value || '').trim().toLowerCase();
-      const libs = libSet.value, lines = new Set(lineSel.value),
-            res = new Set(resSel.value), dur = new Set(durSel.value);
+      const libs = libSet.value, dur = new Set(durSel.value);
       return S.all.filter(r => {
         if (libs.size && !libs.has(r.lib_id)) return false;
-        // AI 生成产物没有台词这回事，不参与台词状态筛选
-        if (lines.size && !r.builtin) {
-          const lc = r.line_count || 0;
-          const hit = (lines.has('has') && lc > 0)
-                   || (lines.has('none') && lc === 0 && !r.err)
-                   || (lines.has('err') && !!r.err);
-          if (!hit) return false;
-        }
-        if (res.size && !res.has(resBucket(r))) return false;
         if (dur.size) {
           const d = +(r.duration || 0);
           const hit = (dur.has('s30') && d > 0 && d < 30)
@@ -535,15 +496,6 @@ const AssetsView = {
                    || (dur.has('l20') && d >= 1200);
           if (!hit) return false;
         }
-        if (codec.value && (r.vcodec || '') !== codec.value) return false;
-        if (fps.value && fpsBucket(r) !== fps.value) return false;
-        if (age.value) {
-          const since = Date.now() / 1000 - (+age.value) * 86400;
-          if (!(+(r.created_at || 0) >= since)) return false;
-        }
-        if (hasGif.value && !r.gif) return false;
-        if (hasCover.value && !r.cover) return false;
-        if (noGif.value && r.gif) return false;
         if (f && !(r.name || '').toLowerCase().includes(f)
               && !(r.lib || '').toLowerCase().includes(f)) return false;
         return true;
@@ -560,16 +512,7 @@ const AssetsView = {
           return l ? l.name : id;
         }).join('、'));
       }
-      if (lineSel.value.length && lineSel.value.length < 3)
-        bits.push('台词：' + lineSel.value.join('/'));
-      if (resSel.value.length) bits.push('分辨率：' + resSel.value.join('/'));
       if (durSel.value.length) bits.push('时长：' + durSel.value.join('/'));
-      if (codec.value) bits.push('编码：' + codec.value);
-      if (fps.value) bits.push('帧率：' + fps.value);
-      if (age.value) bits.push('入库：最近 ' + age.value + ' 天');
-      if (hasGif.value) bits.push('仅有动图');
-      if (hasCover.value) bits.push('仅有封面');
-      if (noGif.value) bits.push('仅无动图');
       return `命中 ${view.value.length} / ${S.all.length} 部`
            + (bits.length ? ' · ' + bits.join(' · ') : ' · 未设条件');
     });
@@ -586,9 +529,7 @@ const AssetsView = {
 
     function resetFilters() {
       Object.keys(libSel).forEach(k => { libSel[k] = false; });
-      lineSel.value = []; resSel.value = []; durSel.value = [];
-      codec.value = ''; fps.value = ''; age.value = '';
-      hasGif.value = hasCover.value = noGif.value = false;
+      durSel.value = [];
       kw.value = '';
       return reload();
     }
@@ -720,9 +661,8 @@ const AssetsView = {
     onActivated(reload);
 
     return {
-      kw, showFilter, libSel, lineSel, resSel, durSel,
-      codec, fps, age, hasGif, hasCover, noGif,
-      codecs, allLibs, libsAll, view, summary, picking, dlg, reOpt, asrOpt, asrEta,
+      kw, showFilter, libSel, durSel,
+      allLibs, libsAll, view, summary, picking, dlg, reOpt, asrOpt, asrEta,
       resetFilters, onCmd, doRetranscribe, doAsr,
       viewCount: computed(() => view.value.length),
       coverUrl: v => mediaUrl(v.cover, v.root),
@@ -1092,7 +1032,7 @@ const HanddrawView = {
     async function mix() {
       if (!hd.project) { err('还没有工程'); return; }
       if (!allowNet.value) { err('配音是联网合成，请先勾「联网许可」'); return; }
-      say('me', '⑥ 配音合成', '成片落项目目录/生成');
+      say('me', '⑥ 配音合成', '成片落项目目录/AI生成');
       const d = await post('/api/handdraw/mix',
         { root: hdRoot(), project: hd.project, index: 'none' });
       if (d.ok === false) { err(d.err || '合成未启动'); return; }
@@ -1567,7 +1507,10 @@ const App = {
       ? `${S.libs.length} 个库 · ${S.totals.videos} 个素材 · ${S.totals.lines} 条台词`
       : '还没有登记素材库');
 
-    const taskList = computed(() => Object.values(S.tasks || {}));
+    // AI 生成任务不进全局浮窗：生成页的对话气泡里已经有进度条和状态，
+    // 右下角再弹一张卡是重复信息，而且生成页切走再切回来（keep-alive）气泡还在。
+    const taskList = computed(() => Object.values(S.tasks || {})
+      .filter(t => t.kind !== 'gen'));
 
     function dockPct(t) { return t.total ? Math.min(100, Math.round(t.done / t.total * 100)) : 0; }
     function dockHead(t) {

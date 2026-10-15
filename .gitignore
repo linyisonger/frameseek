@@ -16,7 +16,8 @@ frameseek.json.bak
 /vendor/
 
 # 产物 / 中间物 / 缓存
-生成/
+AI生成/
+生成/          # 2026-10-15 前的旧名，迁移残留
 手绘工程/
 _hd_src/
 _out/

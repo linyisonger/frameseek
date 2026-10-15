@@ -383,7 +383,7 @@ def _gen_job(root: str, tid: int, params: dict):
 
 @app.post("/api/generate")
 def api_generate():
-    """发起 MiniMax H3 视频生成（异步）。成片落 <项目根>/生成/，不入库。
+    """发起 MiniMax H3 视频生成（异步）。成片落 <项目根>/AI生成/，不入库。
 
     root 只用于把任务进度记到某个库的 tasks 表，不影响成片落点。
     """
@@ -1549,7 +1549,7 @@ def api_media():
 def api_hd_media():
     """手绘产物预览（检查图 / 逐幕 mp4 / 成片）。
 
-    2026-10-15 起这些文件落在**项目目录**下（<BASE>/手绘工程/、<BASE>/生成/_uploads/），
+    2026-10-15 起这些文件落在**项目目录**下（<BASE>/手绘工程/、<BASE>/AI生成/_uploads/），
     不在素材库里，也不能走 /media（那里只允许 cache 目录内的相对路径，防穿越）。
     这里限定「必须落在项目目录内」再放行。
     """

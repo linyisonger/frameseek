@@ -85,6 +85,8 @@ def main():
         print("\n[3] 七个页签")
         items = pg.query_selector_all(".fs-menu .el-menu-item")
         check(len(items) == 7, f"侧栏 7 个菜单项（实际 {len(items)}）")
+        subs = pg.query_selector_all(".fs-menu .el-menu-item .fs-navtxt em")
+        check(len(subs) == 7, f"每个菜单项都有一行说明文字（实际 {len(subs)}）")
 
         TABS = {
             "libs":   ".fs-libcards, .fs-libcard",
@@ -128,7 +130,7 @@ def main():
             check(pg.is_visible(".fs-rrow .ops .el-button"), "结果行有操作按钮")
 
         # ---- 6 素材与筛选 ----
-        print("\n[6] 素材页与多维筛选")
+        print("\n[6] 素材页与筛选（素材库 + 时长）")
         pg.click('.fs-menu .el-menu-item[data-tab="assets"]')
         pg.wait_for_timeout(2500)
         n_v = len(pg.query_selector_all(".fs-vcard"))
@@ -137,15 +139,15 @@ def main():
         pg.wait_for_timeout(500)
         check(pg.is_visible("#vFilterCard"), "筛选面板能展开")
         check(len(pg.query_selector_all("#fLibs .el-checkbox")) > 0, "库筛选项渲染")
-        check(len(pg.query_selector_all("#fRes .el-checkbox")) == 4, "分辨率 4 个选项")
         check(len(pg.query_selector_all("#fDur .el-checkbox")) == 4, "时长 4 个选项")
-        check(pg.is_visible("#fCodec"), "编码下拉在")
-        # 勾一个分辨率，看命中数变化
+        check(pg.query_selector("#fRes") is None, "分辨率筛选项已移除")
+        check(pg.query_selector("#fCodec") is None, "编码筛选项已移除")
+        # 勾一个时长档，看命中数变化
         before = pg.text_content("#fSummary") or ""
-        pg.click('#fRes .el-checkbox:has-text("1080p")')
+        pg.click('#fDur .el-checkbox:has-text("20 分以上")')
         pg.wait_for_timeout(1800)
         after = pg.text_content("#fSummary") or ""
-        check(before != after, f"勾分辨率后汇总变化（{before[:22]} → {after[:22]}）")
+        check(before != after, f"勾时长后汇总变化（{before[:22]} → {after[:22]}）")
         pg.click("#vResetBtn")
         pg.wait_for_timeout(1800)
         n_after = len(pg.query_selector_all(".fs-vcard"))

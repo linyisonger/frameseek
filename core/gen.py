@@ -9,11 +9,11 @@ ComfyUI 的库函数，按参考工作流 minimax_h3_textonly_4060ti.json 的同
 MiniMaxH3ReferenceToVideo → res_multistep 采样 12 步 → 解码 → ffmpeg 合成 mp4。
 
 对外只保留两件事：
-- generate()：一条龙（生成 → 落 <项目根>/生成/），进度走 on_tick 回调；
+- generate()：一条龙（生成 → 落 <项目根>/AI生成/），进度走 on_tick 回调；
 - 参数硬约束：prompt < 2000 字符；帧数 ≡ 5 (mod 17) 且 124~362 帧
   （约 5.2~15.1 秒 @24fps，训练覆盖范围）；参考图用 `<Picture 1>` 引用。
 
-落点：成片写 <项目根>/生成/，**不进素材库**（2026-10-15 改）——
+落点：成片写 <项目根>/AI生成/，**不进素材库**（2026-10-15 改）——
 素材库只放用户自己的原始素材，生成物单独一档，互不污染。
 
 子进程协议（h3gen.py stdout，一行一个 JSON）：
@@ -31,6 +31,10 @@ import time
 import uuid
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# 生成产物目录名（项目根下）。2026-10-15 从「生成」改成「AI生成」，
+# 老目录由 _migrate_legacy_dir() 自动并入，见 output_dir()。
+OUT_DIRNAME = "AI生成"
 
 # ---------------- 路径 / 模型 ----------------
 COMFY_ROOT = os.environ.get(
@@ -101,20 +105,58 @@ def safe_name(name: str) -> str:
     return n[:80]
 
 
+def _migrate_legacy_dir() -> None:
+    """把老的「生成」目录并进「AI生成」。
+
+    两种情形：
+    1. 老目录在、新目录不在 → 整目录改名（索引里存的是相对路径，跟着搬，不用改库）；
+    2. 两个都在（老目录被资源管理器之类占着改不了名，内容已先搬走）→
+       把残留文件挪过去，再试着删掉老目录；删不掉（还有句柄）就留着，
+       下次调用再试——自愈，不报错。
+    """
+    old = os.path.join(BASE, "生成")
+    new = os.path.join(BASE, OUT_DIRNAME)
+    if not os.path.isdir(old) or os.path.normcase(old) == os.path.normcase(new):
+        return
+    try:
+        if not os.path.exists(new):
+            os.rename(old, new)
+            return
+    except Exception:
+        pass
+    try:
+        for fn in os.listdir(old):
+            if fn == ".frameseek":        # 索引缓存：搬不动就跳过，删的时候一起走
+                continue
+            s, d = os.path.join(old, fn), os.path.join(new, fn)
+            if os.path.exists(d):
+                continue
+            try:
+                shutil.rename(s, d)
+            except Exception:
+                pass
+        shutil.rmtree(old, ignore_errors=True)   # 只剩 .frameseek 时整目录删掉
+    except Exception:
+        pass
+
+
 def output_dir() -> str:
-    """AI 生成成片的落点：<项目根>/生成/。
+    """AI 生成成片的落点：<项目根>/AI生成/。
 
     2026-10-15 改：产物不再落素材库，改落 FrameSeek 自己的项目目录下——
     素材库只放用户自己的原始素材，生成物单独一档，互不污染。
+    目录名从「生成」改成「AI生成」：项目目录下一堆中文文件夹，
+    「AI生成」一眼知道是放什么的。
     目录可用 hub 设置 gen_outdir 改（绝对路径）。
     """
+    _migrate_legacy_dir()
     d = ""
     try:
         from core.hub import HUB
         d = HUB.get_setting("gen_outdir", "").strip()
     except Exception:
         d = ""
-    d = os.path.abspath(d) if d else os.path.join(BASE, "生成")
+    d = os.path.abspath(d) if d else os.path.join(BASE, OUT_DIRNAME)
     os.makedirs(d, exist_ok=True)
     return d
 
