@@ -4,7 +4,9 @@
 素材目录选哪儿，索引就生成在哪儿 —— 选中文件夹后自动建 `.frameseek/` 隐藏目录，  
 里面放 SQLite 索引、视频封面/动图、逐句台词截图和导出的片段。整个文件夹拷走，索引跟着走。
 
-技术栈：Python + Flask（Web） + MCP（给 AI 客户端调用） + SQLite/FFmpeg。
+技术栈：Python + Flask（Web） + MCP（给 AI 客户端调用） + SQLite/FFmpeg。  
+前端：**Vue 3 + Element Plus**（深色主题），依赖在 `web/vendor/` 本地自持，断网也能跑，
+无构建步骤（浏览器里直接编译模板，改完刷新即生效）。
 
 仓库：<https://gitee.com/LinYiSongEr/frameseek>
 
@@ -20,9 +22,25 @@ python app.py                        # http://127.0.0.1:8771
 | 不入库的东西 | 为什么 |
 | --- | --- |
 | `hub.db` / `*.db` / `.frameseek/` | 本地索引，含你自己素材库的绝对路径 |
-| `vendor/`（约 259MB） | 本机 venv 里 anyio 半残才塞进去的依赖兜底，正常环境用 pip 装 |
+| `vendor/`（根级，约 259MB） | 本机 venv 里 anyio 半残才塞进去的依赖兜底，正常环境用 pip 装。注意 `web/vendor/` **入库**（Vue/Element Plus 本地依赖，约 1.7MB） |
 | `生成/` `手绘工程/` `_hd_src/` `_out/` | 产物与日志 |
 | `_testlib/`（96MB 视频） | 回归脚本的测试素材，自备；没有它 UI 回归跑不起来，主程序不受影响 |
+
+### 前端架构（2026-10-15 重写）
+
+| 文件 | 职责 |
+| --- | --- |
+| `web/index.html` | 主框架（侧栏/页签/进度浮窗/播放器）+ 7 个模块的 `<script type="text/x-template">` 模板 |
+| `web/app.js` | Vue 3 应用：全局状态 `S`、实时通道（WS→SSE→轮询）、7 个组件、`window.__FS` 回归口子 |
+| `web/style.css` | Element Plus dark 变量覆盖 + 布局样式 |
+| `web/vendor/` | vue 3.5 / element-plus 2.9 / 中文语言包 / 图标，本地文件 |
+
+模块 ↔ 组件：`libs` 素材库、`search` 台词检索、`assets` 素材（多维筛选）、
+`gen` AI 生成（对话窗）、`hd` 白板手绘（六步）、`box` 方框复查、`clips` 片段。
+页签切换用 `<keep-alive>`——方框复查一部片的清单要 verify 几秒，切回来必须秒开。
+
+回归脚本通过 `window.__FS`（S / api / post / box / gen / hd）驱动页面状态，
+UI 交互一律走真实 Element Plus 控件（点 checkbox、点 el-select 的 wrapper 弹 popper）。
 
 ---
 
@@ -746,13 +764,15 @@ UI 回归（都要 Web 服务已在 8771 起；都是无头 Chromium 真点页�
 
 | 脚本 | 覆盖 |
 | --- | --- |
-| `_ai_isolate_ui_check.py` | AI 生成产物不做字幕/语音识别：卡片标记、菜单入口、台词筛选、接口兜底（12 项） |
-| `_boxpick_ui_check.py`   | 复查页选片：库下拉计数 / 按库过滤 / 片名搜索（含多词 AND）/ 无结果清空（19 项） |
+| `_vue_ui_check.py` | Vue 重写后的整站冒烟：vendor 加载、挂载、深色主题、7 页签、各页控件（51 项） |
+| `_ai_isolate_ui_check.py` | AI 生成产物不做字幕/语音识别：卡片标记、菜单入口、台词筛选、接口兜底（11 项） |
+| `_boxpick_ui_check.py`   | 复查页选片：库下拉计数 / 按库过滤 / 片名搜索（含多词 AND）/ 无结果清空（17 项） |
 | `_boxedit_ui_check.py` | 方框复查页：编辑台词 / 重新 OCR 识别 / 单句语音识别（32 项） |
 | `_filter_ui_check.py`   | 素材页多维筛选、内置 AI 库只读、重置（16 项） |
-| `_handdraw_ui_check.py` | 白板手绘六步流程 + 真跑一次渲染全链路（31 项） |
-| `_gen_ui_check.py`      | AI 生成面板表单与响应式（18 项） |
-| `_tips_ui_check.py`     | 每个功能按钮都带悬停说明、且不存在「说明」总览页（32 项） |
+| `_handdraw_ui_check.py` | 白板手绘六步流程 + 真跑一次渲染全链路（30 项） |
+| `_gen_ui_check.py`      | AI 生成面板表单与响应式（引擎未就绪时自动降级为禁用态断言） |
+| `_tips_ui_check.py`     | 每个功能按钮都带悬停说明、且不存在「说明」总览页（40 项） |
+| `_pw.py` | 公共启动辅助：本机 chromium 版本与 playwright 期望对不上时自动回退到已装版本 |
 
 > 功能说明一律挂在**按钮的 title 上**（鼠标停一秒就出），不单独做总览页——
 > 要用说明的时候人就在那个模块里，不会切回总览去找。`_tips_ui_check.py`

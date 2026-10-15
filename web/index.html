@@ -1,454 +1,862 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>拾帧 FrameSeek · 视频台词素材库</title>
+<link rel="stylesheet" href="/vendor/element-plus.css">
+<link rel="stylesheet" href="/vendor/element-plus-dark.css">
 <link rel="stylesheet" href="/style.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22fsg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%235aa8ff%22%2F%3E%3Cstop%20offset%3D%22.55%22%20stop-color%3D%22%234d9dff%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%232ec27e%22%2F%3E%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2215%22%20fill%3D%22url(%23fsg)%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%2216%22%20width%3D%2238%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%23ffffff%22%2F%3E%3Cpath%20d%3D%22M26.5%2026%20L37.5%2032%20L26.5%2038%20Z%22%20fill%3D%22%230f1826%22%2F%3E%3Ccircle%20cx%3D%2253%22%20cy%3D%2249%22%20r%3D%222.6%22%20fill%3D%22%23ffffff%22%20opacity%3D%22.65%22%2F%3E%3Ccircle%20cx%3D%2253%22%20cy%3D%2241%22%20r%3D%222.6%22%20fill%3D%22%23ffffff%22%20opacity%3D%22.38%22%2F%3E%3C%2Fsvg%3E">
 </head>
 <body>
-<div class="app">
 
-  <!-- ========== 侧边栏 ========== -->
-  <aside class="side">
-    <div class="logo">
-      <div class="mark">
-        <svg viewBox="0 0 64 64" aria-hidden="true">
-          <defs><linearGradient id="fsgSide" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#5aa8ff"/><stop offset=".55" stop-color="#4d9dff"/><stop offset="1" stop-color="#2ec27e"/>
-          </linearGradient></defs>
-          <rect width="64" height="64" rx="15" fill="url(#fsgSide)"/>
-          <rect x="13" y="16" width="38" height="32" rx="7" fill="#ffffff"/>
-          <path d="M26.5 26 L37.5 32 L26.5 38 Z" fill="#0f1826"/>
-          <circle cx="53" cy="49" r="2.6" fill="#ffffff" opacity=".65"/>
-          <circle cx="53" cy="41" r="2.6" fill="#ffffff" opacity=".38"/>
-        </svg>
-      </div>
-      <div class="lt"><b>拾帧</b><span>FrameSeek</span></div>
-    </div>
-
-    <nav id="nav">
-      <a class="nav-item" data-tab="libs" href="#libs">
-        <svg viewBox="0 0 24 24"><path d="M3 7h7v7H3zM14 7h7v4h-7zM14 14h7v3h-7zM3 17h7v0H3z"/></svg>
-        素材库<i id="badgeLibs">0</i></a>
-      <a class="nav-item" data-tab="search" href="#search">
-        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M15.5 15.5 21 21"/></svg>
-        台词检索</a>
-      <a class="nav-item" data-tab="assets" href="#assets">
-        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5 15 12l-5 2.5z"/></svg>
-        素材<i id="badgeVideos">0</i></a>
-      <a class="nav-item" data-tab="gen" href="#gen">
-        <svg viewBox="0 0 24 24"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M18 15l.9 2.1L21 18l-2.1.9L18 21l-.9-2.1L15 18l2.1-.9z"/></svg>
-        AI 生成</a>
-      <a class="nav-item" data-tab="hd" href="#hd">
-        <svg viewBox="0 0 24 24"><path d="M4 19.5 4.6 15l9.9-9.9a1.9 1.9 0 0 1 2.7 0l1.7 1.7a1.9 1.9 0 0 1 0 2.7L9 19.4z"/><path d="M13.5 6.5l4 4"/></svg>
-        手绘</a>
-      <a class="nav-item" data-tab="box" href="#box">
-        <svg viewBox="0 0 24 24"><path d="M3 7V5h8v2"/><path d="M21 7V5h-8v2"/><path d="M3 17v2h8v-2"/><path d="M21 17v2h-8v-2"/><rect x="7" y="9" width="10" height="6" rx="1"/></svg>
-        方框复查<i id="badgeBox">0</i></a>
-      <a class="nav-item" data-tab="clips" href="#clips">
-        <svg viewBox="0 0 24 24"><path d="M6 4v16M18 4v16M6 4h6v5H6zM12 15h6v5h-6z"/></svg>
-        片段<i id="badgeClips">0</i></a>
-    </nav>
-
-    <div class="side-foot">
-      <div id="stats" class="s-stats"></div>
-      <div id="asrDev" class="s-dev"></div>
-    </div>
-  </aside>
-
-  <!-- ========== 主内容 ========== -->
-  <main class="main">
-
-    <!-- ---------- 素材库 ---------- -->
-    <section class="panel on" data-panel="libs">
-      <div class="page-hd">
-        <div><h1>素材库</h1><p>登记本地文件夹，索引出台词与截图</p></div>
+<!-- ==================== 主框架 ==================== -->
+<div id="app" v-cloak>
+  <el-container class="fs-shell">
+    <el-aside class="fs-aside" width="212px">
+      <div class="fs-logo">
+        <div class="fs-mark">
+          <svg viewBox="0 0 64 64" aria-hidden="true">
+            <defs><linearGradient id="fsgSide" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#5aa8ff"/><stop offset=".55" stop-color="#4d9dff"/><stop offset="1" stop-color="#2ec27e"/>
+            </linearGradient></defs>
+            <rect width="64" height="64" rx="15" fill="url(#fsgSide)"/>
+            <rect x="13" y="16" width="38" height="32" rx="7" fill="#ffffff"/>
+            <path d="M26.5 26 L37.5 32 L26.5 38 Z" fill="#0f1826"/>
+            <circle cx="53" cy="49" r="2.6" fill="#ffffff" opacity=".65"/>
+            <circle cx="53" cy="41" r="2.6" fill="#ffffff" opacity=".38"/>
+          </svg>
+        </div>
+        <div class="fs-lt"><b>拾帧</b><span>FrameSeek</span></div>
       </div>
 
-      <div class="card addcard">
-        <div class="addrow">
-          <input id="libPath" placeholder="素材文件夹绝对路径，例如 E:\视频\电影" />
-          <input id="libName" class="short" placeholder="备注名（可空）" />
-          <button id="btnAddLib" class="primary"
-            title="把一个本地文件夹登记成素材库。只登记、不扫描——登记完再点「索引」才抽台词和封面">＋ 登记</button>
-          <button id="btnScanAll"
-            title="对所有已登记库跑一遍索引。台词来源优先级：同名 .srt → 内嵌字幕 → OCR 画面硬字幕；同一文件按 md5 去重，不会重复入库">索引全部</button>
-        </div>
-        <div class="card-note">登记信息存在项目目录 <code id="hubDb"></code> · 同一个文件按 md5 去重，不会重复入库</div>
-      </div>
+      <el-menu class="fs-menu" :default-active="tab" @select="onTab">
+        <el-menu-item index="libs" data-tab="libs">
+          <el-icon><FolderOpened></FolderOpened></el-icon>
+          <span>素材库</span>
+          <i class="fs-badge" v-if="libs.length">{{ libs.length }}</i>
+        </el-menu-item>
+        <el-menu-item index="search" data-tab="search">
+          <el-icon><Search></Search></el-icon>
+          <span>台词检索</span>
+        </el-menu-item>
+        <el-menu-item index="assets" data-tab="assets">
+          <el-icon><Film></Film></el-icon>
+          <span>素材</span>
+          <i class="fs-badge" v-if="viewCount">{{ viewCount }}</i>
+        </el-menu-item>
+        <el-menu-item index="gen" data-tab="gen">
+          <el-icon><MagicStick></MagicStick></el-icon>
+          <span>AI 生成</span>
+        </el-menu-item>
+        <el-menu-item index="hd" data-tab="hd">
+          <el-icon><EditPen></EditPen></el-icon>
+          <span>手绘</span>
+        </el-menu-item>
+        <el-menu-item index="box" data-tab="box">
+          <el-icon><Aim></Aim></el-icon>
+          <span>方框复查</span>
+          <i class="fs-badge warn" v-if="boxNoBox">{{ boxNoBox }}</i>
+        </el-menu-item>
+        <el-menu-item index="clips" data-tab="clips">
+          <el-icon><Scissor></Scissor></el-icon>
+          <span>片段</span>
+          <i class="fs-badge" v-if="clips.length">{{ clips.length }}</i>
+        </el-menu-item>
+      </el-menu>
 
-      <div id="libCards" class="libcards"></div>
-    </section>
-
-    <!-- ---------- 台词检索 ---------- -->
-    <section class="panel" data-panel="search">
-      <div class="page-hd">
-        <div><h1>台词检索</h1><p>跨全部素材库搜台词，回车直接搜</p></div>
-      </div>
-
-      <div class="card searchcard">
-        <div class="bigsearch">
-          <svg viewBox="0 0 24 24" class="mag"><circle cx="11" cy="11" r="6"/><path d="M15.5 15.5 21 21"/></svg>
-          <input id="q" placeholder="他在思念什么 / 回家 / 你洗不洗脸…" />
-          <button id="btnSearch" class="primary"
-            title="跨全部已登记库搜台词，中文子串也行（回车等价）。搜到的每句都能一键导出前后各 N 秒">搜索</button>
-        </div>
-        <div class="searchcfg">
-          <span class="cfg-label">导出片段</span>
-          前 <input id="pre" type="number" value="5" min="0" max="60"> 秒
-          后 <input id="post" type="number" value="5" min="0" max="60"> 秒
-          <label class="chk"><input type="checkbox" id="fast" checked
-            title="秒切＝直接拷贝原视频流（快，但只能落在关键帧上，切点可能差半秒）。不勾则重编码，切点帧精确，慢一些"> 秒切</label>
-          <span class="dim cfg-tip">搜到的每句都能一键导出前后各 N 秒，直接拖进剪映</span>
-        </div>
-      </div>
-
-      <!-- 空状态：没搜过的时候给一句"该干什么"，别让用户对着一片空白 -->
-      <div id="results" class="results"></div>
-      <div id="searchEmpty" class="empty-tip">
-        <b>输入关键词，搜全部素材库里的每一句台词</b>
-        <span>支持按台词内容或素材文件名搜；搜到的每句能一键导出前后各 N 秒的片段，直接拖进剪映。</span>
-      </div>
-    </section>
-
-    <!-- ---------- 素材 ---------- -->
-    <section class="panel" data-panel="assets">
-      <div class="page-hd">
-        <div><h1>素材 <span id="vcount" class="dim"></span></h1><p>点卡片预览，右上角 ··· 可重新识别 / 导入字幕 / 移除 / 删文件</p></div>
-        <div class="hd-tools">
-          <input id="vfilter" class="mini" placeholder="过滤文件名或库名…"
-            title="按文件名或库名过滤，边打边生效">
-          <button class="tiny" id="vMoreBtn"
-            title="多维筛选：素材库可多选、台词状态、分辨率、时长、编码、帧率、入库时间、有无动图/封面">筛选 ▾</button>
-          <button class="tiny" id="vResetBtn" title="清空所有筛选条件，回到完整列表">重置</button>
+      <div class="fs-foot">
+        <div class="fs-stats">{{ statsText }}</div>
+        <div class="fs-dev" :class="ocr.ok ? 'ok' : 'bad'">
+          台词来源：{{ ocr.ok ? 'OCR 识别画面硬字幕' : 'OCR 不可用' }}
         </div>
       </div>
+    </el-aside>
 
-      <!-- 筛选面板 -->
-      <div class="card filtercard hidden" id="vFilterCard">
-        <div class="frow">
-          <span class="cfg-label">素材库</span>
-          <div class="fchips" id="fLibs"></div>
-        </div>
-        <div class="frow">
-          <span class="cfg-label">台词</span>
-          <div class="fchips" id="fLines">
-            <label class="fchip"><input type="checkbox" value="has"><span>有台词</span></label>
-            <label class="fchip"><input type="checkbox" value="none"><span>没台词</span></label>
-            <label class="fchip"><input type="checkbox" value="err"><span>识别失败</span></label>
-          </div>
-        </div>
-        <div class="frow">
-          <span class="cfg-label">分辨率</span>
-          <div class="fchips" id="fRes">
-            <label class="fchip"><input type="checkbox" value="2160"><span>4K / 2160p</span></label>
-            <label class="fchip"><input type="checkbox" value="1080"><span>1080p</span></label>
-            <label class="fchip"><input type="checkbox" value="720"><span>720p</span></label>
-            <label class="fchip"><input type="checkbox" value="sd"><span>标清 / 竖屏</span></label>
-          </div>
-        </div>
-        <div class="frow">
-          <span class="cfg-label">时长</span>
-          <div class="fchips" id="fDur">
-            <label class="fchip"><input type="checkbox" value="s30"><span>30 秒内</span></label>
-            <label class="fchip"><input type="checkbox" value="m30"><span>30 秒 - 5 分</span></label>
-            <label class="fchip"><input type="checkbox" value="m5_20"><span>5 - 20 分</span></label>
-            <label class="fchip"><input type="checkbox" value="l20"><span>20 分以上</span></label>
-          </div>
-        </div>
-        <div class="frow">
-          <span class="cfg-label">编码</span>
-          <select id="fCodec" class="picker narrow">
-            <option value="">全部</option>
-          </select>
-          <span class="cfg-label">帧率</span>
-          <select id="fFps" class="picker narrow">
-            <option value="">全部</option>
-            <option value="23.976">23.976 / 24</option>
-            <option value="25">25</option>
-            <option value="29.97">29.97 / 30</option>
-            <option value="50">50 / 60</option>
-          </select>
-          <span class="cfg-label">入库</span>
-          <select id="fAge" class="picker narrow">
-            <option value="">全部时间</option>
-            <option value="7">最近 7 天</option>
-            <option value="30">最近 30 天</option>
-            <option value="90">最近 90 天</option>
-          </select>
-        </div>
-        <div class="frow">
-          <span class="cfg-label">其它</span>
-          <div class="fchips">
-            <label class="fchip"><input type="checkbox" id="fHasGif"><span>有动图</span></label>
-            <label class="fchip"><input type="checkbox" id="fHasCover"><span>有封面</span></label>
-            <label class="fchip"><input type="checkbox" id="fNoGif"><span>无动图</span></label>
-          </div>
-        </div>
-        <div class="frow fsum dim" id="fSummary"></div>
+    <el-container class="fs-right">
+      <el-main class="fs-main">
+        <!-- keep-alive：切页签不销毁组件。方框复查一部片的清单要 verify 好几秒，
+             每次切回来都重拉一遍没法忍；素材页的筛选状态、手绘的工程状态同理。 -->
+        <keep-alive>
+          <libs-view     v-if="tab === 'libs'"></libs-view>
+          <search-view   v-else-if="tab === 'search'"></search-view>
+          <assets-view   v-else-if="tab === 'assets'"></assets-view>
+          <gen-view      v-else-if="tab === 'gen'"></gen-view>
+          <handdraw-view v-else-if="tab === 'hd'"></handdraw-view>
+          <box-view      v-else-if="tab === 'box'"></box-view>
+          <clips-view    v-else-if="tab === 'clips'"></clips-view>
+        </keep-alive>
+      </el-main>
+    </el-container>
+  </el-container>
+
+  <!-- ==================== 全局进度浮窗 ====================
+       挂在最外层而不是某个页签里：在「素材」页点「重新识别台词」时
+       进度也能当场看见，不用切回素材库页找。没任务时整块不渲染。 -->
+  <div class="fs-dock" v-if="taskList.length" id="tasksLibs">
+    <el-card v-for="t in taskList" :key="t.root" shadow="always" class="fs-dock-card">
+      <div class="fs-dock-hd">
+        <b>{{ t.lib }}</b>
+        <span class="dim">{{ dockHead(t) }}</span>
+        <el-tag size="small" v-if="dockPhase(t)" type="info">{{ dockPhase(t) }}</el-tag>
+        <span class="fs-dock-pct">{{ dockPct(t) }}%</span>
+        <el-button link size="small" @click="dockOpen = !dockOpen"
+          :title="dockOpen ? '收起详情' : '展开详情'">{{ dockOpen ? '收起' : '展开' }}</el-button>
       </div>
+      <el-progress :percentage="dockPct(t)" :stroke-width="8" :show-text="false"/>
+      <div class="fs-dock-msg">{{ t.message }}{{ dockEta(t) }}</div>
+    </el-card>
+  </div>
 
-      <div id="videos" class="videos"></div>
-    </section>
-
-    <!-- ---------- AI 生成（对话窗口） ---------- -->
-    <section class="panel" data-panel="gen">
-      <div class="page-hd">
-        <div><h1>AI 生成</h1><p>对话式出片 · 本地 MiniMax H3 · 成片直接进素材库</p></div>
-        <div class="hd-tools">
-          <span id="genSrv" class="gen-srv"></span>
-        </div>
-      </div>
-
-      <div class="chatlog" id="chatLog">
-        <div class="chat-empty" id="chatEmpty">说一句话就能出片：描述画面、镜头、光线（英文效果最好）。<br>回车发送 · 成片和台词自动进素材库「AI生成」</div>
-      </div>
-
-      <div class="composer">
-        <div class="composer-main">
-          <textarea id="genPrompt" rows="2" placeholder="描述你想要的画面…（Enter 发送，Shift+Enter 换行）"></textarea>
-          <button id="btnGen" class="primary send"
-            title="按提示词生成一段视频（英文描述效果最好）。成片落在项目「生成」目录，不进素材库">发送</button>
-        </div>
-        <div class="composer-row">
-          <button id="btnGenRef" class="tiny" title="参考图：上传后用 &lt;Picture 1&gt; 在提示词里引用，锁形象/风格">参考图</button>
-          <input type="file" id="genRefFile" accept="image/*" hidden>
-          <span id="genRefName" class="dim gen-refname"></span>
-          <select id="genDur" class="picker" title="时长（5~15 秒）">
-            <option value="5">5 秒</option>
-            <option value="8">8 秒</option>
-            <option value="12">12 秒</option>
-            <option value="15">15 秒（上限）</option>
-          </select>
-          <select id="genAspect" class="picker" title="宽高比"></select>
-          <select id="genMp" class="picker" title="清晰度">
-            <option value="0.3">标准 0.3MP（快）</option>
-            <option value="0.5">较好 0.5MP</option>
-            <option value="1">高清 1.0MP（慢）</option>
-          </select>
-          <a href="javascript:;" class="composer-more" id="genMore"
-            title="展开落点目录 / 输出文件名 / 随机种子等高级选项">更多 ▾</a>
-        </div>
-        <div class="composer-adv hidden" id="genAdv">
-          <span class="cfg-label">落点</span>
-          <span class="dim" id="genOutDir" title="生成产物不进素材库，单独放项目目录">—</span>
-          <span class="cfg-label">文件名</span>
-          <input id="genName" class="mini" placeholder="可空，默认按时间戳">
-          <span class="cfg-label">种子</span>
-          <input id="genSeed" type="number" class="mini" value="0" min="0" title="0 = 随机；固定同一个数字可复现同一构图">
-        </div>
-        <div class="composer-row gen-examples">
-          <span class="cfg-label">试试</span>
-          <button class="tiny gen-ex" title="点一下把这段英文示例提示词填进输入框，改改就能发" data-p="Professional digital human news anchor in a modern broadcast studio, speaking calmly to the camera. Medium shot, soft studio lighting, clean background.">演播室口播</button>
-          <button class="tiny gen-ex" title="点一下把这段英文示例提示词填进输入框，改改就能发" data-p="Close-up of a coffee cup on a wooden table, steam rising, morning light through the window, slow zoom in.">咖啡特写</button>
-          <button class="tiny gen-ex" title="点一下把这段英文示例提示词填进输入框，改改就能发" data-p="A drone shot flying over a rice terrace at sunrise, mist in the valleys, cinematic wide shot.">航拍日出</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- ---------- 白板手绘 ---------- -->
-    <section class="panel" data-panel="hd">
-      <div class="page-hd">
-        <div><h1>白板手绘 <span id="hdSrv" class="dim"></span></h1>
-          <p>文稿 → 分幕 → 线稿 → 区域标注 → 逐笔渲染 → 配音合成（本地 CPU，不占显卡）</p></div>
-        <div class="hd-tools">
-          <span class="dim" id="hdRootDir" title="手绘工程目录">—</span>
-        </div>
-      </div>
-
-      <div class="hd-steps">
-        <div class="hd-step" data-s="1"><b>1</b>建工程<small>文稿 / 字幕</small></div>
-        <div class="hd-arrow">→</div>
-        <div class="hd-step" data-s="2"><b>2</b>分幕建议<small>按 25~35 秒切</small></div>
-        <div class="hd-arrow">→</div>
-        <div class="hd-step" data-s="3"><b>3</b>线稿+标注<small>逐幕标注区域</small></div>
-        <div class="hd-arrow">→</div>
-        <div class="hd-step" data-s="4"><b>4</b>批准时间轴<small>画面≥字幕</small></div>
-        <div class="hd-arrow">→</div>
-        <div class="hd-step" data-s="5"><b>5</b>逐幕渲染<small>逐笔动画</small></div>
-        <div class="hd-arrow">→</div>
-        <div class="hd-step" data-s="6"><b>6</b>配音合成<small>女声+ 伴奏</small></div>
-      </div>
-
-      <div class="hd-proj" id="hdProj">
-        <div class="hd-empty">
-          当前没有手绘工程。第 1 步：上传一个<b>.txt 文稿</b>或 <b>.srt 字幕</b>开始。
-        </div>
-      </div>
-
-      <div class="hd-body" id="hdBody">
-        <!-- 1 建工程 -->
-        <div class="hd-card">
-          <div class="hd-card-hd"><b>1 · 建工程</b>
-            <span class="dim">文稿按句拆字幕并估时间轴；已有字幕直接用</span></div>
-          <div class="hd-row">
-            <button class="tiny" id="hdUpScript"
-              title="上传 .txt/.md 文稿或 .srt 字幕。有字幕就直接用它的时间轴，没有才按句拆文稿并估算时间">上传文稿/字幕</button>
-            <span id="hdUpName" class="dim">未选择</span>
-          </div>
-          <div class="hd-row">
-            <input id="hdProjName" class="inp" placeholder="工程名（如 光电效应）">
-            <input id="hdTitle" class="inp" placeholder="片名（可选）">
-            <button class="primary tiny" id="hdInit"
-              title="按工程名建工程：把文稿拆成字幕并估时间轴。工程落在项目「手绘工程」目录下，不进素材库">建工程</button>
-          </div>
-        </div>
-
-        <!-- 2 分幕建议 -->
-        <div class="hd-card">
-          <div class="hd-card-hd"><b>2 · 分幕建议</b>
-            <span class="dim">读工程字幕，按目标秒数切幕</span></div>
-          <div class="hd-row">
-            <label class="dim">每幕目标秒</label>
-            <input id="hdTargetSec" class="inp narrow" type="number" value="30" min="10" max="120">
-            <button class="tiny" id="hdSuggest"
-              title="读工程里的字幕，按左边填的每幕目标秒数切幕，给出分幕建议（还没渲染画面）">出分幕建议</button>
-            <button class="tiny" id="hdRegions"
-              title="渲染一张分区检查图，看这一幕的画面区域划分对不对。只出图不渲染成片，很快">渲染分区检查图</button>
-          </div>
-          <div id="hdSuggestOut" class="hd-out"></div>
-        </div>
-
-        <!-- 3 线稿 + 标注 -->
-        <div class="hd-card">
-          <div class="hd-card-hd"><b>3 · 线稿 + 区域标注</b>
-            <span class="dim">每幕一张暖米黄纸底线稿 + 区域标注 JSON（决定谁先画、画多久）</span></div>
-          <div class="hd-row">
-            <input id="hdSceneId" class="inp narrow" placeholder="scene-01" value="scene-01">
-            <button class="tiny" id="hdUpImage"
-              title="上传这一幕的线稿图（暖米黄纸底）。不传就用引擎默认的空白纸底">上传线稿图</button>
-            <span id="hdImgName" class="dim">未选择</span>
-          </div>
-          <div class="hd-row">
-            <label class="dim">标注 JSON</label>
-            <button class="tiny" id="hdTplAnn"
-              title="往下面的标注框里填一份模板 JSON，照着改比从零写快">载入模板</button>
-            <span class="dim">canvas 必须等于源图像素，sequence 按字幕叙事顺序</span>
-          </div>
-          <textarea id="hdAnn" class="hd-ann" rows="8" placeholder='{"sceneId":"scene-01","canvas":{"width":1920,"height":1080},"sceneDurationMs":24000,"elements":[...]}'></textarea>
-          <div class="hd-row">
-            <button class="primary tiny" id="hdAnnotate"
-              title="把标注 JSON 写进工程。它决定这一幕谁先画、画多久；canvas 必须等于源图像素">写标注</button>
-            <span id="hdAnnMsg" class="dim"></span>
-          </div>
-        </div>
-
-        <!-- 4 时间轴 + 5 渲染 + 6 合成 -->
-        <div class="hd-card">
-          <div class="hd-card-hd"><b>4~6 · 时间轴 · 渲染 · 合成</b>
-            <span class="dim">画面总时长必须 ≥ 字幕总时长，否则引擎拒绝正式渲染</span></div>
-          <div class="hd-row" id="hdTlRow">
-            <span class="dim">时间轴状态：<b id="hdTlStatus">-</b></span>
-            <span class="dim" id="hdTlAdvice"></span>
-            <button class="tiny" id="hdApprove"
-              title="批准时间轴。画面总时长必须 ≥ 字幕总时长，短了会被引擎拒绝正式渲染">批准时间轴</button>
-            <button class="tiny" id="hdPreview"
-              title="只渲染前 3 秒。想快速看笔迹和构图对不对先用这个，别一上来就整幕渲染">短预览 3s</button>
-            <button class="primary tiny" id="hdRender"
-              title="渲染这一幕的完整画面。本地 CPU 逐笔绘制，不占显卡，一幕通常几分钟">渲染这一幕</button>
-          </div>
-          <div class="hd-row">
-            <input id="hdVoiceText" class="inp" placeholder="试听文案（10~20 秒，含数字和问句）">
-            <button class="tiny" id="hdAudition"
-              title="用左边这段文案试听音色。只出一段试听音频，不写进工程">试听音色</button>
-            <label class="hd-chk"><input type="checkbox" id="hdAllowNet"
-              title="配音要把文本送到云端 TTS。不勾选就无法合成配音"> 联网许可</label>
-            <button class="primary tiny" id="hdMix"
-              title="把配音和已渲染的画面合成为成片，落到项目「生成」目录，不进素材库">配音合成成片</button>
-          </div>
-          <div class="hd-row">
-            <span class="dim" id="hdOutDir" title="手绘工程与成片都在 FrameSeek 项目目录下，不进素材库">—</span>
-            <button class="tiny" id="hdQa"
-              title="对成片跑质检：时长够不够、音画对不对齐、字幕有没有被切掉">质检</button>
-            <button class="tiny" id="hdClear"
-              title="清空当前会话气泡和临时选择。已经落盘的工程和成片不受影响">清空会话</button>
-          </div>
-        </div>
-
-        <!-- 会话气泡 -->
-        <div class="chatlog hd-chat" id="hdChat">
-          <div class="chat-empty" id="hdChatEmpty">操作记录会出现在这里 —— 每步的实际产出（图片 / mp4 / 报错）</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ---------- 方框复查 ---------- -->
-    <section class="panel" data-panel="box">
-      <div class="page-hd">
-        <div><h1>方框复查 <span id="bxLib" class="dim"></span></h1>
-          <p>台词帧 · 台词框 · 文字 —— 把框画回画面上，逐句核对圈得对不对</p></div>
-        <div class="hd-tools">
-          <select id="bxLibPick" class="picker"
-            title="只看某个素材库的片子。默认「全部库」= 列出所有库里已索引、且有台词的素材"></select>
-          <input id="bxSearch" class="mini" placeholder="搜索片名…"
-            title="按片名关键字过滤右边的片单，边打边生效。多个词用空格分隔，要全部命中">
-          <select id="bxPick" class="picker"
-            title="选一部片子：会列出它全部台词，逐句核对画面方框圈得对不对"></select>
-          <span id="bxHit" class="dim"></span>
-          <button id="bxReload" class="tiny"
-            title="重新拉这部片子的台词清单和校验结论。刚改过字幕或补过框就点它">刷新</button>
-        </div>
-      </div>
-
-      <div class="bxsum" id="bxSum"></div>
-
-      <div class="bxwrap">
-        <!-- 左：台词清单 -->
-        <div class="bxlist card">
-          <div class="bxbar">
-            <input id="bxFilter" class="mini" placeholder="过滤台词…"
-              title="按台词文字过滤清单，边打边生效">
-            <div class="segs" id="bxSegs">
-              <button data-f="all" class="on" title="显示全部台词">全部</button>
-              <button data-f="bad" title="只看可疑：方框对不上，或字体偏离度跟本部片主流字幕不一致的">可疑</button>
-              <button data-f="nobox" title="只看没有画面方框凭证的。语音转写和外挂字幕来源本来就没有框，属正常">无框</button>
-            </div>
-          </div>
-          <div id="bxRows" class="bxrows"></div>
-        </div>
-
-        <!-- 右：台词帧 + 框 + 文字 -->
-        <div class="bxview card" id="bxView">
-          <div class="empty dim">左边点一条台词</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ---------- 片段 ---------- -->
-    <section class="panel" data-panel="clips">
-      <div class="page-hd">
-        <div><h1>导出片段</h1><p>前后各 <b id="preEcho">5</b> / <b id="postEcho">5</b> 秒（在「台词检索」里改）</p></div>
-      </div>
-      <div id="clips" class="clips"></div>
-    </section>
-
-
-  </main>
+  <!-- ==================== 播放器 ==================== -->
+  <el-dialog v-model="player.on" :title="player.title" width="62%" top="6vh"
+             destroy-on-close @closed="onPlayerClosed" class="fs-player-dlg">
+    <video ref="videoEl" controls preload="metadata" class="fs-player-video"></video>
+    <template #footer>
+      <el-button @click="player.on = false">关闭</el-button>
+      <el-button type="primary" @click="clipHere">导出此处 ± 片段</el-button>
+    </template>
+  </el-dialog>
 </div>
 
-<!-- 全局进度浮窗：OCR / 截图分片 / 索引 的进度。
-     放在 body 底下而不是素材库页里——在「素材」页点「重新识别台词」时，
-     进度也能当场看见，不用切回素材库页找。没任务时整块不显示。 -->
-<div id="tasksLibs" class="tasks dock hidden"></div>
 
-<!-- 弹窗 -->
-<div id="modal" class="modal hidden">
-  <div class="modal-box">
-    <div class="mhd"><b id="mTitle"></b><button id="mClose" class="close2">×</button></div>
-    <div class="mbody" id="mBody"></div>
+<!-- ==================== 素材库 ==================== -->
+<script type="text/x-template" id="tpl-libs">
+<div class="fs-page">
+  <div class="fs-page-hd">
+    <div>
+      <h1>素材库</h1>
+      <p>登记本地文件夹，索引出台词与截图</p>
+    </div>
+  </div>
+
+  <el-card shadow="never" class="fs-card">
+    <div class="fs-addrow">
+      <el-input id="libPath" v-model="form.path" placeholder="素材文件夹绝对路径，例如 E:\视频\电影" clearable
+        title="填一个本地文件夹的绝对路径（最后一层就是要登记的库），登记后用它自己的「索引」按钮抽台词"/>
+      <el-input id="libName" v-model="form.name" placeholder="备注名（可空）" class="w200" clearable/>
+      <el-button id="btnAddLib" type="primary" @click="addLib"
+        title="把一个本地文件夹登记成素材库。只登记、不扫描——登记完再点「索引」才抽台词和封面">＋ 登记</el-button>
+      <el-button id="btnScanAll" @click="askScanAll"
+        title="对所有已登记库跑一遍索引。台词来源优先级：同名 .srt → 内嵌字幕 → OCR 画面硬字幕；同一文件按 md5 去重，不会重复入库">索引全部</el-button>
+    </div>
+    <div class="fs-note">
+      登记信息存在项目目录 <code>{{ hubDb }}</code> · 同一个文件按 md5 去重，不会重复入库
+    </div>
+  </el-card>
+
+  <div class="fs-libcards" id="libCards">
+    <el-card v-for="l in libs" :key="l.id" shadow="hover" class="fs-libcard"
+             :class="{ 'is-missing': !l.exists }">
+      <template #header>
+        <div class="fs-libcard-hd">
+          <div class="min0">
+            <b :title="l.name">{{ l.name }}</b>
+            <div class="note" v-if="l.note">{{ l.note }}</div>
+          </div>
+          <el-tag v-if="!l.exists" type="danger" size="small">目录丢失</el-tag>
+          <el-tag v-else :type="l.indexed ? 'success' : 'info'" size="small">
+            {{ l.indexed ? '已索引' : '未索引' }}</el-tag>
+        </div>
+      </template>
+      <div class="fs-libpath" :title="l.path">{{ l.path }}</div>
+      <div class="fs-libstats">
+        <div><b>{{ l.videos }}</b><span>素材</span></div>
+        <div><b>{{ l.lines }}</b><span>台词</span></div>
+        <div><b class="sm">{{ fmtDur(l.duration) }}</b><span>{{ fmtAgo(l.last_scan_at) }}索引</span></div>
+      </div>
+      <div class="fs-libft">
+        <el-button size="small" type="primary" @click="askScan(l)"
+          title="扫描这个库：新增的素材入库、抽台词（同名 .srt → 内嵌字幕 → OCR 画面硬字幕）、生成封面和动图。会先弹设置让你确认">索引</el-button>
+        <el-button size="small" @click="askUpload(l)" title="把本地视频直接传进这个库，传完自动出现在素材页">上传</el-button>
+        <el-button size="small" v-if="l.ignored" @click="askIgnored(l)"
+          :title="'这个库里有 ' + l.ignored + ' 个文件被标为忽略（不入库）。点开可以逐个放回'">忽略 {{ l.ignored }}</el-button>
+        <el-button size="small" type="danger" plain @click="delLib(l)"
+          title="把这个库从登记里移除。只删索引，不动磁盘上的视频文件">删除</el-button>
+      </div>
+    </el-card>
+    <div v-if="!libs.length" class="dim pad">还没有素材库，在上面填路径登记一个</div>
+  </div>
+
+  <!-- 索引设置 -->
+  <el-dialog v-model="dlg.scan" :title="dlg.scanTitle" width="560px">
+    <el-checkbox v-model="scanOpt.asr" label="无字幕时用 OCR 识别画面"/>
+    <div class="fs-hint" v-html="scanHint"></div>
+    <el-checkbox v-model="scanOpt.retry" label="重新补一遍没有台词的素材"/>
+    <div class="fs-hint">上次没拿到台词的，这次会再来一次。已经拿到台词的不会重跑。</div>
+    <el-checkbox v-model="scanOpt.gif" label="生成动图预览"/>
+    <div class="fs-hint">列表缩略图悬停时播放的小动图；关掉索引会快不少。</div>
+    <div class="fs-hint" v-if="scanTarget">目录：{{ scanTarget.path }}</div>
+    <template #footer>
+      <el-button @click="dlg.scan = false">取消</el-button>
+      <el-button id="mGo" type="primary" @click="doScan">开始索引</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 上传 -->
+  <el-dialog v-model="dlg.upload" :title="dlg.uploadTitle" width="560px">
+    <el-upload drag :auto-upload="false" :on-change="onPickFiles" multiple
+               accept="video/*" :file-list="uploadFiles" class="fs-upload">
+      <el-icon class="fs-upload-icon"><UploadFilled></UploadFilled></el-icon>
+      <div class="el-upload__text">拖拽视频到这里，或 <em>点击选择</em></div>
+      <template #tip><div class="el-upload__tip">落到 {{ scanTarget ? scanTarget.path : '' }}\.frameseek\uploads</div></template>
+    </el-upload>
+    <div class="fs-hint" v-if="uploadMsg">{{ uploadMsg }}</div>
+    <template #footer>
+      <el-button @click="dlg.upload = false">关闭</el-button>
+      <el-button type="primary" :disabled="!uploadFiles.length" @click="doUpload">上传</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 忽略名单 -->
+  <el-dialog v-model="dlg.ignored" :title="dlg.ignoredTitle" width="620px">
+    <div class="fs-hint">这些素材被「从库中移除」过，磁盘文件还在。索引时会跳过它们，放回来就会重新入库。</div>
+    <div class="fs-iglist">
+      <div v-for="r in ignoredRows" :key="r.md5" class="fs-igrow">
+        <div class="min0"><b>{{ r.name || r.md5 }}</b><div class="dim">{{ r.rel }}</div></div>
+        <el-button size="small" @click="restoreOne(r)" title="取消忽略，下次索引时这个文件会正常入库">放回</el-button>
+      </div>
+      <div v-if="!ignoredRows.length" class="dim pad">（空）</div>
+    </div>
+    <template #footer>
+      <el-button @click="dlg.ignored = false">关闭</el-button>
+      <el-button :disabled="!ignoredRows.length" @click="restoreAll">全部放回（{{ ignoredRows.length }}）</el-button>
+    </template>
+  </el-dialog>
+</div>
+</script>
+
+
+<!-- ==================== 台词检索 ==================== -->
+<script type="text/x-template" id="tpl-search">
+<div class="fs-page">
+  <div class="fs-page-hd">
+    <div><h1>台词检索</h1><p>跨全部素材库搜台词，回车直接搜</p></div>
+  </div>
+
+  <el-card shadow="never" class="fs-card">
+    <div class="fs-bigsearch">
+      <el-input id="q" v-model="q" size="large" placeholder="他在思念什么 / 回家 / 你洗不洗脸…"
+                clearable @keyup.enter="doSearch" @clear="onClear">
+        <template #prefix><el-icon><Search></Search></el-icon></template>
+        <template #append>
+          <el-button id="btnSearch" type="primary" @click="doSearch"
+            title="跨全部已登记库搜台词，中文子串也行（回车等价）。搜到的每句都能一键导出前后各 N 秒">搜索</el-button>
+        </template>
+      </el-input>
+    </div>
+    <div class="fs-searchcfg">
+      <span class="fs-label">导出片段</span>
+      前 <el-input-number id="pre" v-model="pre" :min="0" :max="60" size="small" controls-position="right"/> 秒
+      后 <el-input-number id="post" v-model="post" :min="0" :max="60" size="small" controls-position="right"/> 秒
+      <el-switch id="fast" v-model="fast" size="small" active-text="秒切"
+        title="秒切＝直接拷贝原视频流（快，但只能落在关键帧上，切点可能差半秒）。不勾则重编码，切点帧精确，慢一些"/>
+      <span class="dim">搜到的每句都能一键导出前后各 N 秒，直接拖进剪映</span>
+    </div>
+  </el-card>
+
+  <div v-if="rows.length" class="fs-results" id="results">
+    <div v-for="r in rows" :key="r.id" class="fs-rrow">
+      <img :src="shotUrl(r)" loading="lazy" @click="playRow(r)"/>
+      <div class="fs-rbody">
+        <div class="ts">
+          {{ r.start_str }} → {{ r.end_str }}
+          <el-tag v-if="r.lib" size="small" type="info">{{ r.lib }}</el-tag>
+          <span v-html="boxMark(r)"></span>
+        </div>
+        <div class="txt" v-html="hl(r.text)"></div>
+        <div class="from">{{ r.name }}</div>
+      </div>
+      <div class="ops">
+        <el-button size="small" @click="playRow(r)" title="从这句台词的时间点开始播放原片">预览</el-button>
+        <el-button size="small" type="primary" @click="clipRow(r)"
+          :title="'导出这句台词前 ' + pre + 's、后 ' + post + 's 的 mp4，直接拖进剪映或 PR'">导出片段</el-button>
+      </div>
+    </div>
+  </div>
+  <el-empty v-else-if="searched" description="没有结果，换个词试试"/>
+  <div v-else class="fs-empty-tip" id="searchEmpty">
+    <b>输入关键词，搜全部素材库里的每一句台词</b>
+    <span>支持按台词内容或素材文件名搜；搜到的每句能一键导出前后各 N 秒的片段，直接拖进剪映。</span>
   </div>
 </div>
+</script>
 
-<div id="player" class="player hidden">
-  <div class="player-box">
-    <button class="close" id="btnClosePlayer">×</button>
-    <video id="video" controls></video>
-    <div class="pinfo"><span id="ptext"></span><button id="btnClipHere" class="primary">导出此处 ±片段</button></div>
+<!-- ==================== 素材 ==================== -->
+<script type="text/x-template" id="tpl-assets">
+<div class="fs-page">
+  <div class="fs-page-hd">
+    <div><h1>素材 <span class="dim">({{ viewCount }})</span></h1>
+      <p>点卡片预览，右上角 ··· 可重新识别 / 导入字幕 / 移除 / 删文件</p></div>
+    <div class="fs-tools">
+      <el-input id="vfilter" v-model="kw" class="mini" placeholder="过滤文件名或库名…" clearable
+        title="按文件名或库名过滤，边打边生效"/>
+      <el-button id="vMoreBtn" size="small" @click="showFilter = !showFilter"
+        title="多维筛选：素材库可多选、台词状态、分辨率、时长、编码、帧率、入库时间、有无动图/封面">
+        {{ showFilter ? '筛选 ▴' : '筛选 ▾' }}</el-button>
+      <el-button id="vResetBtn" size="small" @click="resetFilters" title="清空所有筛选条件，回到完整列表">重置</el-button>
+    </div>
+  </div>
+
+  <el-card v-show="showFilter" shadow="never" class="fs-card fs-filtercard" id="vFilterCard">
+    <div class="fs-frow">
+      <span class="fs-label">素材库</span>
+      <div class="fs-fchips" id="fLibs">
+        <el-checkbox v-model="libsAll" label="全部" size="small"/>
+        <el-checkbox v-for="l in allLibs" :key="l.id" v-model="libSel[l.id]" size="small"
+                     :title="l.path">{{ l.name }}<template v-if="l.builtin"> 🔒</template><b class="dim">{{ l.videos }}</b></el-checkbox>
+      </div>
+    </div>
+    <div class="fs-frow">
+      <span class="fs-label">台词</span>
+      <el-checkbox-group v-model="lineSel" size="small" class="fs-fchips" id="fLines">
+        <el-checkbox label="has" value="has">有台词</el-checkbox>
+        <el-checkbox label="none" value="none">没台词</el-checkbox>
+        <el-checkbox label="err" value="err">识别失败</el-checkbox>
+      </el-checkbox-group>
+    </div>
+    <div class="fs-frow">
+      <span class="fs-label">分辨率</span>
+      <el-checkbox-group v-model="resSel" size="small" class="fs-fchips" id="fRes">
+        <el-checkbox label="2160" value="2160">4K / 2160p</el-checkbox>
+        <el-checkbox label="1080" value="1080">1080p</el-checkbox>
+        <el-checkbox label="720" value="720">720p</el-checkbox>
+        <el-checkbox label="sd" value="sd">标清 / 竖屏</el-checkbox>
+      </el-checkbox-group>
+    </div>
+    <div class="fs-frow">
+      <span class="fs-label">时长</span>
+      <el-checkbox-group v-model="durSel" size="small" class="fs-fchips" id="fDur">
+        <el-checkbox label="s30" value="s30">30 秒内</el-checkbox>
+        <el-checkbox label="m30" value="m30">30 秒 - 5 分</el-checkbox>
+        <el-checkbox label="m5_20" value="m5_20">5 - 20 分</el-checkbox>
+        <el-checkbox label="l20" value="l20">20 分以上</el-checkbox>
+      </el-checkbox-group>
+    </div>
+    <div class="fs-frow">
+      <span class="fs-label">编码</span>
+      <el-select id="fCodec" v-model="codec" size="small" clearable placeholder="全部" class="w160">
+        <el-option v-for="c in codecs" :key="c" :label="c" :value="c"/>
+      </el-select>
+      <span class="fs-label">帧率</span>
+      <el-select id="fFps" v-model="fps" size="small" clearable placeholder="全部" class="w160">
+        <el-option label="23.976 / 24" value="23.976"/>
+        <el-option label="25" value="25"/>
+        <el-option label="29.97 / 30" value="29.97"/>
+        <el-option label="50 / 60" value="50"/>
+      </el-select>
+      <span class="fs-label">入库</span>
+      <el-select id="fAge" v-model="age" size="small" clearable placeholder="全部时间" class="w160">
+        <el-option label="最近 7 天" value="7"/>
+        <el-option label="最近 30 天" value="30"/>
+        <el-option label="最近 90 天" value="90"/>
+      </el-select>
+    </div>
+    <div class="fs-frow">
+      <span class="fs-label">其它</span>
+      <div class="fs-fchips">
+        <el-checkbox id="fHasGif" v-model="hasGif" size="small" label="有动图"/>
+        <el-checkbox id="fHasCover" v-model="hasCover" size="small" label="有封面"/>
+        <el-checkbox id="fNoGif" v-model="noGif" size="small" label="无动图"/>
+      </div>
+    </div>
+    <div class="fs-frow fs-fsum dim" id="fSummary">{{ summary }}</div>
+  </el-card>
+
+  <div class="fs-videos" id="videos">
+    <div v-for="(v, i) in view" :key="v.root + '#' + v.id" class="fs-vcard" :title="v.name">
+      <img :src="coverUrl(v)" loading="lazy"
+           @mouseenter="hoverGif($event, v, true)" @mouseleave="hoverGif($event, v, false)"
+           @click="preview(v)"/>
+      <el-dropdown trigger="click" placement="bottom-end" @command="cmd => onCmd(cmd, v)">
+        <el-button class="fs-vmore" size="small" text circle
+          :title="v.builtin ? '更多操作：打开文件夹 / 从库里移除 / 删除文件（AI 生成产物不做字幕识别）'
+                           : '更多操作：重新识别台词 / 导入字幕 / 打开文件夹 / 移除或删除'">···</el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="preview" title="在右侧播放器里预览这部片子">预览</el-dropdown-item>
+            <el-dropdown-item command="dir" title="在资源管理器里打开这个视频所在的文件夹">打开所在文件夹</el-dropdown-item>
+            <template v-if="!v.builtin">
+              <el-dropdown-item command="reimport"
+                title="用记事本改完视频同名的 .srt 后点这个：直接刷新数据库和截图，不用重跑 OCR">重新导入同名 SRT</el-dropdown-item>
+              <el-dropdown-item command="retranscribe"
+                title="重跑一次画面 OCR，重新识别硬字幕台词。已有的同名 .srt 会被覆盖">重新识别台词</el-dropdown-item>
+              <el-dropdown-item command="asr"
+                title="改用语音识别（听声音）出台词，适合没有画面字幕、只有人声的片子，耗时比 OCR 长">语音识别台词</el-dropdown-item>
+            </template>
+            <el-dropdown-item command="remove" title="只把这个视频从索引里移除，磁盘文件保留">从库中移除</el-dropdown-item>
+            <el-dropdown-item command="purge" divided
+              title="连磁盘文件一起删除，不可恢复（要连点两次确认）">删除素材及文件</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+      <div class="fs-vmeta">
+        <b>{{ v.name }}</b>
+        <span>{{ v.duration_str }} · {{ v.builtin ? '🔒 ' : '' }}{{ v.lib }}</span>
+        <div class="row2">
+          <el-tag v-if="v.builtin" size="small" title="AI 生成产物不参与台词识别">AI 生成</el-tag>
+          <el-tag v-else-if="v.err" size="small" type="danger">识别失败</el-tag>
+          <el-tag v-else-if="v.line_count" size="small" type="success">台词 {{ v.line_count }}</el-tag>
+          <el-tag v-else size="small" type="info">没台词</el-tag>
+        </div>
+      </div>
+    </div>
+    <div v-if="!view.length" class="dim pad">还没有素材，先去「素材库」登记并索引</div>
+  </div>
+
+  <!-- 重新识别台词 -->
+  <el-dialog v-model="dlg.re" title="重新识别台词" width="520px">
+    <div><b>{{ pickName }}</b></div>
+    <div class="fs-hint">当前台词 {{ prevCount }} 条（{{ prevSrc }}）。重新识别会
+      <b>先清空这些台词和旧截图</b>，再按最新逻辑重新识别。</div>
+    <el-checkbox v-model="reOpt.force" label="强制重跑 OCR（忽略已有字幕）"/>
+    <div class="fs-hint">默认按优先级：同名 .srt → 内嵌字幕 → OCR 识别画面。
+      上次是 OCR 时勾选它，才不会把上次生成的 .srt 又读一遍。进度看右下角浮窗。</div>
+    <template #footer>
+      <el-button @click="dlg.re = false">取消</el-button>
+      <el-button type="primary" @click="doRetranscribe">清空并重新识别</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 语音识别台词 -->
+  <el-dialog v-model="dlg.asr" title="语音识别台词" width="520px">
+    <div><b>{{ pickName }}</b></div>
+    <div class="fs-hint">听音轨转写对白，<b>不读</b>同名 .srt、不读内嵌字幕、也不跑 OCR。
+      适合画面上没有字幕（或字幕认不出来）的电影。</div>
+    <div class="fs-hint">当前台词 {{ prevCount }} 条（{{ prevSrc }}）。语音识别会
+      <b>先清空这些台词和旧截图</b>再转写。</div>
+    <div class="fs-mgrid">
+      <span>模型
+        <el-select v-model="asrOpt.model" size="small" class="w120">
+          <el-option v-for="m in ['tiny','base','small','medium']" :key="m"
+                     :label="m + (m === (asrOpt.info || {}).default_model ? '（默认）' : '')" :value="m"/>
+        </el-select>
+      </span>
+      <span class="dim">small 准确、tiny 快 3 倍但错字多；首次用某个模型要先下载（几百 MB）</span>
+    </div>
+    <div class="fs-hint">识别设备：{{ asrEta }}（粗估，进度看右下角浮窗）。
+      转写完会在视频同目录生成同名 .srt，可改完再「重新导入」。</div>
+    <template #footer>
+      <el-button @click="dlg.asr = false">取消</el-button>
+      <el-button type="primary" @click="doAsr">开始语音识别</el-button>
+    </template>
+  </el-dialog>
+</div>
+</script>
+
+
+<!-- ==================== AI 生成 ==================== -->
+<script type="text/x-template" id="tpl-gen">
+<div class="fs-page fs-page-gen">
+  <div class="fs-page-hd">
+    <div><h1>AI 生成</h1><p>对话式出片 · 本地 MiniMax H3 · 成片落在项目「生成」目录</p></div>
+    <div class="fs-tools">
+      <el-tag v-if="gen.ready" type="success" size="small">H3 引擎就绪 · 直调 ComfyUI 库</el-tag>
+      <el-tag v-else type="danger" size="small">引擎未就绪：{{ (gen.missing || []).join('、') }}</el-tag>
+    </div>
+  </div>
+
+  <div class="fs-chat" id="chatLog">
+    <div v-if="!msgs.length" class="fs-chat-empty" id="chatEmpty">
+      说一句话就能出片：描述画面、镜头、光线（英文效果最好）。<br>回车发送 · 成片落在项目「生成」目录
+    </div>
+    <div v-for="(m, i) in msgs" :key="i" class="fs-bub" :class="m.role">
+      <template v-if="m.role === 'me'">
+        <div class="bub-txt">{{ m.prompt }}</div>
+        <div class="bub-meta">{{ [m.dur + ' 秒', (m.aspect || '').split(' ')[0], m.mp + 'MP',
+              m.ref ? '带参考图' : ''].filter(Boolean).join(' · ') }}</div>
+      </template>
+      <template v-else-if="m.status === 'error'">
+        <div class="bub-err">{{ m.msg || '生成失败' }}</div>
+      </template>
+      <template v-else-if="m.status === 'done'">
+        <video class="bub-video" :src="mediaUrl(m.file, m.root)" controls preload="metadata" playsinline></video>
+        <div class="bub-meta">{{ m.name }}<template v-if="m.w"> · {{ m.w }}×{{ m.h }}</template>
+          <template v-if="m.seconds"> · {{ m.seconds }}s</template></div>
+        <div class="bub-acts">
+          <el-button link size="small" @click="goAssets">去素材页看</el-button>
+          <el-button link size="small" @click="clearChat">清空会话</el-button>
+        </div>
+      </template>
+      <template v-else>
+        <el-progress :percentage="m.pct || 0" :stroke-width="6"/>
+        <div class="bub-meta">{{ m.msg || '排队中' }}<template v-if="m.pct"> · {{ m.pct }}%</template></div>
+      </template>
+    </div>
+  </div>
+
+  <div class="fs-composer">
+    <div class="fs-composer-main">
+      <el-input id="genPrompt" v-model="prompt" type="textarea" :rows="2" resize="none"
+        placeholder="描述你想要的画面…（Enter 发送，Shift+Enter 换行）"
+        @keydown.enter.exact.prevent="submit"/>
+      <el-button id="btnGen" type="primary" :disabled="!gen.ready || !prompt.trim()" @click="submit"
+        title="按提示词生成一段视频（英文描述效果最好）。成片落在项目「生成」目录，不进素材库">发送</el-button>
+    </div>
+    <div class="fs-composer-row">
+      <el-button id="btnGenRef" size="small" @click="pickRef"
+        title="参考图：上传后用 &lt;Picture 1&gt; 在提示词里引用，锁形象/风格">参考图</el-button>
+      <input type="file" ref="refFile" accept="image/*" hidden @change="onRef"/>
+      <span v-if="gen.ref" class="fs-refname clr" @click="dropRef"
+        title="点此移除参考图">已选 {{ gen.refName }} · prompt 里用 &lt;Picture 1&gt; 引用（点此移除）</span>
+      <el-select id="genDur" v-model="dur" size="small" class="w100" title="时长（5~15 秒）">
+        <el-option label="5 秒" :value="5"/><el-option label="8 秒" :value="8"/>
+        <el-option label="12 秒" :value="12"/><el-option label="15 秒（上限）" :value="15"/>
+      </el-select>
+      <el-select id="genAspect" v-model="aspect" size="small" class="w120" title="宽高比">
+        <el-option v-for="a in gen.aspects" :key="a" :label="a" :value="a"/>
+      </el-select>
+      <el-select id="genMp" v-model="mp" size="small" class="w140" title="清晰度">
+        <el-option label="标准 0.3MP（快）" :value="0.3"/>
+        <el-option label="较好 0.5MP" :value="0.5"/>
+        <el-option label="高清 1.0MP（慢）" :value="1"/>
+      </el-select>
+      <el-button id="genMore" link size="small" @click="adv = !adv"
+        title="展开落点目录 / 输出文件名 / 随机种子等高级选项">{{ adv ? '收起 ▴' : '更多 ▾' }}</el-button>
+    </div>
+    <div v-show="adv" class="fs-composer-adv" id="genAdv">
+      <span class="fs-label">落点</span>
+      <span class="dim" id="genOutDir" title="生成产物不进素材库，单独放项目目录">{{ gen.outDir || '项目目录/生成' }}</span>
+      <span class="fs-label">文件名</span>
+      <el-input id="genName" v-model="fname" size="small" class="w200" placeholder="可空，默认按时间戳"/>
+      <span class="fs-label">种子</span>
+      <el-input-number id="genSeed" v-model="seed" size="small" :min="0" controls-position="right"
+        title="0 = 随机；固定同一个数字可复现同一构图"/>
+    </div>
+    <div class="fs-composer-row">
+      <span class="fs-label">试试</span>
+      <el-button v-for="e in examples" :key="e.t" size="small" class="gen-ex" @click="prompt = e.p"
+        :title="'点一下把这段英文示例提示词填进输入框，改改就能发'">{{ e.t }}</el-button>
+    </div>
   </div>
 </div>
+</script>
 
+<!-- ==================== 白板手绘 ==================== -->
+<script type="text/x-template" id="tpl-hd">
+<div class="fs-page">
+  <div class="fs-page-hd">
+    <div><h1>白板手绘</h1>
+      <p>文稿 → 分幕 → 线稿 → 区域标注 → 逐笔渲染 → 配音合成（本地 CPU，不占显卡）</p></div>
+    <div class="fs-tools">
+      <el-tag v-if="hd.ready" type="success" size="small">引擎就绪 · {{ hd.engine }} · 音色 {{ hd.voice }}</el-tag>
+      <el-tag v-else type="danger" size="small">未就绪：{{ (hd.missing || []).join('；') }}</el-tag>
+    </div>
+  </div>
+
+  <el-steps :active="step - 1" finish-status="success" align-center class="fs-steps">
+    <el-step title="建工程" description="文稿 / 字幕"/>
+    <el-step title="分幕建议" description="按 25~35 秒切"/>
+    <el-step title="线稿+标注" description="逐幕标注区域"/>
+    <el-step title="批准时间轴" description="画面≥字幕"/>
+    <el-step title="逐幕渲染" description="逐笔动画"/>
+    <el-step title="配音合成" description="女声 + 伴奏"/>
+  </el-steps>
+
+  <el-card shadow="never" class="fs-card fs-hdproj" id="hdProj">
+    <span v-if="!hd.project" class="dim">
+      当前没有手绘工程。第 1 步：上传一个 <b>.txt 文稿</b>或 <b>.srt 字幕</b>开始。
+    </span>
+    <span v-else v-html="projText"></span>
+    <div class="fs-hd-dirs">
+      <span class="dim" id="hdRootDir" title="手绘工程目录">工程 → {{ hd.base || '项目目录/手绘工程' }}</span>
+      <span class="dim" id="hdOutDir" title="手绘工程与成片都在 FrameSeek 项目目录下，不进素材库">成片 → {{ hd.outDir || '项目目录/生成' }}</span>
+    </div>
+  </el-card>
+
+  <el-card shadow="never" class="fs-card">
+    <template #header><b>1 · 建工程</b>
+      <span class="dim">文稿按句拆字幕并估时间轴；已有字幕直接用</span></template>
+    <div class="fs-hd-row">
+      <el-button id="hdUpScript" size="small" @click="upload('script')"
+        title="上传 .txt/.md 文稿或 .srt 字幕。有字幕就直接用它的时间轴，没有才按句拆文稿并估算时间">上传文稿/字幕</el-button>
+      <span class="dim" id="hdUpName">{{ hd.upScriptName || '未选择' }}</span>
+    </div>
+    <div class="fs-hd-row">
+      <el-input id="hdProjName" v-model="pname" size="small" class="w200" placeholder="工程名（如 光电效应）"/>
+      <el-input id="hdTitle" v-model="ptitle" size="small" class="w200" placeholder="片名（可选）"/>
+      <el-button id="hdInit" type="primary" size="small" :disabled="!hd.ready || !hd.upScript" @click="init"
+        title="按工程名建工程：把文稿拆成字幕并估时间轴。工程落在项目「手绘工程」目录下，不进素材库">建工程</el-button>
+    </div>
+  </el-card>
+
+  <el-card shadow="never" class="fs-card">
+    <template #header><b>2 · 分幕建议</b><span class="dim">读工程字幕，按目标秒数切幕</span></template>
+    <div class="fs-hd-row">
+      <span class="dim">每幕目标秒</span>
+      <el-input-number id="hdTargetSec" v-model="targetSec" size="small" :min="10" :max="120"
+                       controls-position="right"/>
+      <el-button id="hdSuggest" size="small" @click="suggest"
+        title="读工程里的字幕，按左边填的每幕目标秒数切幕，给出分幕建议（还没渲染画面）">出分幕建议</el-button>
+      <el-button id="hdRegions" size="small" @click="regions"
+        title="渲染一张分区检查图，看这一幕的画面区域划分对不对。只出图不渲染成片，很快">渲染分区检查图</el-button>
+    </div>
+    <div class="fs-scenes" id="hdSuggestOut">
+      <div v-for="s in scenes" :key="s.sceneIndex" class="fs-scene">
+        <b>幕 {{ s.sceneIndex }}</b>
+        <span class="dim">字幕 {{ (s.cueRange || [])[0] }}~{{ (s.cueRange || [])[1] }} ·
+          {{ (s.sceneDurationMs / 1000).toFixed(1) }}s<br>{{ sceneText(s) }}</span>
+      </div>
+    </div>
+  </el-card>
+
+  <el-card shadow="never" class="fs-card">
+    <template #header><b>3 · 线稿 + 区域标注</b>
+      <span class="dim">每幕一张暖米黄纸底线稿 + 区域标注 JSON（决定谁先画、画多久）</span></template>
+    <div class="fs-hd-row">
+      <el-input id="hdSceneId" v-model="sceneId" size="small" class="w140" placeholder="scene-01"/>
+      <el-button id="hdUpImage" size="small" @click="upload('image')"
+        title="上传这一幕的线稿图（暖米黄纸底）。不传就用引擎默认的空白纸底">上传线稿图</el-button>
+      <span class="dim" id="hdImgName">{{ hd.upImageName || '未选择' }}</span>
+    </div>
+    <div class="fs-hd-row">
+      <span class="dim">标注 JSON</span>
+      <el-button id="hdTplAnn" size="small" @click="tplAnn"
+        title="往下面的标注框里填一份模板 JSON，照着改比从零写快">载入模板</el-button>
+      <span class="dim">canvas 必须等于源图像素，sequence 按字幕叙事顺序</span>
+    </div>
+    <el-input id="hdAnn" v-model="ann" type="textarea" :rows="8"
+      placeholder='{"sceneId":"scene-01","canvas":{"width":1920,"height":1080},"sceneDurationMs":24000,"elements":[...]}'/>
+    <div class="fs-hd-row">
+      <el-button id="hdAnnotate" type="primary" size="small" @click="annotate"
+        title="把标注 JSON 写进工程。它决定这一幕谁先画、画多久；canvas 必须等于源图像素">写标注</el-button>
+      <span class="dim" id="hdAnnMsg">{{ annMsg }}</span>
+    </div>
+  </el-card>
+
+  <el-card shadow="never" class="fs-card">
+    <template #header><b>4~6 · 时间轴 · 渲染 · 合成</b>
+      <span class="dim">画面总时长必须 ≥ 字幕总时长，否则引擎拒绝正式渲染</span></template>
+    <div class="fs-hd-row" id="hdTlRow">
+      <span class="dim">时间轴状态：<b id="hdTlStatus">{{ tlStatus }}</b></span>
+      <span class="dim" id="hdTlAdvice">{{ tlAdvice }}</span>
+      <el-button id="hdApprove" size="small" @click="approve"
+        title="批准时间轴。画面总时长必须 ≥ 字幕总时长，短了会被引擎拒绝正式渲染">批准时间轴</el-button>
+      <el-button id="hdPreview" size="small" @click="render(true)"
+        title="只渲染前 3 秒。想快速看笔迹和构图对不对先用这个，别一上来就整幕渲染">短预览 3s</el-button>
+      <el-button id="hdRender" type="primary" size="small" :disabled="tlStatus !== 'approved'" @click="render(false)"
+        title="渲染这一幕的完整画面。本地 CPU 逐笔绘制，不占显卡，一幕通常几分钟">渲染这一幕</el-button>
+    </div>
+    <div class="fs-hd-row">
+      <el-input id="hdVoiceText" v-model="voiceText" size="small" class="w260"
+                placeholder="试听文案（10~20 秒，含数字和问句）"/>
+      <el-button id="hdAudition" size="small" @click="audition"
+        title="用左边这段文案试听音色。只出一段试听音频，不写进工程">试听音色</el-button>
+      <el-checkbox id="hdAllowNet" v-model="allowNet"
+        title="配音要把文本送到云端 TTS。不勾选就无法合成配音">联网许可</el-checkbox>
+      <el-button id="hdMix" type="primary" size="small" @click="mix"
+        title="把配音和已渲染的画面合成为成片，落到项目「生成」目录，不进素材库">配音合成成片</el-button>
+    </div>
+    <div class="fs-hd-row">
+      <el-button id="hdQa" size="small" @click="qa"
+        title="对成片跑质检：时长够不够、音画对不对齐、字幕有没有被切掉">质检</el-button>
+      <el-button id="hdClear" size="small" @click="clearChat"
+        title="清空当前会话气泡和临时选择。已经落盘的工程和成片不受影响">清空会话</el-button>
+    </div>
+  </el-card>
+
+  <div class="fs-chat fs-hdchat" id="hdChat">
+    <div v-if="!chats.length" class="fs-chat-empty" id="hdChatEmpty">
+      操作记录会出现在这里 —— 每步的实际产出（图片 / mp4 / 报错）
+    </div>
+    <div v-for="(m, i) in chats" :key="i" class="fs-bub" :class="m.who">
+      <div v-if="m.run" class="bub-run">
+        <div class="bub-txt">{{ m.text }}</div>
+        <el-progress :percentage="m.pct || 0" :stroke-width="6"/>
+        <div class="bub-meta">{{ m.meta || (m.pct + '%') }}</div>
+      </div>
+      <div v-else-if="m.kind === 'media'" class="bub-media">
+        <div class="bub-txt">{{ m.text }}</div>
+        <img v-if="m.image" :src="hdUrl(m.file)" alt="检查图"/>
+        <video v-else :src="hdUrl(m.file)" controls playsinline></video>
+        <div class="hd-acts">
+          <el-button link size="small" tag="a" :href="hdUrl(m.file)" target="_blank">打开原文件</el-button>
+          <span class="dim">{{ (m.file || '').split(/[\\/]/).pop() }}</span>
+        </div>
+      </div>
+      <div v-else-if="m.kind === 'kv'" class="bub-kv">
+        <div class="bub-txt">{{ m.text }}</div>
+        <div class="hd-kv"><b v-for="(r, j) in m.rows" :key="j">{{ r[0] }}<span>{{ r[1] }}</span></b></div>
+      </div>
+      <div v-else :class="m.kind === 'err' ? 'bub-err' : 'bub-txt'">{{ m.text }}</div>
+      <div v-if="m.meta && !m.run" class="bub-meta">{{ m.meta }}</div>
+    </div>
+  </div>
+</div>
+</script>
+
+
+<!-- ==================== 方框复查 ==================== -->
+<script type="text/x-template" id="tpl-box">
+<div class="fs-page fs-page-box">
+  <div class="fs-page-hd">
+    <div><h1>方框复查 <span class="dim" v-if="rep">{{ rep.video.name }} · {{ rep.total }} 条台词</span></h1>
+      <p>台词帧 · 台词框 · 文字 —— 把框画回画面上，逐句核对圈得对不对</p></div>
+    <div class="fs-tools">
+      <el-select id="bxLibPick" v-model="libKey" size="small" class="w160" clearable
+        placeholder="全部库" title="只看某个素材库的片子。默认「全部库」= 列出所有库里已索引、且有台词的素材">
+        <el-option v-for="o in libOpts" :key="o.value" :label="o.label" :value="o.value"/>
+      </el-select>
+      <el-input id="bxSearch" v-model="vq" size="small" class="w160" placeholder="搜索片名…" clearable
+        title="按片名关键字过滤右边的片单，边打边生效。多个词用空格分隔，要全部命中"/>
+      <el-select id="bxPick" v-model="pick" size="small" class="w260" filterable
+        placeholder="选一部片子" title="选一部片子：会列出它全部台词，逐句核对画面方框圈得对不对">
+        <el-option v-for="o in pickOpts" :key="o.value" :label="o.label" :value="o.value"/>
+      </el-select>
+      <span class="dim" id="bxHit">{{ hitText }}</span>
+      <el-button id="bxReload" size="small" @click="reload"
+        title="重新拉这部片子的台词清单和校验结论。刚改过字幕或补过框就点它">刷新</el-button>
+    </div>
+  </div>
+
+  <div class="fs-bxsum" id="bxSum" v-if="rep">
+    <div class="bxs"><b>{{ rep.total }}</b><span>台词</span></div>
+    <div class="bxs"><b class="ok">{{ rep.passed }}</b><span>方框已验</span></div>
+    <div class="bxs"><b :class="rep.failed ? 'bad' : 'dim'">{{ rep.failed }}</b><span>可疑</span></div>
+    <div class="bxs"><b :class="rep.no_box ? 'warn' : 'dim'">{{ rep.no_box }}</b><span>无框凭证</span></div>
+    <div class="bxs"><b>{{ rep.checked ? Math.round(rep.rate * 100) + '%' : '—' }}</b><span>通过率</span></div>
+    <div class="bxreasons">
+      <el-tag v-for="(n, k) in (rep.reasons || {})" :key="k" size="small" type="danger">{{ k }} {{ n }}</el-tag>
+      <span v-if="!rep.failed" class="dim">没有可疑项</span>
+    </div>
+  </div>
+
+  <div class="fs-bxwrap">
+    <div class="fs-bxlist">
+      <div class="fs-bxbar">
+        <el-input id="bxFilter" v-model="lq" size="small" placeholder="过滤台词…" clearable
+          title="按台词文字过滤清单，边打边生效"/>
+        <el-radio-group id="bxSegs" v-model="filter" size="small">
+          <el-radio-button value="all" title="显示全部台词">全部</el-radio-button>
+          <el-radio-button value="bad"
+            title="只看可疑：方框对不上，或字体偏离度跟本部片主流字幕不一致的">可疑</el-radio-button>
+          <el-radio-button value="nobox"
+            title="只看没有画面方框凭证的。语音转写和外挂字幕来源本来就没有框，属正常">无框</el-radio-button>
+        </el-radio-group>
+      </div>
+      <div class="fs-bxrows" id="bxRows">
+        <div v-for="x in visible" :key="x.id" class="fs-bxrow" :class="{ on: cur === x.id }"
+             @click="select(x.id)">
+          <div class="bxts">{{ x.start_str }}<span class="dim2">{{ (x.end_str || '').slice(0, 8) }}</span></div>
+          <div class="bxtx">{{ x.text }}</div>
+          <div class="bxmark" :class="cls(x)">{{ mark(x) }}</div>
+        </div>
+        <div v-if="!visible.length" class="dim pad">
+          {{ pick ? '没有符合条件的台词' : (raw.length ? '没有匹配的片子' : '还没有已索引的素材') }}</div>
+      </div>
+    </div>
+
+    <div class="fs-bxview" id="bxView">
+      <div v-if="!curRow" class="dim pad">
+        {{ pick ? '左边点一条台词'
+                : (raw.length ? '没有匹配的片子' : '先去「素材库」索引出台词') }}</div>
+      <template v-else>
+        <div class="fs-bxhead">
+          <div class="bxhts">{{ curRow.start_str }} → {{ curRow.end_str }}
+            <span class="dim2">{{ curRow.src || '未知来源' }}</span></div>
+          <div class="bxtools">
+            <el-checkbox id="bxLiveWrap" v-show="probeOut" v-model="liveBox" size="small" label="叠识别框"
+              title="把这次识别到的框用绿虚线叠在蓝框上。两个框分开就说明这条的框不稳"/>
+            <el-button id="bxPrev" size="small" @click="step(-1)" title="上一句台词（快捷键 ↑）">← 上一句</el-button>
+            <el-button id="bxNext" size="small" @click="step(1)" title="下一句台词（快捷键 ↓）">下一句 →</el-button>
+          </div>
+        </div>
+
+        <div class="fs-bximg">
+          <div v-if="imgLoading" class="spin dim">正在抽帧…</div>
+          <img id="bxImg" :src="frameUrl" @load="imgLoading = false" @error="onImgErr" alt="台词帧"/>
+          <div class="bxlegend">
+            <span><i style="background:#4d9dff"></i>库里的框</span>
+            <span><i class="dash" style="background:#2ec27e"></i>这次识别到的框</span>
+          </div>
+        </div>
+
+        <div class="fs-bxtext">
+          <div class="bxfld"><span>库里文字</span><b id="bxSavedTxt">{{ curRow.text }}</b></div>
+          <div class="bxfld"><span>重新识别结果</span>
+            <b id="bxLiveTxt" :class="liveCls">{{ liveTxt || '还没识别' }}</b></div>
+        </div>
+
+        <div class="fs-bxfoot">
+          <div class="bxverdict" :class="cls(curRow)">
+            <b>{{ mark(curRow) }}</b>
+            <span v-if="(curRow.reasons || []).length" class="dim">{{ curRow.reasons.join('、') }}</span>
+            <span v-if="curRow.skipped" class="dim">{{ curRow.src }} 来源本来就没有画面框</span>
+          </div>
+          <div class="bxacts">
+            <el-button id="bxProbe" size="small" :loading="busy" @click="doProbe"
+              title="回画面重抽首/中/尾三帧重跑 OCR，逐帧比对框和文字对不对得上。只出报告，不改库">重新 OCR 识别</el-button>
+            <el-button id="bxAsr" size="small" :loading="busy" @click="doAsr"
+              title="只听这一句前后各 0.6 秒的音频，把听到的话显示出来。不自动覆盖库里的台词，看过后自己点「编辑台词」决定改不改">语音识别这句</el-button>
+            <el-button id="bxEdit" size="small" type="primary" @click="openEdit"
+              title="改这句话的文字和起止时间，改完立刻生效并同步检索索引；可勾选顺带把识别到的画面方框写进库">编辑台词</el-button>
+            <el-button id="bxPlay" size="small" @click="play"
+              title="从这句台词的时间点开始播放原片">播放这句</el-button>
+          </div>
+        </div>
+
+        <div class="fs-bxprobe" id="bxProbeOut" v-html="probeOut"></div>
+        <table v-if="metricsRows.length" class="bxmtbl">
+          <tr v-for="(r, i) in metricsRows" :key="i">
+            <td>{{ r[0] }}</td><td :class="r[2]">{{ r[1] }}</td>
+          </tr>
+        </table>
+      </template>
+    </div>
+  </div>
+
+  <!-- 编辑台词 -->
+  <el-dialog v-model="editDlg" title="编辑台词" width="560px">
+    <div class="fs-hint">{{ curRow ? curRow.start_str + ' → ' + curRow.end_str : '' }}
+      · {{ curRow ? (curRow.src || '未知来源') : '' }} 来源</div>
+    <el-input id="bxEText" v-model="editForm.text" type="textarea" :rows="3" placeholder="这句话的文本"/>
+    <div class="fs-mgrid">
+      <span>开始（秒）<el-input-number id="bxEStart" v-model="editForm.start" :step="0.01" size="small" controls-position="right"/></span>
+      <span>结束（秒）<el-input-number id="bxEEnd" v-model="editForm.end" :step="0.01" size="small" controls-position="right"/></span>
+    </div>
+    <el-checkbox id="bxESaveBox" v-model="editForm.save_box" label="同时把这次识别到的画面方框写进库"/>
+    <div class="fs-hint">勾上后会重新抽 3 帧跑 OCR，三帧文字都对得上才写入；不一致会直接告诉你，什么都不会改。</div>
+    <el-button v-if="liveTxt" size="small" @click="editForm.text = liveTxt"
+      :title="'把识别到的这句话直接填进上面的文本框，再手动修一修'">用「{{ liveTxt.slice(0, 14) }}{{ liveTxt.length > 14 ? '…' : '' }}」填入</el-button>
+    <template #footer>
+      <el-button id="mCancel" @click="editDlg = false">取消</el-button>
+      <el-button id="mYes" type="primary" @click="saveEdit">保存</el-button>
+    </template>
+  </el-dialog>
+</div>
+</script>
+
+
+<!-- ==================== 片段 ==================== -->
+<script type="text/x-template" id="tpl-clips">
+<div class="fs-page">
+  <div class="fs-page-hd">
+    <div><h1>导出片段</h1><p>前后各 <b>{{ pre }}</b> / <b>{{ post }}</b> 秒（在「台词检索」里改）</p></div>
+  </div>
+  <div class="fs-clips" id="clips">
+    <el-card v-for="(c, i) in clips" :key="i" shadow="hover" class="fs-clip">
+      <div class="txt">{{ c.text || c.name }}</div>
+      <div class="dim">{{ c.name }}</div>
+      <video :src="clipUrl(c)" controls preload="metadata"></video>
+      <div class="chipops">
+        <el-button link size="small" tag="a" :href="clipUrl(c) + '&dl=1'"
+          title="把这个 mp4 下载到本地">下载</el-button>
+        <el-button link size="small" @click="openDir(c)"
+          title="在资源管理器里打开片段输出目录">打开所在文件夹</el-button>
+      </div>
+    </el-card>
+    <div v-if="!clips.length" class="dim pad">
+      还没有导出片段。在「台词检索」里搜到台词后点「导出片段」</div>
+  </div>
+</div>
+</script>
+
+
+<script src="/vendor/vue.global.prod.js"></script>
+<script src="/vendor/element-plus.min.js"></script>
+<script src="/vendor/element-plus-zh-cn.js"></script>
+<script src="/vendor/element-plus-icons.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

@@ -11,7 +11,9 @@ frameseek.json.bak
 
 # 本机依赖兜底：venv 里 anyio 半残，才把 RapidOCR / onnxruntime / cv2 整包
 # 塞在 vendor（约 259MB）。正常环境 pip install -r requirements.txt 即可。
-vendor/
+# 注意：只排根级的 Python vendor；web/vendor（Vue/Element Plus，约 1.7MB）
+# 是前端本地自持依赖，断网可用靠它，必须入库。
+/vendor/
 
 # 产物 / 中间物 / 缓存
 生成/

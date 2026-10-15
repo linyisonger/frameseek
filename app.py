@@ -153,6 +153,29 @@ def css():
     return send_page("style.css", "text/css")
 
 
+@app.get("/vendor/<path:name>")
+def vendor_file(name: str):
+    """web/vendor 下的前端依赖（Vue / Element Plus），本地自持、断网可用。
+
+    注意项目根另有一个 vendor/（Python 依赖），跟这个不是一回事，
+    那个目录不通过 HTTP 暴露。"""
+    base = os.path.abspath(os.path.join(WEB, "vendor"))
+    p = os.path.abspath(os.path.join(base, name))
+    # 防目录穿越：../ 拼出来的路径必须还在 base 里面
+    if not p.startswith(base + os.sep):
+        return "forbidden", 403
+    if not os.path.isfile(p):
+        return "not found", 404
+    mime = {".js": "application/javascript", ".mjs": "application/javascript",
+            ".css": "text/css", ".svg": "image/svg+xml",
+            ".woff": "font/woff", ".woff2": "font/woff2",
+            ".ttf": "font/ttf"}.get(os.path.splitext(p)[1].lower(),
+                                    "application/octet-stream")
+    with open(p, "rb") as f:
+        return Response(f.read(), mimetype=mime,
+                        headers={"Cache-Control": "no-store"})
+
+
 def send_page(name: str, mimetype: str):
     with open(os.path.join(WEB, name), "r", encoding="utf-8") as f:
         return Response(f.read(), mimetype=mimetype,
