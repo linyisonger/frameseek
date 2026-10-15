@@ -26,14 +26,32 @@ python app.py                        # http://127.0.0.1:8771
 | `AI生成/` `手绘工程/` `_hd_src/` `_out/` | 产物与日志 |
 | `_testlib/`（96MB 视频） | 回归脚本的测试素材，自备；没有它 UI 回归跑不起来，主程序不受影响 |
 
-### 前端架构（2026-10-15 重写）
+### 前端架构（2026-10-15 重写 + 按功能拆模块）
+
+原单体 `web/app.js`（约 1600 行：全局状态 + 实时通道 + 7 个页面组件 + 主应用混在一起）
+已拆成「**共享状态层 + 7 个功能模块 + 薄引导文件**」。后续改某一个小功能点只动对应文件，
+不用翻整篇大文件、不浪费 token。
 
 | 文件 | 职责 |
 | --- | --- |
-| `web/index.html` | 主框架（侧栏/页签/进度浮窗/播放器）+ 7 个模块的 `<script type="text/x-template">` 模板 |
-| `web/app.js` | Vue 3 应用：全局状态 `S`、实时通道（WS→SSE→轮询）、7 个组件、`window.__FS` 回归口子 |
+| `web/index.html` | 主框架（侧栏/页签/进度浮窗/播放器）；删除内联 x-template，底部按序加载 9 个脚本；`<keep-alive>` + kebab 标签切换 7 个视图 |
+| `web/app.js` | **薄引导文件**：只定义 `App` 壳（任务列表过滤 `gen`、浮窗摘要、首屏加载），`createApp` + 注册图标 + `mount('#app')` |
+| `web/js/state.js` | 共享状态层：工具函数（`api/post/esc/hl/mediaUrl/...`）、`BUS`（订阅可取消）、`S`（reactive 全局态）、`LIVE`（WS→SSE→轮询）、`PHASE`、`onLive`、`loadLibs`、`play`、`clipLine/addClips`；挂到 `window.FS` 与 `window.__FS` |
+| `web/js/libs.js` | 模块 `libs`：素材库（登记/索引/上传/忽略名单 3 个 dialog），`FS.LibsView` |
+| `web/js/search.js` | 模块 `search`：台词检索（含 `boxMark` 方框凭证标记），`FS.SearchView` |
+| `web/js/assets.js` | 模块 `assets`：素材（筛选只留「素材库 + 时长」），`FS.AssetsView` |
+| `web/js/gen.js` | 模块 `gen`：AI 生成（对话气泡进度），`FS.GenView`；`window.__FS.gen` |
+| `web/js/handdraw.js` | 模块 `hd`：白板手绘（六步流程），`FS.HanddrawView`；`window.__FS.hd / hdApi` |
+| `web/js/box.js` | 模块 `box`：方框复查（两级选片 / `SEQ` 代次号 / 指标表 / 三路修复），`FS.BoxView`；`window.__FS.box` |
+| `web/js/clips.js` | 模块 `clips`：片段列表，`FS.ClipsView` |
 | `web/style.css` | Element Plus dark 变量覆盖 + 布局样式 |
 | `web/vendor/` | vue 3.5 / element-plus 2.9 / 中文语言包 / 图标，本地文件 |
+
+**解耦方式**：`window.FS` 作为共享命名空间——`state.js` 挂 `S/BUS/LIVE/api/post/...` 等全局依赖，
+各功能模块 `(function(){ const FS = window.FS; ... })()` 从 `FS` 取依赖、把组件挂回 `FS.XxxView`。
+`index.html` 底部按序加载：vue → element-plus → zh-cn → icons → `state.js` → 7 个模块 → `app.js`。
+后端 `app.py` 新增 `GET /js/<path:name>` 路由（目录穿越防护 + mime 映射），`index()` 给每个 js 模块
+带 `?v={mtime}` 版本号防旧标签缓存。
 
 模块 ↔ 组件：`libs` 素材库、`search` 台词检索、`assets` 素材（多维筛选）、
 `gen` AI 生成（对话窗）、`hd` 白板手绘（六步）、`box` 方框复查、`clips` 片段。
@@ -801,7 +819,7 @@ core/ocr.py         硬字幕 OCR：字幕位置标定 + 逐帧选框 + 文本�
 core/asr.py         外挂字幕 → 内嵌字幕 → OCR → whisper 转写
 core/verify.py      方框校验：凭证自检（快）+ 现场复核（重抽帧证伪）
 core/indexer.py     扫描入库流程
-web/                页面（index.html / app.js / style.css / logo.svg）
+web/                页面（index.html / app.js 引导 / js/state.js 状态层 + 7 个功能模块 / style.css / logo.svg）
 ```
 
 `logo.svg` 是品牌图标（渐变圆角方 + 帧格播放键），三处共用：网站 favicon、

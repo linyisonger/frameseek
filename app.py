@@ -139,6 +139,14 @@ def index():
         except OSError:
             v = 0
         html = html.replace(f'{attr}="/{name}"', f'{attr}="/{name}?v={v}"')
+    # 各功能模块脚本也带上 mtime，避免老标签页残留旧 js 导致功能错乱
+    for name in ("state.js", "libs.js", "search.js", "assets.js", "gen.js",
+                 "handdraw.js", "box.js", "clips.js"):
+        try:
+            v = int(os.path.getmtime(os.path.join(WEB, "js", name)))
+        except OSError:
+            v = 0
+        html = html.replace(f'src="/js/{name}"', f'src="/js/{name}?v={v}"')
     return Response(html, mimetype="text/html",
                     headers={"Cache-Control": "no-store"})
 
@@ -151,6 +159,24 @@ def js():
 @app.get("/style.css")
 def css():
     return send_page("style.css", "text/css")
+
+
+@app.get("/js/<path:name>")
+def js_file(name: str):
+    """web/js 下的前端功能模块（按功能拆分后的 js/*.js），本地自持、断网可用。"""
+    base = os.path.abspath(os.path.join(WEB, "js"))
+    p = os.path.abspath(os.path.join(base, name))
+    # 防目录穿越
+    if not p.startswith(base + os.sep):
+        return "forbidden", 403
+    if not os.path.isfile(p):
+        return "not found", 404
+    mime = {".js": "application/javascript", ".mjs": "application/javascript",
+            ".css": "text/css"}.get(os.path.splitext(p)[1].lower(),
+                                  "application/octet-stream")
+    with open(p, "rb") as f:
+        return Response(f.read(), mimetype=mime,
+                        headers={"Cache-Control": "no-store"})
 
 
 @app.get("/vendor/<path:name>")
