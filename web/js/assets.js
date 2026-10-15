@@ -44,9 +44,13 @@ const AssetsView = {
 
   <div class="fs-videos" id="videos">
     <div v-for="(v, i) in view" :key="v.root + '#' + v.id" class="fs-vcard" :title="v.name">
-      <img :src="coverUrl(v)" loading="lazy"
-           @mouseenter="hoverGif($event, v, true)" @mouseleave="hoverGif($event, v, false)"
-           @click="preview(v)"/>
+      <div class="fs-vthumb">
+        <img :src="coverUrl(v)" loading="lazy"
+             @mouseenter="hoverGif($event, v, true)" @mouseleave="hoverGif($event, v, false)"
+             @click="preview(v)"/>
+        <div class="fs-vgrad"></div>
+        <span class="fs-vdur">{{ v.duration_str }}</span>
+      </div>
       <el-dropdown trigger="click" placement="bottom-end" @command="cmd => onCmd(cmd, v)">
         <el-button class="fs-vmore" size="small" text
           :title="v.builtin ? '更多操作：打开文件夹 / 从库里移除 / 删除文件（AI 生成产物不做字幕识别）'
@@ -71,7 +75,7 @@ const AssetsView = {
       </el-dropdown>
       <div class="fs-vmeta">
         <b>{{ v.name }}</b>
-        <span>{{ v.duration_str }} · {{ v.builtin ? '🔒 ' : '' }}{{ v.lib }}</span>
+        <span>{{ v.builtin ? '🔒 ' : '' }}{{ v.lib }}</span>
         <div class="row2">
           <el-tag v-if="v.builtin" size="small" title="AI 生成产物不参与台词识别">AI 生成</el-tag>
           <el-tag v-else-if="v.err" size="small" type="danger">识别失败</el-tag>
