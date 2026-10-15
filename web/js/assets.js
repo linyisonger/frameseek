@@ -80,7 +80,9 @@ const AssetsView = {
         </template>
       </el-dropdown>
       <div class="fs-vmeta">
-        <b>{{ v.name }}</b>
+        <b :title="v.name">
+          <span class="fs-vdir" v-if="dirOf(v)">{{ dirOf(v) }}/</span>{{ v.name }}
+        </b>
         <div class="fs-vsub row2">
           <i class="fs-dot" :class="{ ai: v.builtin, err: v.err, ok: !v.builtin && v.line_count }"></i>
           <span class="fs-vlib">{{ v.lib }}</span>
@@ -353,6 +355,12 @@ const AssetsView = {
       prevCount: computed(() => (picking.value || {}).line_count || 0),
       pickName: computed(() => (picking.value || {}).name || ''),
       fmtDur,
+      // 二级目录下的片子，片名加目录前缀，否则满屏「01.mp4 / 02.mp4」分不清是哪部的
+      dirOf(v) {
+        const rel = v.rel || '';
+        const i = Math.max(rel.lastIndexOf('/'), rel.lastIndexOf('\\'));
+        return i > 0 ? rel.slice(0, i).replace(/[\\/]+$/, '') : '';
+      },
     };
   },
 };
