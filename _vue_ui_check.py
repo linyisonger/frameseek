@@ -206,7 +206,10 @@ def main():
         n_step = len(pg.query_selector_all(".fs-steps .el-step"))
         check(n_step == 6, f"正好 6 步（实际 {n_step}）")
         check(pg.is_visible("#hdInit"), "建工程按钮在")
-        check(pg.is_visible("#hdAnn"), "标注输入框在")
+        # 2026-10-15：手绘改分步向导，标注框在第 3 步，先点步骤条跳过去
+        pg.click(".fs-steps .el-step:nth-child(3)")
+        pg.wait_for_timeout(350)
+        check(pg.is_visible("#hdAnn"), "标注输入框在（第 3 步）")
 
         # ---- 9 控制台无错 ----
         print("\n[9] 控制台")

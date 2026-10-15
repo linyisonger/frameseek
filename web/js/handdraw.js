@@ -3,7 +3,7 @@
 'use strict';
 const { reactive, computed, ref, watch, onMounted, onUnmounted, onActivated, nextTick } = Vue;
 const FS = window.FS;
-const { S, BUS, api, post, toast, hdUrl } = FS;
+const { S, BUS, api, post, toast, hdUrl, esc } = FS;
 
 const HanddrawView = {
   template: `
@@ -18,26 +18,47 @@ const HanddrawView = {
   </div>
 
   <el-steps :active="step - 1" finish-status="success" align-center class="fs-steps">
-    <el-step title="建工程" description="文稿 / 字幕"/>
-    <el-step title="分幕建议" description="按 25~35 秒切"/>
-    <el-step title="线稿+标注" description="逐幕标注区域"/>
-    <el-step title="批准时间轴" description="画面≥字幕"/>
-    <el-step title="逐幕渲染" description="逐笔动画"/>
-    <el-step title="配音合成" description="女声 + 伴奏"/>
+    <el-step v-for="(s, i) in stepList" :key="s.t" :title="s.t" :description="s.d"
+             @click="goStep(i + 1)"/>
   </el-steps>
 
+  <!-- 工程 / 当前幕 / 时间轴：常驻横幅。切到哪一步都看得见，不用回翻 -->
   <el-card shadow="never" class="fs-card fs-hdproj" id="hdProj">
-    <span v-if="!hd.project" class="dim">
-      当前没有手绘工程。第 1 步：上传一个 <b>.txt 文稿</b>或 <b>.srt 字幕</b>开始。
-    </span>
-    <span v-else v-html="projText"></span>
+    <div class="fs-hdctx">
+      <span v-if="!hd.project" class="dim">
+        当前没有手绘工程。第 1 步：上传一个 <b>.txt 文稿</b>或 <b>.srt 字幕</b>开始。
+      </span>
+      <span v-else v-html="projText"></span>
+      <template v-if="hd.project">
+        <i class="fs-hdctx-sep"></i>
+        <span class="fs-label">当前幕</span>
+        <el-select id="hdSceneId" v-model="sceneId" size="small" class="w160"
+                   placeholder="先出分幕建议" :disabled="!sceneOptions.length"
+                   title="选择要标注 / 渲染哪一幕。幕列表来自第 2 步的分幕建议">
+          <el-option v-for="o in sceneOptions" :key="o.id" :label="o.label" :value="o.id" :title="o.tip"/>
+        </el-select>
+        <i class="fs-hdctx-sep"></i>
+        <span class="dim">时间轴 <b id="hdTlStatus">{{ tlStatus }}</b></span>
+        <span class="dim fs-hdctx-advice" id="hdTlAdvice">{{ tlAdvice }}</span>
+      </template>
+    </div>
     <div class="fs-hd-dirs">
       <span class="dim" id="hdRootDir" title="手绘工程目录">工程 → {{ hd.base || '项目目录/手绘工程' }}</span>
       <span class="dim" id="hdOutDir" title="手绘工程与成片都在 FrameSeek 项目目录下，不进素材库">成片 → {{ hd.outDir || '项目目录/AI生成' }}</span>
     </div>
   </el-card>
 
-  <el-card shadow="never" class="fs-card">
+  <div class="fs-hdnav">
+    <el-button id="hdPrev" size="small" :disabled="step <= 1" @click="goStep(step - 1)">‹ 上一步</el-button>
+    <div class="fs-hdnav-mid">
+      <b>第 {{ step }} / 6 步 · {{ stepList[step - 1].t }}</b>
+      <span class="dim">{{ stepList[step - 1].hint }}</span>
+    </div>
+    <el-button id="hdNext" size="small" :disabled="step >= 6" @click="goStep(step + 1)">下一步 ›</el-button>
+  </div>
+
+  <!-- 分步向导：一次只摆当前步骤的控件，别一次性把六步的输入框全怼脸上 -->
+  <el-card v-show="step === 1" shadow="never" class="fs-card">
     <template #header><b>1 · 建工程</b>
       <span class="dim">文稿按句拆字幕并估时间轴；已有字幕直接用</span></template>
     <div class="fs-hd-row">
@@ -53,7 +74,7 @@ const HanddrawView = {
     </div>
   </el-card>
 
-  <el-card shadow="never" class="fs-card">
+  <el-card v-show="step === 2" shadow="never" class="fs-card">
     <template #header><b>2 · 分幕建议</b><span class="dim">读工程字幕，按目标秒数切幕</span></template>
     <div class="fs-hd-row">
       <span class="dim">每幕目标秒</span>
@@ -70,17 +91,18 @@ const HanddrawView = {
         <span class="dim">字幕 {{ (s.cueRange || [])[0] }}~{{ (s.cueRange || [])[1] }} ·
           {{ (s.sceneDurationMs / 1000).toFixed(1) }}s<br>{{ sceneText(s) }}</span>
       </div>
+      <div v-if="!scenes.length" class="dim" style="padding:6px 0">还没出分幕建议</div>
     </div>
   </el-card>
 
-  <el-card shadow="never" class="fs-card">
+  <el-card v-show="step === 3" shadow="never" class="fs-card">
     <template #header><b>3 · 线稿 + 区域标注</b>
       <span class="dim">每幕一张暖米黄纸底线稿 + 区域标注 JSON（决定谁先画、画多久）</span></template>
     <div class="fs-hd-row">
-      <el-input id="hdSceneId" v-model="sceneId" size="small" class="w140" placeholder="scene-01"/>
       <el-button id="hdUpImage" size="small" @click="upload('image')"
         title="上传这一幕的线稿图（暖米黄纸底）。不传就用引擎默认的空白纸底">上传线稿图</el-button>
       <span class="dim" id="hdImgName">{{ hd.upImageName || '未选择' }}</span>
+      <span class="dim">标注的是顶部选的「当前幕」：<b>{{ sceneId }}</b></span>
     </div>
     <div class="fs-hd-row">
       <span class="dim">标注 JSON</span>
@@ -97,19 +119,33 @@ const HanddrawView = {
     </div>
   </el-card>
 
-  <el-card shadow="never" class="fs-card">
-    <template #header><b>4~6 · 时间轴 · 渲染 · 合成</b>
+  <el-card v-show="step === 4" shadow="never" class="fs-card">
+    <template #header><b>4 · 批准时间轴</b>
       <span class="dim">画面总时长必须 ≥ 字幕总时长，否则引擎拒绝正式渲染</span></template>
-    <div class="fs-hd-row" id="hdTlRow">
-      <span class="dim">时间轴状态：<b id="hdTlStatus">{{ tlStatus }}</b></span>
-      <span class="dim" id="hdTlAdvice">{{ tlAdvice }}</span>
-      <el-button id="hdApprove" size="small" @click="approve"
+    <div class="fs-hd-row">
+      <span class="dim">时间轴状态：<b>{{ tlStatus }}</b><span v-if="tlAdvice"> · {{ tlAdvice }}</span></span>
+      <el-button id="hdApprove" type="primary" size="small" @click="approve"
         title="批准时间轴。画面总时长必须 ≥ 字幕总时长，短了会被引擎拒绝正式渲染">批准时间轴</el-button>
+    </div>
+    <div class="fs-hint">批准后「渲染这一幕」才会解禁。每加一幕都要重新批准一次。</div>
+  </el-card>
+
+  <el-card v-show="step === 5" shadow="never" class="fs-card">
+    <template #header><b>5 · 逐幕渲染</b>
+      <span class="dim">本地 CPU 逐笔绘制，不占显卡，一幕通常几分钟</span></template>
+    <div class="fs-hd-row">
+      <span class="dim">正在渲染：<b>{{ sceneId }}</b>（在顶部「当前幕」里切换）</span>
       <el-button id="hdPreview" size="small" @click="render(true)"
         title="只渲染前 3 秒。想快速看笔迹和构图对不对先用这个，别一上来就整幕渲染">短预览 3s</el-button>
       <el-button id="hdRender" type="primary" size="small" :disabled="tlStatus !== 'approved'" @click="render(false)"
         title="渲染这一幕的完整画面。本地 CPU 逐笔绘制，不占显卡，一幕通常几分钟">渲染这一幕</el-button>
     </div>
+    <div class="fs-hint">建议先「短预览 3s」看笔迹和构图，对了再整幕渲染，省得白等几分钟。</div>
+  </el-card>
+
+  <el-card v-show="step === 6" shadow="never" class="fs-card">
+    <template #header><b>6 · 配音合成</b>
+      <span class="dim">配音要把文本送到云端 TTS，需要勾选联网许可</span></template>
     <div class="fs-hd-row">
       <el-input id="hdVoiceText" v-model="voiceText" size="small" class="w260"
                 placeholder="试听文案（10~20 秒，含数字和问句）"/>
@@ -117,10 +153,10 @@ const HanddrawView = {
         title="用左边这段文案试听音色。只出一段试听音频，不写进工程">试听音色</el-button>
       <el-checkbox id="hdAllowNet" v-model="allowNet"
         title="配音要把文本送到云端 TTS。不勾选就无法合成配音">联网许可</el-checkbox>
-      <el-button id="hdMix" type="primary" size="small" @click="mix"
-        title="把配音和已渲染的画面合成为成片，落到项目「AI生成」目录，不进素材库">配音合成成片</el-button>
     </div>
     <div class="fs-hd-row">
+      <el-button id="hdMix" type="primary" size="small" @click="mix"
+        title="把配音和已渲染的画面合成为成片，落到项目「AI生成」目录，不进素材库">配音合成成片</el-button>
       <el-button id="hdQa" size="small" @click="qa"
         title="对成片跑质检：时长够不够、音画对不对齐、字幕有没有被切掉">质检</el-button>
       <el-button id="hdClear" size="small" @click="clearChat"
@@ -167,9 +203,50 @@ const HanddrawView = {
     const targetSec = ref(30), sceneId = ref('scene-01');
     const ann = ref(''), annMsg = ref('');
     const scenes = ref([]), cues = ref([]);
+    const statusScenes = ref([]);   // /status 回来的幕列表（刷新页面后回填下拉用）
     const tlStatus = ref('-'), tlAdvice = ref('');
     const voiceText = ref(''), allowNet = ref(false);
     const chats = ref([]);
+
+    // 六步向导的标题/副标题/一句人话提示，模板和导航条共用
+    const stepList = [
+      { t: '建工程', d: '文稿 / 字幕', hint: '上传文稿或字幕，建好工程' },
+      { t: '分幕建议', d: '按 25~35 秒切', hint: '按每幕目标秒数切幕' },
+      { t: '线稿+标注', d: '逐幕标注区域', hint: '上传线稿图，写标注 JSON' },
+      { t: '批准时间轴', d: '画面≥字幕', hint: '确认画面不短于字幕' },
+      { t: '逐幕渲染', d: '逐笔动画', hint: '先短预览 3 秒，再整幕渲染' },
+      { t: '配音合成', d: '女声 + 伴奏', hint: '试听音色后合成成片' },
+    ];
+    function goStep(n) {
+      step.value = Math.max(1, Math.min(stepList.length, n | 0));
+    }
+
+    /* 幕下拉：suggest 给的是 {sceneIndex:1,...}，status 给的是 {id:'scene-01',...}，
+       两种结构统一归一化成 {id, label, tip}。suggest 的信息更全，后写覆盖先写的。 */
+    function normScene(s) {
+      if (!s) return null;
+      let id = s.id, idx = s.sceneIndex;
+      if (!id && idx != null) id = 'scene-' + String(idx).padStart(2, '0');
+      if (!id) return null;
+      if (idx == null) { const m = /(\d+)\s*$/.exec(id); idx = m ? +m[1] : null; }
+      const dur = s.sceneDurationMs ? (s.sceneDurationMs / 1000).toFixed(0) + 's' : '';
+      const cue = (s.cueRange || []).length === 2 ? `字幕 ${s.cueRange[0]}~${s.cueRange[1]}` : '';
+      const at = s.startMs != null ? `${(s.startMs / 1000).toFixed(0)}s 起` : '';
+      return { id, idx: idx || 0,
+               label: (idx ? `幕 ${idx}` : id) + (dur ? ` · ${dur}` : ''),
+               tip: [cue, at].filter(Boolean).join(' · ') };
+    }
+    const sceneOptions = computed(() => {
+      const map = new Map();
+      statusScenes.value.forEach(s => { const n = normScene(s); if (n) map.set(n.id, n); });
+      scenes.value.forEach(s => { const n = normScene(s); if (n) map.set(n.id, n); });
+      return [...map.values()].sort((a, b) => a.idx - b.idx);
+    });
+    // 当前选的幕不在列表里（比如刚刷新页面、列表还没回来）就自动落到第一幕
+    function ensureScene() {
+      const opts = sceneOptions.value;
+      if (opts.length && !opts.some(o => o.id === sceneId.value)) sceneId.value = opts[0].id;
+    }
 
     const hdRoot = () => S.activeRoot || (S.libs[0] && S.libs[0].path) || '';
 
@@ -205,6 +282,8 @@ const HanddrawView = {
         if (d.ok === false) { hd.project = ''; return; }
         tlStatus.value = d.timelineStatus || '-';
         tlAdvice.value = d.advice || '';
+        statusScenes.value = d.scenes || [];
+        ensureScene();
       } catch (e) { /* 工程可能还没建 */ }
     }
 
@@ -264,6 +343,7 @@ const HanddrawView = {
       if (d.ok === false) { err(d.err || '出分幕建议失败'); return; }
       cues.value = d.cues || [];
       scenes.value = d.scenes || [];
+      ensureScene();
       const total = scenes.value.reduce((a, s) => a + (s.sceneDurationMs || 0), 0);
       const cueMs = cues.value.length ? cues.value[cues.value.length - 1].endMs : 0;
       say('sys', `② 分幕建议：${scenes.value.length} 幕`,
@@ -428,7 +508,8 @@ const HanddrawView = {
     window.__FS.hdApi = { refresh, regions, render, suggest, loadInfo };
 
     return {
-      hd, step, pname, ptitle, targetSec, sceneId, ann, annMsg, scenes,
+      hd, step, stepList, goStep, pname, ptitle, targetSec, sceneId, sceneOptions,
+      ann, annMsg, scenes, cues, statusScenes,
       tlStatus, tlAdvice, voiceText, allowNet, chats, projText,
       upload, init, suggest, regions, tplAnn, annotate, approve, render,
       audition, mix, qa, sceneText,

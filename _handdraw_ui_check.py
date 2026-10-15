@@ -67,7 +67,7 @@ def main():
 
         pg.screenshot(path=os.path.join(OUT, "hd_ui_1_top.png"), full_page=False)
 
-        # --- 各卡片关键控件 ---
+        # --- 各卡片关键控件（v-show 隐藏仍在 DOM 里，count 都能查到）---
         for sel, label in [
             ("#hdUpScript", "上传文稿/字幕按钮"),
             ("#hdInit", "建工程按钮"),
@@ -87,7 +87,22 @@ def main():
         ]:
             check(pg.locator(sel).count() == 1, label)
 
+        # --- 分步向导：一次只摆当前步骤，别把六步输入框全怼脸上 ---
+        def goto(n):
+            pg.click(f".fs-steps .el-step:nth-child({n})")
+            pg.wait_for_timeout(350)
+
+        check(not pg.locator("#hdTargetSec").first.is_visible(),
+              "初始停在第 1 步，第 2 步的输入框不可见")
+        goto(2)
+        check(pg.locator("#hdTargetSec").first.is_visible()
+              and not pg.locator("#hdUpScript").first.is_visible(),
+              "跳到第 2 步只显示第 2 步控件")
+        goto(1)
+        check(pg.locator("#hdUpScript").first.is_visible(), "上一步/点步骤条能回到第 1 步")
+
         # --- 标注模板 ---
+        goto(3)
         pg.click("#hdTplAnn")
         pg.wait_for_timeout(400)
         ann = pg.input_value("#hdAnn")
@@ -99,7 +114,8 @@ def main():
         except Exception:
             check(False, "模板是合法 JSON")
 
-        # --- 配音未勾联网许可应被拦 ---
+        # --- 配音未勾联网许可应被拦（第 6 步控件，先跳步） ---
+        goto(6)
         pg.fill("#hdVoiceText", "这是一段试听文案，包含数字 3 和问句：可以吗？")
         pg.click("#hdAudition")
         pg.wait_for_timeout(600)

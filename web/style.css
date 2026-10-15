@@ -418,8 +418,39 @@ code {
 
 /* ---------- 手绘 ---------- */
 .fs-steps { margin-bottom: 18px; }
+/* 步骤条可点击跳转：分步向导的核心导航 */
+.fs-steps .el-step { cursor: pointer; }
+.fs-steps .el-step:hover .el-step__title { color: var(--fs-brand); }
+.fs-steps .el-step__head:hover .el-step__icon { border-color: var(--fs-brand); }
+
+/* 工程 / 当前幕 / 时间轴：常驻横幅 */
 .fs-hdproj { font-size: 13px; }
+.fs-hdctx {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.fs-hdctx-sep {
+  width: 1px; height: 16px; background: var(--fs-line); flex: none;
+}
+.fs-hdctx-advice {
+  max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .fs-hd-dirs { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 11.5px; }
+
+/* 步骤导航条 */
+.fs-hdnav {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 14px; padding: 9px 14px;
+  border-radius: 10px; background: var(--fs-bg-soft); border: 1px solid var(--fs-line);
+}
+.fs-hdnav-mid {
+  flex: 1; display: flex; align-items: baseline; gap: 8px;
+  min-width: 0; font-size: 13px;
+}
+.fs-hdnav-mid b { color: var(--fs-brand); font-weight: 600; flex: none; }
+.fs-hdnav-mid span {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px;
+}
+
 .fs-hd-row {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 9px;
 }
