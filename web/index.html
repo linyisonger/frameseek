@@ -33,34 +33,34 @@
 
       <el-menu class="fs-menu" :default-active="tab" @select="onTab">
         <el-menu-item index="libs" data-tab="libs">
-          <el-icon><FolderOpened></FolderOpened></el-icon>
+          <el-icon><folder-opened></folder-opened></el-icon>
           <span class="fs-navtxt"><b>素材库</b><em>登记与管理源文件夹</em></span>
           <i class="fs-badge" v-if="libs.length">{{ libs.length }}</i>
         </el-menu-item>
         <el-menu-item index="search" data-tab="search">
-          <el-icon><Search></Search></el-icon>
+          <el-icon><search></search></el-icon>
           <span class="fs-navtxt"><b>台词检索</b><em>跨库搜字幕片段</em></span>
         </el-menu-item>
         <el-menu-item index="assets" data-tab="assets">
-          <el-icon><Film></Film></el-icon>
+          <el-icon><film></film></el-icon>
           <span class="fs-navtxt"><b>素材</b><em>浏览已索引的片子</em></span>
           <i class="fs-badge" v-if="viewCount">{{ viewCount }}</i>
         </el-menu-item>
         <el-menu-item index="gen" data-tab="gen">
-          <el-icon><MagicStick></MagicStick></el-icon>
+          <el-icon><magic-stick></magic-stick></el-icon>
           <span class="fs-navtxt"><b>AI 生成</b><em>对话式出片</em></span>
         </el-menu-item>
         <el-menu-item index="hd" data-tab="hd">
-          <el-icon><EditPen></EditPen></el-icon>
+          <el-icon><edit-pen></edit-pen></el-icon>
           <span class="fs-navtxt"><b>手绘</b><em>白板动画讲解</em></span>
         </el-menu-item>
         <el-menu-item index="box" data-tab="box">
-          <el-icon><Aim></Aim></el-icon>
+          <el-icon><aim></aim></el-icon>
           <span class="fs-navtxt"><b>方框复查</b><em>逐句核对台词框</em></span>
           <i class="fs-badge warn" v-if="boxNoBox">{{ boxNoBox }}</i>
         </el-menu-item>
         <el-menu-item index="clips" data-tab="clips">
-          <el-icon><Scissor></Scissor></el-icon>
+          <el-icon><scissor></scissor></el-icon>
           <span class="fs-navtxt"><b>片段</b><em>已导出的短片段</em></span>
           <i class="fs-badge" v-if="clips.length">{{ clips.length }}</i>
         </el-menu-item>

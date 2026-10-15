@@ -32,32 +32,52 @@ const LibsView = {
 
   <div class="fs-libcards" id="libCards">
     <el-card v-for="l in libs" :key="l.id" shadow="hover" class="fs-libcard"
-             :class="{ 'is-missing': !l.exists }">
+             :class="{ 'is-missing': !l.exists, 'is-indexed': l.exists && l.indexed }">
       <template #header>
         <div class="fs-libcard-hd">
+          <div class="fs-libicon" :class="{ missing: !l.exists, ok: l.exists && l.indexed }">
+            <el-icon><FolderOpened></FolderOpened></el-icon>
+          </div>
           <div class="min0">
             <b :title="l.name">{{ l.name }}</b>
             <div class="note" v-if="l.note">{{ l.note }}</div>
           </div>
-          <el-tag v-if="!l.exists" type="danger" size="small">目录丢失</el-tag>
-          <el-tag v-else :type="l.indexed ? 'success' : 'info'" size="small">
-            {{ l.indexed ? '已索引' : '未索引' }}</el-tag>
+          <el-tag v-if="!l.exists" type="danger" size="small" effect="plain">目录丢失</el-tag>
+          <el-tag v-else-if="l.indexed" type="success" size="small" effect="plain">已索引</el-tag>
+          <el-tag v-else type="info" size="small" effect="plain">未索引</el-tag>
         </div>
       </template>
       <div class="fs-libpath" :title="l.path">{{ l.path }}</div>
       <div class="fs-libstats">
-        <div><b>{{ l.videos }}</b><span>素材</span></div>
-        <div><b>{{ l.lines }}</b><span>台词</span></div>
-        <div><b class="sm">{{ fmtDur(l.duration) }}</b><span>{{ fmtAgo(l.last_scan_at) }}索引</span></div>
+        <div class="fs-lstat">
+          <el-icon><Document></Document></el-icon>
+          <div><b>{{ l.videos }}</b><span>素材</span></div>
+        </div>
+        <div class="fs-lstat">
+          <el-icon><Document></Document></el-icon>
+          <div><b>{{ l.lines }}</b><span>台词</span></div>
+        </div>
+        <div class="fs-lstat">
+          <el-icon><Timer></Timer></el-icon>
+          <div><b>{{ fmtDur(l.duration) }}</b><span>总时长</span></div>
+        </div>
+      </div>
+      <div class="fs-libmeta">
+        <el-icon><Clock></Clock></el-icon>
+        <span>{{ fmtAgo(l.last_scan_at) }}索引</span>
       </div>
       <div class="fs-libft">
         <el-button size="small" type="primary" @click="askScan(l)"
-          title="扫描这个库：抽台词、封面、动图（会先弹设置确认）">索引</el-button>
-        <el-button size="small" @click="askUpload(l)" title="传视频进这个库，传完自动进素材页">上传</el-button>
+          title="扫描这个库：抽台词、封面、动图（会先弹设置确认）">
+          <el-icon><RefreshRight></RefreshRight></el-icon><span>索引</span></el-button>
+        <el-button size="small" @click="askUpload(l)" title="传视频进这个库，传完自动进素材页">
+          <el-icon><Upload></Upload></el-icon><span>上传</span></el-button>
         <el-button size="small" v-if="l.ignored" @click="askIgnored(l)"
-          :title="'这个库里有 ' + l.ignored + ' 个文件被标为忽略（不入库）。点开可以逐个放回'">忽略 {{ l.ignored }}</el-button>
+          :title="'这个库里有 ' + l.ignored + ' 个文件被标为忽略（不入库）。点开可以逐个放回'">
+          <el-icon><Document></Document></el-icon><span>忽略 {{ l.ignored }}</span></el-button>
         <el-button size="small" type="danger" plain @click="delLib(l)"
-          title="把这个库从登记里移除。只删索引，不动磁盘上的视频文件">删除</el-button>
+          title="把这个库从登记里移除。只删索引，不动磁盘上的视频文件">
+          <el-icon><Delete></Delete></el-icon><span>删除</span></el-button>
       </div>
     </el-card>
     <div v-if="!libs.length" class="dim pad">还没有素材库，在上面填路径登记一个</div>

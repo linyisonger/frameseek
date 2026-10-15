@@ -3,7 +3,7 @@
 'use strict';
 const { reactive, computed, ref, watch, onMounted, onUnmounted, onActivated, nextTick } = Vue;
 const FS = window.FS;
-const { S, BUS, api, post, toast, play, mediaUrl, loadLibs, startPoll, esc } = FS;
+const { S, BUS, api, post, toast, play, mediaUrl, fmtDur, loadLibs, startPoll, esc } = FS;
 
 const AssetsView = {
   template: `
@@ -49,12 +49,18 @@ const AssetsView = {
              @mouseenter="hoverGif($event, v, true)" @mouseleave="hoverGif($event, v, false)"
              @click="preview(v)"/>
         <div class="fs-vgrad"></div>
-        <span class="fs-vdur">{{ v.duration_str }}</span>
+        <span class="fs-vdur">{{ fmtDur(v.duration) }}</span>
+        <div class="fs-vplay" @click="preview(v)">
+          <el-icon><VideoPlay></VideoPlay></el-icon>
+          <span>预览</span>
+        </div>
       </div>
       <el-dropdown trigger="click" placement="bottom-end" @command="cmd => onCmd(cmd, v)">
         <el-button class="fs-vmore" size="small" text
           :title="v.builtin ? '更多操作：打开文件夹 / 从库里移除 / 删除文件（AI 生成产物不做字幕识别）'
-                           : '更多操作：重新识别台词 / 导入字幕 / 打开文件夹 / 移除或删除'">···</el-button>
+                           : '更多操作：重新识别台词 / 导入字幕 / 打开文件夹 / 移除或删除'">
+          <el-icon><MoreFilled></MoreFilled></el-icon>
+        </el-button>
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item command="preview" title="在右侧播放器里预览这部片子">预览</el-dropdown-item>
@@ -75,12 +81,13 @@ const AssetsView = {
       </el-dropdown>
       <div class="fs-vmeta">
         <b>{{ v.name }}</b>
-        <span>{{ v.builtin ? '🔒 ' : '' }}{{ v.lib }}</span>
-        <div class="row2">
-          <el-tag v-if="v.builtin" size="small" title="AI 生成产物不参与台词识别">AI 生成</el-tag>
-          <el-tag v-else-if="v.err" size="small" type="danger">识别失败</el-tag>
-          <el-tag v-else-if="v.line_count" size="small" type="success">台词 {{ v.line_count }}</el-tag>
-          <el-tag v-else size="small" type="info">没台词</el-tag>
+        <div class="fs-vsub row2">
+          <i class="fs-dot" :class="{ ai: v.builtin, err: v.err, ok: !v.builtin && v.line_count }"></i>
+          <span class="fs-vlib">{{ v.lib }}</span>
+          <span class="fs-vai" v-if="v.builtin">· AI 生成</span>
+          <span class="fs-vline" v-else-if="v.line_count">· {{ v.line_count.toLocaleString() }} 条台词</span>
+          <span class="fs-vline" v-else-if="v.err">· 识别失败</span>
+          <span class="fs-vline" v-else>· 无台词</span>
         </div>
       </div>
     </div>
@@ -345,6 +352,7 @@ const AssetsView = {
       }),
       prevCount: computed(() => (picking.value || {}).line_count || 0),
       pickName: computed(() => (picking.value || {}).name || ''),
+      fmtDur,
     };
   },
 };
