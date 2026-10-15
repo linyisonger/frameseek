@@ -1222,6 +1222,7 @@ def ocr_lines(video: str, start: float = 0.0, dur: float = 0.0,
     n_seen = n_batch = 0
     last_push = time.time()
     buf_items: List[Tuple[float, bytes, int, int]] = []
+    was_cancelled = False
 
     def _close():
         """把当前这句收进结果表，文本用投票择优后的版本。"""
@@ -1351,6 +1352,7 @@ def ocr_lines(video: str, start: float = 0.0, dur: float = 0.0,
                                  f" · {len(rows)} 条"
                                  + (f" · 剩约 {left:.0f} 分钟" if left > 0 else ""))
                 if cancel and cancel():
+                    was_cancelled = True
                     break
         _flush()
         _close()
@@ -1366,6 +1368,13 @@ def ocr_lines(video: str, start: float = 0.0, dur: float = 0.0,
                 pool.join()
             except Exception:
                 pass
+
+    if was_cancelled:
+        # 用户中途按了停止。**绝不能**把扫了一半的结果当成完整台词返回——
+        # 下游会拿它落库、写同名 .srt，那部片就永远只剩前半句台词了。
+        # 返回空 + 专用错误码，indexer 据此把这条留成"还没识别"，
+        # 下次索引会自动重跑它；已经跑完的素材不受影响。
+        return [], "__cancelled__"
 
     if not rows:
         return [], (f"没识别到字幕（扫 {n_seen} 帧 / {n_batch} 批 / "

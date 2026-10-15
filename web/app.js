@@ -5,7 +5,7 @@
 'use strict';
 const { reactive, computed, ref, watch, onMounted, onUnmounted, onActivated, nextTick } = Vue;
 const FS = window.FS;
-const { S, LIVE, PHASE, api, loadLibs, addClips, connectLive } = FS;
+const { S, LIVE, PHASE, api, post, esc, toast, loadLibs, addClips, connectLive } = FS;
 
 /* ==================== 主应用 ==================== */
 const App = {
@@ -27,16 +27,53 @@ const App = {
       .filter(t => t.kind !== 'gen'));
 
     function dockPct(t) { return t.total ? Math.min(100, Math.round(t.done / t.total * 100)) : 0; }
-    function dockHead(t) {
-      if (t.kind === 'video') return t.file || t.message || '';
-      if (t.kind === 'gen') return t.message || '';
-      return `${t.done || 0}/${t.total || 0} 个素材`;
-    }
     function dockPhase(t) { return PHASE[t.phase] || ''; }
     function dockEta(t) {
       if (!(t.eta_min > 0)) return '';
       return ` · 还剩约 ${t.eta_min < 1 ? Math.ceil(t.eta_min * 60) + ' 秒'
                                         : Math.round(t.eta_min) + ' 分钟'}`;
+    }
+
+    /* 收起状态下也常显的一行摘要：跑到第几个、当前是哪部、出了多少条台词。
+       二级目录下的片子后端给的就是相对路径（亮剑/01.mp4），这里照搬。 */
+    function dockLive(t) {
+      const parts = [];
+      if (t.kind !== 'video' && t.total) {
+        parts.push(`第 ${Math.min((t.done || 0) + 1, t.total)}/${t.total} 个`);
+      }
+      if (t.lines) parts.push(`已出 ${t.lines} 条台词`);
+      return parts.join(' · ') || (t.file || '');
+    }
+
+    /* 已识别的画面帧数——用户要的「目前视频的识别画面数量」。
+       frames 是已扫过的采样帧数；frames_total 是外推的总帧数（跑一会才准）。 */
+    function docFrames(t) {
+      const n = t.frames || 0;
+      if (!n) return '';
+      const tot = t.frames_total || 0;
+      const p = t.frames_pct ? ` · ${t.frames_pct}%` : '';
+      return tot
+        ? `已识别画面 ${n.toLocaleString()} 帧 / 约 ${tot.toLocaleString()} 帧${p}`
+        : `已识别画面 ${n.toLocaleString()} 帧${p}`;
+    }
+
+    function dockMsg(t) { return (t.message || '') + dockEta(t); }
+
+    /* 中途终止：确认后打停止接口。后端在 OCR/ASR 的下一个检查点收工，
+       已经跑完的素材都留在库里，下次索引按 md5 跳过它们接着跑。 */
+    async function onStop(t) {
+      const cur = t.file ? `<br>正在识别的 <b>${esc(t.file)}</b> 会留成「还没识别」，下次重跑。` : '';
+      try {
+        await ElementPlus.ElMessageBox.confirm(
+          '已经识别完的素材都保留在库里，下次点「索引」会跳过它们、' + '从断点接着往下跑。' + cur
+          + '<br><br><span class="dim">停止信号在 1~2 秒内生效（OCR 每两秒看一次）。</span>',
+          `停止「${t.lib || '索引'}」`,
+          { dangerouslyUseHTMLString: true, confirmButtonText: '停止索引',
+            cancelButtonText: '继续跑', type: 'warning' },
+        );
+      } catch (e) { return; }           // 用户点了「继续跑」
+      const r = await post('/api/scan/stop', { root: t.root });
+      toast(r.ok ? '正在停止…' : (r.err || '停止失败'), r.ok ? 'warning' : 'error');
     }
 
     function onTab(name) {
@@ -83,7 +120,8 @@ const App = {
 
     return {
       S, tab: computed(() => S.tab), onTab, statsText, taskList, videoEl,
-      dockPct, dockHead, dockPhase, dockEta, onPlayerClosed, clipHere,
+      dockPct, dockPhase, dockEta, dockLive, docFrames, dockMsg, onStop,
+      onPlayerClosed, clipHere,
       libs: computed(() => S.libs), ocr: computed(() => S.ocr),
       viewCount: computed(() => S.viewCount),
       boxNoBox: computed(() => S.boxNoBox),

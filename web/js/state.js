@@ -139,6 +139,12 @@ function onLive(ev) {
       toast(s.error ? `视频生成失败：${s.error}`
                     : `生成完成：${s.name || ''}（${s.seconds || '?'}s），已落入「AI生成」目录`,
             s.error ? 'error' : 'success');
+    } else if (s.stopped) {
+      // 用户按了「停止」。已完成的部分都留在库里了，下次索引会跳过它们接着跑。
+      toast(s.single
+        ? `已停止「${s.name || ''}」的识别，下次会重跑这一条`
+        : `已停止「${ev.lib || ''}」索引：完成 ${s.done || 0} 个，剩 ${s.remain || 0} 个；`
+          + `下次点「索引」接着往下跑`, 'warning');
     } else if (s.single) {
       const SRC = { external: '外挂 SRT', embedded: '内嵌字幕',
                     ocr: 'OCR 识别', asr: '语音识别' };

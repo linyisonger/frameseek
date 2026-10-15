@@ -89,6 +89,8 @@ const AssetsView = {
           <span class="fs-vai" v-if="v.builtin">· AI 生成</span>
           <span class="fs-vline" v-else-if="v.line_count">· {{ v.line_count.toLocaleString() }} 条台词</span>
           <span class="fs-vline" v-else-if="v.err">· 识别失败</span>
+          <!-- 索引被中途停掉的那条：还没识别，不是"没台词"，下次索引会重跑它 -->
+          <span class="fs-vline" v-else-if="v.line_source === 'pending'">· 待识别</span>
           <span class="fs-vline" v-else>· 无台词</span>
         </div>
       </div>

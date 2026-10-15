@@ -9,15 +9,15 @@ const BoxView = {
   template: `
 <div class="fs-page fs-page-box">
   <div class="fs-page-hd">
-    <div><h1>方框复查 <span class="dim" v-if="rep">{{ rep.video.name }} · {{ rep.total }} 条台词</span></h1>
+    <div><h1>方框复查 <span class="dim" v-if="rep">{{ curFile }} · {{ rep.total }} 条台词</span></h1>
       <p>台词帧 · 台词框 · 文字 —— 把框画回画面上，逐句核对圈得对不对</p></div>
     <div class="fs-tools">
       <el-select id="bxLibPick" v-model="libKey" size="small" class="w160" clearable
         placeholder="全部库" title="只看某个素材库的片子。默认「全部库」= 列出所有库里已索引、且有台词的素材">
         <el-option v-for="o in libOpts" :key="o.value" :label="o.label" :value="o.value"/>
       </el-select>
-      <el-input id="bxSearch" v-model="vq" size="small" class="w160" placeholder="搜索片名…" clearable
-        title="按片名关键字过滤右边的片单，边打边生效。多个词用空格分隔，要全部命中"/>
+      <el-input id="bxSearch" v-model="vq" size="small" class="w160" placeholder="搜索片名/目录…" clearable
+        title="按片名或所在目录过滤右边的片单，边打边生效。多个词用空格分隔，要全部命中"/>
       <el-select id="bxPick" v-model="pick" size="small" class="w260" filterable
         placeholder="选一部片子" title="选一部片子：会列出它全部台词，逐句核对画面方框圈得对不对">
         <el-option v-for="o in pickOpts" :key="o.value" :label="o.label" :value="o.value"/>
@@ -173,7 +173,24 @@ const BoxView = {
        办法：每次请求领号，回来时号不对就丢弃；保存改动时把号 +1 作废全部在途请求。 */
     let SEQ = 0;
 
-    /* 两级筛选：先按素材库，再按片名关键字（多词要全部命中）。
+    /* 二级目录：片名前面带目录（亮剑/01.mp4）。否则二级目录一多，
+       片单里全是 01.mp4 / 02.mp4，根本分不清是哪一部。
+       目录 = 相对路径去掉文件名（兼容 / 和 \），跟素材页 dirOf 同一套口径。 */
+    function dirOf(v) {
+      const rel = (v && v.rel) || '';
+      const i = Math.max(rel.lastIndexOf('/'), rel.lastIndexOf('\\'));
+      return i > 0 ? rel.slice(0, i).replace(/[\\/]+$/, '') : '';
+    }
+    function shownName(v) {
+      const d = dirOf(v);
+      return d ? `${d}/${(v && v.name) || ''}` : ((v && v.name) || '');
+    }
+    const curFile = computed(() => {
+      const v = (rep.value || {}).video;
+      return v ? shownName(v) : '';
+    });
+
+    /* 两级筛选：先按素材库，再按片名/目录关键字（多词要全部命中）。
        全在本地做——接口只拉一次全量概览（一条 SQL 聚合，秒回）。 */
     const videoList = computed(() => {
       const terms = (vq.value || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -181,7 +198,11 @@ const BoxView = {
         if (libKey.value && x.root !== libKey.value) return false;
         if (!terms.length) return true;
         const nm = String(x.name || '').toLowerCase();
-        return terms.every(t => nm.includes(t));
+        const dr = dirOf(x).toLowerCase();
+        // 目录和片名**分别**匹配，而不是拼成一个字符串再 includes：
+        // 拼起来会让「亮剑01」这种跨界的子串搜不到（中间隔着 /），
+        // 也会把原本按片名匹配的结果集改掉。
+        return terms.every(t => nm.includes(t) || dr.includes(t));
       });
     });
 
@@ -197,11 +218,15 @@ const BoxView = {
 
     const pickOpts = computed(() => {
       const showLib = !libKey.value;      // 全库模式下带库名，否则同名片分不清
-      return videoList.value.map(x => ({
-        value: `${x.root}|${x.id}`,
-        label: `${x.name}${showLib ? ' · ' + (x.lib || '') : ''}`
-             + `${x.no_box ? ` · 无框 ${x.no_box}/${x.lines}` : ''}`,
-      }));
+      return videoList.value.map(x => {
+        const d = dirOf(x);
+        return {
+          value: `${x.root}|${x.id}`,
+          label: `${d ? d + '/' : ''}${x.name}`
+               + `${showLib ? ' · ' + (x.lib || '') : ''}`
+               + `${x.no_box ? ` · 无框 ${x.no_box}/${x.lines}` : ''}`,
+        };
+      });
     });
 
     const hitText = computed(() => raw.value.length
@@ -480,6 +505,11 @@ const BoxView = {
       get libKey() { return libKey.value; }, set libKey(v) { libKey.value = v; },
       get vq() { return vq.value; }, set vq(v) { vq.value = v; },
       get filtered() { return videoList.value.length; },
+      // 二级目录相关：片单标签列表 + 单条取目录，给回归断言用
+      get labels() { return pickOpts.value.map(o => o.label); },
+      get curFile() { return curFile.value; },
+      dirOf(v) { return dirOf(v || {}); },
+      get nestedCount() { return raw.value.filter(x => dirOf(x)).length; },
     };
 
     onMounted(() => {
@@ -508,6 +538,7 @@ const BoxView = {
       raw, libKey, vq, pick, rep, list, cur, filter, lq, busy, probeOut,
       liveTxt, liveCls, liveBox, imgLoading, imgErr, editDlg, editForm,
       libOpts, pickOpts, hitText, visible, curRow, frameUrl, metricsRows,
+      curFile, dirOf, shownName,
       select, step, cls, mark, doProbe, doAsr, openEdit, saveEdit,
       onImgErr, reload,
       play: () => {

@@ -94,19 +94,29 @@
   <!-- ==================== 全局进度浮窗 ====================
        挂在最外层而不是某个页签里：在「素材」页点「重新识别台词」时
        进度也能当场看见，不用切回素材库页找。没任务时整块不渲染；
-       AI 生成任务不进来（生成页气泡自带进度）；默认收起只露一条细条。 -->
+       AI 生成任务不进来（生成页气泡自带进度）；默认收起只露一条细条。
+       收起状态下也常显一行「当前视频 + 已识别画面帧数 + 台词数」，
+       OCR 一部片要跑十几分钟，不展开也知道现在扫到哪、扫了多少帧。 -->
   <div class="fs-dock" v-if="taskList.length" id="tasksLibs">
     <el-card v-for="t in taskList" :key="t.root" shadow="always" class="fs-dock-card">
       <div class="fs-dock-hd">
         <b>{{ t.lib }}</b>
-        <span class="dim">{{ dockHead(t) }}</span>
+        <span class="dim" :title="dockLive(t)">{{ dockLive(t) }}</span>
         <el-tag size="small" v-if="dockPhase(t)" type="info">{{ dockPhase(t) }}</el-tag>
         <span class="fs-dock-pct">{{ dockPct(t) }}%</span>
         <el-button link size="small" @click="dockOpen = !dockOpen"
           :title="dockOpen ? '收起详情' : '展开详情'">{{ dockOpen ? '收起' : '展开' }}</el-button>
+        <el-button id="dockStop" size="small" type="danger" plain @click="onStop(t)"
+          title="中途停止。已经识别完的素材都会保留，下次索引会跳过它们、从断点接着往下跑">停止</el-button>
       </div>
       <el-progress :percentage="dockPct(t)" :stroke-width="8" :show-text="false"/>
-      <div class="fs-dock-msg" v-show="dockOpen">{{ t.message }}{{ dockEta(t) }}</div>
+      <div class="fs-dock-file" :title="t.file || ''">
+        <el-icon><video-play></video-play></el-icon>
+        <span v-if="t.file">{{ t.file }}</span>
+        <span v-else class="dim">{{ t.kind === 'video' ? '准备中…' : '准备下一个素材…' }}</span>
+      </div>
+      <div class="fs-dock-frames" v-if="docFrames(t)">{{ docFrames(t) }}</div>
+      <div class="fs-dock-msg" v-show="dockOpen">{{ dockMsg(t) }}</div>
     </el-card>
   </div>
 

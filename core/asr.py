@@ -218,8 +218,12 @@ def get_model(size: str = None):
 
 
 def transcribe(video: str, model_size: str = None, lang: str = None,
-               progress=None) -> Tuple[List[Dict[str, Any]], str]:
-    """返回 (台词, 错误信息)。分块处理：内存可控，也能报真实进度"""
+               progress=None, cancel=None) -> Tuple[List[Dict[str, Any]], str]:
+    """返回 (台词, 错误信息)。分块处理：内存可控，也能报真实进度
+
+    cancel 是无参可调用对象，返回 True 就收工；此时返回空 + "__cancelled__"，
+    调用方据此把这条素材留成"还没识别"，下次接着跑（不能把半截台词当完整结果）。
+    """
     model, used, err = get_model(model_size)
     if model is None:
         return [], err or "语音模型加载失败"
@@ -232,6 +236,8 @@ def transcribe(video: str, model_size: str = None, lang: str = None,
     out: List[Dict[str, Any]] = []
     gap = max(0.0, float(C.ASR_CHUNK_OVERLAP))
     for i in range(n_chunk):
+        if cancel and cancel():
+            return [], "__cancelled__"
         st = i * chunk
         dur = chunk + gap
         if progress:
@@ -262,8 +268,8 @@ def transcribe(video: str, model_size: str = None, lang: str = None,
 
 
 def get_lines(video: str, use_asr: bool = None, progress=None,
-              skip_external: bool = False, skip_embedded: bool = False
-              ) -> Tuple[List[Dict[str, Any]], str, str]:
+              skip_external: bool = False, skip_embedded: bool = False,
+              cancel=None) -> Tuple[List[Dict[str, Any]], str, str]:
     """返回 (台词列表, 来源, 错误信息)。
 
     来源取值：external(外挂SRT) / embedded(内嵌) / ocr(画面硬字幕) /
@@ -280,6 +286,9 @@ def get_lines(video: str, use_asr: bool = None, progress=None,
     OCR 跑完会在视频旁边落一个同名 .srt（我们自己的产物），下次再点重新识别
     如果还按优先级先读它，等于把上一次的旧结果又读了一遍——改再多的 OCR
     逻辑也体现不出来。所以重新识别时跳过它，让 OCR 真跑一遍并覆盖那个 .srt。
+
+    cancel 是无参可调用对象（返回 True 表示用户要停）。中断时返回空台词 +
+    错误码 "__cancelled__"，**不会**落库也不会写 .srt。
     """
     # 外挂和内嵌字幕是"白捡的"，任何情况下都先读
     if not skip_external:
@@ -305,7 +314,7 @@ def get_lines(video: str, use_asr: bool = None, progress=None,
             # OCR 分支一律发结构化 dict（带帧级完成度）；下游 _prog /
             # ocr_lines 的 str 分支仍兼容普通调用方。
             ocr_prog = ocr_mod.structured(progress) if progress else None
-            rows, oerr = ocr_mod.ocr_lines(video, progress=ocr_prog)
+            rows, oerr = ocr_mod.ocr_lines(video, progress=ocr_prog, cancel=cancel)
             if rows:
                 if C.SUB_SEARCH_SAVE:
                     try:
@@ -314,6 +323,9 @@ def get_lines(video: str, use_asr: bool = None, progress=None,
                         pass
                 return rows, "ocr", ""
             ocr_err = oerr
+            if oerr == "__cancelled__":
+                # 用户按了停止：不落库、不写 srt，直接上报中断
+                return [], "none", "__cancelled__"
         except Exception as e:
             ocr_err = f"{type(e).__name__}: {e}"
 
@@ -322,9 +334,11 @@ def get_lines(video: str, use_asr: bool = None, progress=None,
     # 语音转写（已停用，代码留作最后的兜底）
     if C.ASR_ENABLED:
         try:
-            rows, e2 = transcribe(video, progress=progress)
+            rows, e2 = transcribe(video, progress=progress, cancel=cancel)
             if rows:
                 return rows, "asr", ""
+            if e2 == "__cancelled__":
+                return [], "none", "__cancelled__"
             err = "；".join(x for x in (err, e2) if x)
         except Exception as e:
             err = "；".join(x for x in (err, f"{type(e).__name__}: {e}") if x)

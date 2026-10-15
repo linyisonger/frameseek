@@ -723,18 +723,68 @@ def api_handdraw_approve():
 
 
 # ---------------- 扫描 ----------------
+# 正在跑的索引器实例：root -> Indexer，给「停止」接口用来找到线程里的那个对象。
+# 只在任务运行期间存在，跑完/出错都会摘掉（同一条路径同时只留最新一个）。
+RUNNING_SCANS = {}
+_SCAN_LOCK = threading.Lock()
+
+
+def _register_scan(ix) -> None:
+    with _SCAN_LOCK:
+        RUNNING_SCANS[ix.root] = ix
+
+
+def _unregister_scan(ix) -> None:
+    with _SCAN_LOCK:
+        if RUNNING_SCANS.get(ix.root) is ix:
+            RUNNING_SCANS.pop(ix.root, None)
+
+
 def start_scan(path: str, use_asr: bool, with_gif: bool, retry_empty: bool = True):
     def job():
+        ix = None
         try:
             ix = IX.Indexer(path, use_asr=use_asr, with_gif=with_gif,
                             retry_empty=retry_empty)
             # 把库名喂给索引器，进度事件里才带得上是哪个库
             ix._lib_name = _lib_name_of(path)
+            _register_scan(ix)
             ix.run()
             HUB.touch_scan(path)
         except Exception as e:
             print("[scan error]", e)
+        finally:
+            if ix is not None:
+                _unregister_scan(ix)
     threading.Thread(target=job, daemon=True).start()
+
+
+@app.post("/api/scan/stop")
+def api_scan_stop():
+    """停止正在跑的索引/识别任务（中途终止）。
+
+    已经处理完的素材都已经落库了，下次点「索引」会按 md5 直接跳过它们、
+    从断点接着往下跑；正在识别到一半的那一条会被留成「还没识别」，
+    下次会重新识别它（不会留下半截台词）。
+    """
+    d = request.get_json(force=True) or {}
+    root = os.path.abspath((d.get("root") or "").strip()) if d.get("root") else ""
+    with _SCAN_LOCK:
+        ix = RUNNING_SCANS.get(root) if root else None
+        if ix is None and not root and len(RUNNING_SCANS) == 1:
+            ix = next(iter(RUNNING_SCANS.values()))   # 不指定库且只有一个在跑
+        if ix is None and root:
+            # 路径大小写/斜杠写法不一致时兜一次：按规范化路径再比一遍
+            key = os.path.normcase(root)
+            for r, v in RUNNING_SCANS.items():
+                if os.path.normcase(os.path.abspath(r)) == key:
+                    ix = v
+                    break
+    if ix is None:
+        return jsonify({"ok": False, "err": "没有正在跑的索引任务"}), 404
+    ix.request_stop()
+    return jsonify({"ok": True, "root": ix.root, "lib": ix._lib_name or "",
+                    "file": ix._cur_file or ""})
 
 
 def _lib_name_of(path: str) -> str:
@@ -774,11 +824,16 @@ def ai_root_guard(root: str):
 def scan_ai_dir(path: str):
     """后台把 AI 生成产物目录增量索引一遍（只登记媒体信息，不做字幕/语音识别）。"""
     def job():
+        ix = None
         try:
             ix = IX.Indexer(path, use_asr=False, with_gif=True, no_lines=True)
             ix._lib_name = "AI 生成"
+            _register_scan(ix)
             n = 0
             for f in IX.list_video_files(path):
+                if ix._cancel.is_set():
+                    ix.stopped = True
+                    break
                 try:
                     ix.index_file(f)
                     n += 1
@@ -788,6 +843,9 @@ def scan_ai_dir(path: str):
                 print(f"内置 AI 库：索引 {n} 个生成产物 → {path}")
         except Exception as e:
             print("内置 AI 库索引失败：", e)
+        finally:
+            if ix is not None:
+                _unregister_scan(ix)
     threading.Thread(target=job, daemon=True).start()
 
 
@@ -825,15 +883,20 @@ def api_video_retranscribe():
         return jsonify({"ok": False, "err": "找不到这个素材"}), 404
 
     def job():
+        ix = None
         try:
             ix = IX.Indexer(root, use_asr=True, with_gif=False)
             ix._lib_name = _lib_name_of(root)
+            _register_scan(ix)
             # 旧台词已在 retranscribe 里清空：库里的行、全文索引、磁盘上的旧截图
             # 一起删，再按当前优先级链重新识别。
             # force=True 时连同内嵌字幕也跳过，一律走 OCR 重跑。
             ix.retranscribe(vid, force=bool(d.get("force")))
         except Exception as e:
             print("[retranscribe error]", e)
+        finally:
+            if ix is not None:
+                _unregister_scan(ix)
 
     threading.Thread(target=job, daemon=True).start()
     return jsonify({"ok": True, "name": v["name"], "root": root})
@@ -863,12 +926,17 @@ def api_video_transcribe_asr():
         return jsonify({"ok": False, "err": f"不支持的模型：{model}"}), 400
 
     def job():
+        ix = None
         try:
             ix = IX.Indexer(root, use_asr=True, with_gif=False)
             ix._lib_name = _lib_name_of(root)
+            _register_scan(ix)
             ix.transcribe_asr(vid, model=model)
         except Exception as e:
             print("[transcribe_asr error]", e)
+        finally:
+            if ix is not None:
+                _unregister_scan(ix)
 
     threading.Thread(target=job, daemon=True).start()
     return jsonify({"ok": True, "name": v["name"], "root": root,
@@ -1501,6 +1569,7 @@ def api_boxaudit_library():
                 continue
             s = st.box_stats(v["id"])
             out.append({"id": v["id"], "name": v["name"], "root": lib["path"],
+                        "rel": v.get("rel") or "",
                         "lib": lib["name"], "lib_id": int(lib["id"]),
                         "lines": s["total"],
                         "boxed": s["boxed"],

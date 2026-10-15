@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS tasks(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     kind TEXT,
     root TEXT,
-    status TEXT,                    -- running / done / error
+    status TEXT,                    -- running / done / error / stopped / interrupted
     total INTEGER DEFAULT 0,
     done INTEGER DEFAULT 0,
     message TEXT,

@@ -101,20 +101,23 @@ def main():
         pg.click(f'.el-select-dropdown:visible .el-select-dropdown__item:has-text("{info["name"]}")')
         pg.wait_for_timeout(400)
         # 切库后清单要重新拉（一部片 verify 好几秒），轮询等它回来。
-        # 注意 list 里是台词行，没有 root 字段——归属要用 rep.video.id 对 pick 验。
+        # 注意条件里必须带上「拿到的就是新库这部片」——只看 pick 已切 + list 非空
+        # 会在空窗期误判成功：pick 立刻变成新库第一部，而 rep/list 还是上一部的内容
+        # （loadVideo 是等接口回来才覆盖 rep 的），于是 same_video 必然为假。
+        # root 也要比：不同库可能有同号 video_id（电影库和电视剧库都有 id=7）。
         loaded = False
-        for _ in range(40):
-            if pg.evaluate(
-                "r => __FS.box.pick.startsWith(r) && __FS.box.list.length > 0"
-                " && !!__FS.box.rep", info["root"]):
+        for _ in range(60):
+            if pg.evaluate("""() => {
+                if (!__FS.box.pick) return false;
+                const [root, id] = __FS.box.pick.split('|');
+                const r = __FS.box.rep;
+                return __FS.box.list.length > 0 && !!r && !!r.video
+                    && String(r.video.id) === id && r.root === root;
+            }"""):
                 loaded = True
                 break
             pg.wait_for_timeout(500)
-        same_video = pg.evaluate("""(() => {
-            const [, id] = __FS.box.pick.split('|');
-            return __FS.box.rep && String(__FS.box.rep.video.id) === id;
-        })()""")
-        check(loaded and same_video
+        check(loaded and pg.evaluate("r => __FS.box.pick.startsWith(r)", info["root"])
               and pg.evaluate("__FS.box.filtered") == info["cnt"],
               f"按库筛选 → {pg.evaluate('__FS.box.filtered')} 部，全是该库（应 {info['cnt']}）")
         hit1 = pg.text_content("#bxHit") or ""

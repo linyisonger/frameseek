@@ -505,6 +505,7 @@ def audit_video(st, vid: int) -> Dict[str, Any]:
             reason[k] = reason.get(k, 0) + 1
     return {
         "video": {"id": vid, "name": v.get("name", ""),
+                  "rel": v.get("rel") or "",
                   "duration": v.get("duration") or 0,
                   "width": v.get("width") or 0, "height": v.get("height") or 0,
                   "line_source": v.get("line_source") or ""},

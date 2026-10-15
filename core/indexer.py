@@ -71,6 +71,22 @@ class Indexer:
         # （分母只有 1，主进度条改跟 OCR 帧完成度走）。前端据此换文案。
         self._kind = "scan"
         self._cur_file = ""
+        # 用户中途按「停止」：置位后，扫描循环不再开下一条素材，
+        # 正在跑的那条也会在 OCR/ASR 的下一个检查点提前收工。
+        # 已经跑完的素材都已经落库了，下次索引按 md5 直接跳过它们继续往下跑。
+        self._cancel = threading.Event()
+        self.stopped = False
+        # 从「还没识别」被中断的素材数（run() 里统计，给摘要用）
+        self._cancelled_files = 0
+
+    def request_stop(self) -> bool:
+        """请求停止。线程安全，随时可调（幂等）。"""
+        self._cancel.set()
+        return True
+
+    def _ck(self):
+        """传给 OCR/ASR 的 cancel 回调。"""
+        return self._cancel.is_set
 
     def _tick(self, msg: str, done: int = None):
         """把进度/阶段消息写进 tasks 表，前端每秒轮询能看到"""
@@ -131,7 +147,8 @@ class Indexer:
         else:
             self._ev("", str(msg))
 
-    def _mk_prog(self, name: str, cb=None, single: bool = False):
+    def _mk_prog(self, name: str, cb=None, single: bool = False,
+                 label: str = None):
         """造一个进度回调。**必须兼容两种调用签名**，这是踩过的坑：
 
         · OCR 走 `ocr.structured(fn)` 包装，包装器是 `def wrapper(msg)`，
@@ -146,10 +163,11 @@ class Indexer:
             msg = a[-1] if a else ""
             if not msg:
                 return
+            shown = label or name          # 二级目录下的片子带目录，同名片才分得清
             if isinstance(msg, dict):
                 msg = dict(msg)
-                msg["text"] = f"{msg.get('text', '')} · {name}"
-                msg["file"] = name
+                msg["text"] = f"{msg.get('text', '')} · {shown}"
+                msg["file"] = shown
                 if single:
                     # 单素材没有"第几个文件"的概念，主进度条直接跟 OCR 帧完成度走
                     ft = msg.get("frames_total") or 0
@@ -173,6 +191,9 @@ class Indexer:
         name = os.path.basename(path)
         st = os.stat(path)
         md5 = media.file_md5(path)
+        # 进度事件里的"当前视频"一律用相对路径：二级目录下的片子只看 basename
+        # 满屏 01.mp4，进度浮窗上根本认不出在跑哪一部。
+        self._cur_file = rel
 
         if self.store.is_ignored(md5):
             # 用户从库里移除过（文件还在）→ 以后索引都不再收进来
@@ -242,9 +263,12 @@ class Indexer:
             cb(f"台词 {name}")
             self._ev("lines", f"台词 {name}")
 
-        _prog = self._mk_prog(name, cb)
+        _prog = self._mk_prog(name, cb, label=self._cur_file)
 
-        rows, source, err = asr.get_lines(path, self.use_asr, progress=_prog)
+        rows, source, err = asr.get_lines(path, self.use_asr, progress=_prog,
+                                          cancel=self._ck())
+        if err == "__cancelled__":
+            return self._mark_cancelled(vid, name)
         self._maybe_srt(path, rows, source, name, cb)
         if rows:
             self._write_shots(vid, path, rows, tag, cb, src=source)
@@ -253,6 +277,22 @@ class Indexer:
                                 err=err or "")
         return {"id": vid, "skipped": False, "name": name, "lines": len(rows),
                 "source": source, "err": err}
+
+    def _mark_cancelled(self, vid: int, name: str) -> Dict[str, Any]:
+        """被用户中途停掉的那条素材：留成「还没识别」。
+
+        **不能**把扫了一半的字幕落库（下次再索引就永远只剩前半句了）。
+        这里只把记录置回 pending，别的什么都不写——下次索引会重新识别它
+        （retry_empty 那条分支），已经跑完的素材则按 md5 直接跳过。
+        """
+        self._cancelled_files += 1
+        try:
+            self.store.update_video(vid, status="pending", line_source="pending",
+                                    line_count=0, err="")
+        except Exception:
+            pass
+        return {"id": vid, "skipped": False, "name": name, "lines": 0,
+                "source": "none", "err": "", "cancelled": True}
 
     def _maybe_srt(self, path: str, rows, source: str, name: str, cb=None) -> str:
         """机器生成的台词（OCR / ASR），在视频同目录写同名 .srt。
@@ -306,15 +346,21 @@ class Indexer:
             return {"id": old["id"], "skipped": True, "name": old["name"],
                     "no_lines": True}
         name = old["name"]
+        self._cur_file = old.get("rel") or name
         tag = os.path.splitext(os.path.basename(old["cover"] or name))[0] \
             or f"{os.path.splitext(name)[0][:40]}_{(old['md5'] or '')[:8]}"
         if cb:
             cb(f"补台词 {name}")
             self._ev("lines", f"台词 {name}")
 
-        _prog = self._mk_prog(name, cb)
+        _prog = self._mk_prog(name, cb, label=self._cur_file)
 
-        rows, source, err = asr.get_lines(path, self.use_asr, progress=_prog)
+        rows, source, err = asr.get_lines(path, self.use_asr, progress=_prog,
+                                          cancel=self._ck())
+        if err == "__cancelled__":
+            r = self._mark_cancelled(old["id"], name)
+            r["refilled"] = True
+            return r
         self._maybe_srt(path, rows, source, name, cb)
         if rows:
             self._write_shots(old["id"], path, rows, tag, cb, src=source)
@@ -426,6 +472,20 @@ class Indexer:
         self.store.replace_lines(vid, rows, src=src)
 
     # ---- 整个目录 ----
+    @staticmethod
+    def _done_msg(done: int, skipped: int, ignored: int, asr_n: int,
+                  refilled: int, failed: list) -> str:
+        msg = f"完成 {done} 个，跳过 {skipped} 个重复"
+        if ignored:
+            msg += f"，忽略 {ignored} 个（已移除）"
+        if asr_n:
+            msg += f"，语音转写 {asr_n} 个"
+        if refilled:
+            msg += f"，补台词 {refilled} 个"
+        if failed:
+            msg += f"，失败 {len(failed)}"
+        return msg
+
     def run(self, cb: Callable[[int, int, str], None] = None) -> Dict[str, Any]:
         files = list_video_files(self.root)
         self.tid = self.store.new_task("scan", self.root, len(files))
@@ -441,6 +501,20 @@ class Indexer:
         self._ev("", f"开始扫描，共 {len(files)} 个文件")
         try:
             for f in files:
+                # 用户按了停止：不再开下一条。已经在跑的那条会在 OCR/ASR
+                # 的检查点自己收工（见 _ck → ocr.ocr_lines(cancel=)）。
+                if self._cancel.is_set():
+                    self.stopped = True
+                    break
+                # 进度事件里的"当前视频"一律用相对路径：二级目录下的片子只看
+                # basename 满屏 01.mp4，浮窗上根本认不出在跑哪一部。
+                # 这条事件在开跑**之前**发，浮窗立刻就显示"现在弄的是哪个"；
+                # frames/lines 一并清零，免得挂着上一个素材的帧数。
+                self._cur_file = os.path.relpath(f, self.root)
+                self._ev("", f"{done + 1}/{len(files)} {self._cur_file}",
+                         file=self._cur_file, frames=0, frames_total=0,
+                         frames_pct=0, lines=0)
+                r = {}
                 try:
                     r = self.index_file(
                         f, cb=lambda m: cb(done, len(files), m) if cb else None)
@@ -462,9 +536,7 @@ class Indexer:
                     cb(done, len(files), os.path.basename(f))
                 self._tick(f"{done}/{len(files)}")
                 # 实时推送：整库进度 + 这个素材的入库结果，页面不用等跑完才刷新
-                self._ev("", f"{done}/{len(files)} {os.path.basename(f)}",
-                         file=os.path.basename(f))
-                if r.get("id") and not r.get("skipped"):
+                if r.get("id") and not r.get("skipped") and not r.get("cancelled"):
                     try:
                         vv = self.store.get_video(r["id"]) or {}
                         vv["root"] = self.root
@@ -473,22 +545,29 @@ class Indexer:
                         events.ev_video(self.root, self._lib_name, vv)
                     except Exception:
                         pass
-            msg = f"完成 {done} 个，跳过 {skipped} 个重复"
-            if ignored:
-                msg += f"，忽略 {ignored} 个（已移除）"
-            if asr_n:
-                msg += f"，语音转写 {asr_n} 个"
-            if refilled:
-                msg += f"，补台词 {refilled} 个"
-            if failed:
-                msg += f"，失败 {len(failed)}"
-            self.store.finish_task(self.tid, "done", msg)
+            if self.stopped:
+                # 中断：已完成的部分**全部保留在库里**（每条素材处理完就落库了），
+                # 下次索引靠 md5 直接跳过它们，从断点接着往下跑。
+                left = max(0, len(files) - done)
+                msg = (f"已停止：完成 {done} 个，剩 {left} 个。"
+                       f"下次点「索引」会跳过已完成的，接着往下跑")
+                if skipped:
+                    msg += f"（本轮跳过 {skipped} 个已完成的）"
+                if self._cancelled_files:
+                    msg += f"（{self._cancelled_files} 个识别到一半，下次重跑）"
+                self.store.finish_task(self.tid, "stopped", msg)
+            else:
+                msg = self._done_msg(done, skipped, ignored, asr_n, refilled, failed)
+                self.store.finish_task(self.tid, "done", msg)
         except Exception as e:
             self.store.finish_task(self.tid, "error", str(e))
             raise
         summary = {"task_id": self.tid, "total": len(files), "skipped": skipped,
                    "ignored": ignored, "asr": asr_n, "refilled": refilled,
-                   "failed": failed, "root": self.root, "message": msg}
+                   "failed": failed, "root": self.root, "message": msg,
+                   "stopped": bool(self.stopped), "done": done,
+                   "remain": max(0, len(files) - done),
+                   "cancelled": self._cancelled_files}
         try:
             events.ev_task_done(self.root, self._lib_name, summary)
         except Exception:
@@ -546,7 +625,10 @@ class Indexer:
             skip_emb = bool(force)
             rows, source, err = asr.get_lines(
                 path, True, progress=_prog,
-                skip_external=skip_ext, skip_embedded=skip_emb)
+                skip_external=skip_ext, skip_embedded=skip_emb,
+                cancel=self._ck())
+            if err == "__cancelled__":
+                return self._stop_single(vid, v, cleared, "重新识别")
             self._maybe_srt(path, rows, source, v["name"], cb)
             if rows:
                 self._write_shots(vid, path, rows, tag, cb, src=source)
@@ -621,7 +703,9 @@ class Indexer:
 
             _prog = self._mk_prog(v["name"], cb, single=True)
             rows, err = asr.transcribe(path, model_size=model, lang=lang,
-                                       progress=_prog)
+                                       progress=_prog, cancel=self._ck())
+            if err == "__cancelled__":
+                return self._stop_single(vid, v, cleared, "语音识别")
             self._maybe_srt(path, rows, "asr", v["name"], cb)
             if rows:
                 self._write_shots(vid, path, rows, tag, cb, src="asr")
@@ -650,6 +734,30 @@ class Indexer:
                 "source": "", "error": str(e),
             })
             return {"ok": False, "err": str(e)}
+
+    def _stop_single(self, vid: int, v: Dict[str, Any], cleared: Dict[str, Any],
+                     what: str) -> Dict[str, Any]:
+        """单素材识别被中途停掉。旧台词在建任务时就已经清空了（重新识别/语音
+        识别都是"先清空再跑"），所以这里只能把这条留成 pending——
+        下次再点一次或整库索引时会重新识别它，不会留下半截结果。
+        """
+        try:
+            self.store.update_video(vid, status="pending", line_source="pending",
+                                    line_count=0, err="")
+        except Exception:
+            pass
+        self.store.finish_task(self.tid, "stopped",
+                              f"{v['name']}：已停止（{what}），下次会重跑")
+        try:
+            events.ev_task_done(self.root, self._lib_name, {
+                "total": 1, "skipped": 0, "failed": [], "single": True,
+                "name": v["name"], "lines": 0, "source": "",
+                "cleared": cleared.get("removed", 0), "stopped": True,
+            })
+        except Exception:
+            pass
+        return {"ok": True, "stopped": True, "id": vid, "lines": 0,
+                "cleared": cleared.get("removed", 0)}
 
     def _purge_orphan_shots(self, old_shots: List[str],
                             rows: List[Dict[str, Any]]):
