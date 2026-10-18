@@ -71,6 +71,16 @@ OCR_WORKERS = 4           # 并行 OCR 进程数。实测 4 是最优点（40ms/
 OCR_THREADS = 2           # 每进程 onnxruntime 线程数。4×2=8，别超过核数。
                           # 曾经这里是 8 进程但每进程没限线程（默认 16），
                           # 128 个线程抢 16 核，比单进程还慢 5 倍（625ms/帧）。
+OCR_USE_DML = True        # 用 DirectML 把 GPU（4060Ti）拉进来分担 det/rec。
+                          # 实测单帧：det 39→21ms（1.8×），rec 110→97ms（1.2×，
+                          # rec 输入是 48×320 单行小图，GPU launch 开销吃掉收益），
+                          # 总体 1.28×。依赖 vendor/ort_dml 里的
+                          # onnxruntime-directml 包（1.24.4，pip --target 装的，
+                          # 阴影掉 venv 里的 CPU-only 1.29）。识别文本与 CPU 一致。
+                          # 包缺失/provider 不可用/onnxruntime 已被 import 时
+                          # 自动退回 CPU，不影响正确性；运行时可用环境变量
+                          # FRAMESEEK_OCR_DML=0 临时关掉对比。
+OCR_DML_DEVICE_ID = 0     # 用哪块 GPU（单卡 4060Ti，0 即可）
 OCR_MIN_LEN = 2            # 少于这个字的识别结果丢掉（噪声）
 OCR_MAX_LEN = 60          # 单条超过这个字数基本是识别串行，切一刀
 OCR_MAX_SPAN = 5.0         # 单条台词最长跨度（秒）。库里真实分布中位 1.36s / P90 3.16s，
@@ -103,6 +113,11 @@ OCR_CX_TOL = 0.22            # 框中心距画面中线最远多远（0.5±0.22�
 OCR_EDGE_MIN = 0.03          # 框边缘离画面左右边至少这么远，贴边的当台标丢掉
 OCR_CALIB_SAMPLES = 20       # 标定采样帧数：整片均匀撒点，每点 OCR 一次
 OCR_CALIB_CONF = 0.50        # 标定时用更宽松的置信度门槛，先粗定位字幕带
+# 标定缓存：同一剧集各集的字幕带位置/字高/字体几乎相同（同压制组、同版式），
+# 标定又是每部必付的固定税（实测约 54 秒/部），缓存后一部剧只付一次。
+# 键含源分辨率 + 编码 + OCR_WIDTH/BAND/STEP，任一变了自动失效。
+# 关掉这个开关就退回"每部都重新标定"的原行为。
+OCR_CALIB_CACHE = True
 OCR_MAX_SUB_LINES = 2# 一帧最多保留几行（长句折行会分两行）
 # 区分"双语片的附加语种行"和"长句折行"用。两个条件要**同时**成立
 # 才判为附加行——单条都会误杀折行字幕。阈值来自实测：
@@ -119,6 +134,57 @@ OCR_CONF_RATIO_DROP = 0.88     # 置信度比低于它算"识别更差"
 # 框心会左右挪（实测同一句内框心抖动 < 0.02，跨句可差 0.05 以上）。
 OCR_SAME_PLACE_TOL = 0.05      # 横向：框心 x 之差
 OCR_SAME_CY_TOL = 0.60         # 纵向相对横向的收紧倍数（纵向本就极稳）
+
+# ---------------- 1080p 代理（高分辨率片先压一份再抽帧/OCR）----------------
+# 问题：ffmpeg 解码器永远吐**原生分辨率**帧，scale 滤镜在解码**之后**，
+# 所以滤镜链里压得再狠，4K 该解的像素一帧都不会少。实测 OCR 流式管道是
+# 全帧解码（-i → -vf crop,scale → rawvideo，一帧不跳），Python 端再按
+# OCR_STEP 网格丢帧——也就是说 4K 片有 80% 的帧"解完就扔"。真正省时间的
+# 唯一形态是：**先转一份 1080p 代理**，之后 OCR 流 + 台词截图 + 重扫全部读代理。
+#
+# 触发条件只看分辨率（不是所有片都值得压）：
+#   - > PROXY_TRIGGER_PIXELS 的片建代理；1080p 及以下直接跳过。
+#   - 触发后压到 PROXY_MAX_W（长边），保持比例，不裁切、不拉伸。
+#
+# 画质基本无损（这是能放心压的前提）：OCR 送检带宽固定 OCR_WIDTH=960，
+# 3840×2880 的底部 30% 裁带缩到 960，与 1920×1440 裁带缩到 960 **尺寸完全相同**，
+# 只是多了一次重采样（3840→1920→960 vs 3840→960），对 OCR 文本结果无实质影响；
+# 台词截图输出固定 SHOT_WIDTH=480，源是 4K 还是 1080p 出来的图基本一样。
+# 所以代理只影响**解码耗时**，不影响识别/截图画质。
+PROXY_ENABLED = True
+PROXY_DIR = "proxy"          # 放在 .frameseek/proxy/ 下（缓存目录，list_video_files 已排除整个 CACHE_DIR，代理天然不会被扫进库）
+PROXY_MAX_W = 1920           # 代理最大宽度（长边），等比缩放
+PROXY_TRIGGER_PIXELS = 1920 * 1080   # 原片像素数超过这个才值得建代理（严格大于）
+PROXY_CRF = 23               # 代理只用于抽帧/OCR，不追求视觉无损，压低码率省磁盘
+PROXY_MAXRATE = "2500k"      # 码率天花板（-maxrate/-bufsize）。**必须有**，否则 nvenc
+                             # 的 VBR 会一路推高码率：实测 43 分钟 4K 压出 2.9GB
+                             # 的代理，大文件 + 高解码量把服务压到段错误。
+                             # 2.5Mbps 对 1080p 字幕识别绰绰有余（字幕带才 960 宽）
+PROXY_BUFSIZE = "5000k"      # 码率缓冲（bufsize = 2× maxrate）
+PROXY_MAX_MB = 1500          # 代理体积硬上限（MB）。第二道保险：超过判死并重建，
+                             # 防止任何编码器失控又安静产出一个几 GB 的文件
+PROXY_PRESET = "p1"          # nvenc preset（4060Ti，p1 很快，够用）
+PROXY_CRF_CODEC = "h264_nvenc"
+PROXY_AUDIO = "copy"         # 代理只为抽帧和 OCR，不需要音频，原样复制省时间
+PROXY_TIMEOUT = 3600         # 单部转码超时（秒）。走 GPU 全链路 45 分钟片约 1.5~2 分钟
+PROXY_DUR_TOL = 0.5          # 代理与原片时长差超过这个秒数视为过期，重建
+PROXY_USE_GPU = True         # 优先 nvenc 硬编；失败自动回落 libx264 ultrafast
+
+# ---------------- 代理转码的 GPU 全链路（这是代理提速 4.7 倍的关键）----------------
+# 原来只有**编码**在 GPU：解码 4K HEVC 10bit 和 lanczos 缩放都还在 CPU 上跑，
+# 而这两步恰好是慢的。实测（3136×2160 HEVC Main10，180 秒片段，4060Ti/16核）：
+#   CPU解码 + lanczos + nvenc ......... 34.0s  (x5.3 实时)
+#   CPU解码 + bicubic + nvenc ......... 31.8s（换插值只快 6%，证明瓶颈不在缩放）
+#   NVDEC + scale_cuda + nvenc .........  7.2s  (x24.9 实时)   ← 全程不落 CPU
+# 也就是 45 分钟整集从 8.5 分钟压到 1.8 分钟。**瓶颈是 CPU 软解码，不是缩放**。
+#
+# 画质实测（亮剑 3840×2880 真烧录字幕片，OCR 走真实入口 ocr_lines）：
+#   scale_cuda 默认插值是 nearest，**会丢台词**（14 条丢 2 条），绝对不能用；
+#   interp_algo=bicubic 时 OCR 14/14 与 CPU lanczos 完全一致（零丢失零新增），
+#   像素 PSNR 41.1 dB。所以显式指定 bicubic。
+PROXY_HW_DECODE = True       # NVDEC 硬解 + scale_cuda 硬缩放；失败自动回落 CPU 软解
+PROXY_CUDA_INTERP = 3        # scale_cuda 的 interp_algo。0/1(nearest) 会丢字幕，3=bicubic 安全
+PROXY_CUDA = "cuda"          # -hwaccel 取值。d3d11va 实测与 nvenc 组合会锁不上 surface，勿改
 
 # ---------------- 方框复查（台词帧 / 台词框 / 文字）----------------
 # 「这条台词的框到底圈对了没有」光看数字不够，必须把框画回那一帧上看。
@@ -153,6 +219,7 @@ SHOT_BATCH_MIN = 24        # 台词少于这个数就走逐帧 seek（批量要�
 # 剪辑导出（台词前后各多少秒）
 CLIP_PRE = 5.0
 CLIP_POST = 5.0
+SUB_FONT = "Microsoft YaHei"   # 导出片段烧字幕用的字体（libass 按名字找系统字体）
 
 # 大文件 md5 采样字节数（全量 md5 对几 G 的视频太慢）
 MD5_SAMPLE = 2 * 1024 * 1024

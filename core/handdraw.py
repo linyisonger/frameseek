@@ -17,8 +17,10 @@
     mix()               配音 + 伴奏混流合成最终 mp4
     qa()                质检：帧数 / 时长 / 音画长度
 
-工程目录落在 <项目根>/手绘工程/<项目名>/，成片落 <项目根>/AI生成/（与 h3gen 同目录）。
+工程目录落在 <项目根>/AI生成/手绘/<项目名>/，成片落 <项目根>/AI生成/（与 h3gen 同目录）。
 2026-10-15 起两者都搬出素材库：素材库只放用户自己的原始素材，生成物单独一档。
+2026-10-16 起工程目录也从项目根的「手绘工程/」迁进「AI生成/手绘/」——
+AI 产物（成片 / 绘画 / 手绘工程）统一收在 AI生成/ 下。
 注意 root 参数仅为兼容旧调用保留，已不参与路径定位。
 
 注意：studio.py 输出 JSON 到 stdout、进度日志到 stderr，本模块把 stdout 原样
@@ -40,7 +42,7 @@ STUDIO_PY = os.path.join(STUDIO_SKILL, "scripts", "studio.py")
 # 引擎内部自建的隔离解释器（prepare_env.py 建的），没建就退回系统 python
 STUDIO_VENV_PY = os.path.join(STUDIO_SKILL, ".venv", "Scripts", "python.exe")
 
-PROJECT_ROOT_NAME = "手绘工程"   # <项目根>/手绘工程/<项目名>/
+PROJECT_ROOT_NAME = "手绘"   # <项目根>/AI生成/手绘/<项目名>/（2026-10-16 从项目根/手绘工程/ 迁入）
 # 成片目录名：跟 gen.py 的产物同目录（2026-10-15 从「生成」改名「AI生成」）。
 # 实际落点走 gen.output_dir()，这里只留给 info 展示用。
 OUT_DIR_NAME = "AI生成"
@@ -110,7 +112,7 @@ def engine_info() -> dict:
                 "interpreter": "", "script": STUDIO_PY,
                 "skill_dir": STUDIO_SKILL,
                 "project_root_name": PROJECT_ROOT_NAME, "canvas": CANVAS,
-                "project_root_dir": os.path.join(BASE, PROJECT_ROOT_NAME),
+                "project_root_dir": project_root(),
                 "out_dir": os.path.join(BASE, OUT_DIR_NAME),
                 "default_voice": DEFAULT_VOICE, "ffmpeg": shutil.which("ffmpeg") or "",
                 "missing_modules": list(REQUIRED_MODULES)}
@@ -127,7 +129,7 @@ def engine_info() -> dict:
         "script": STUDIO_PY,
         "skill_dir": STUDIO_SKILL,
         "project_root_name": PROJECT_ROOT_NAME,
-        "project_root_dir": os.path.join(BASE, PROJECT_ROOT_NAME),
+        "project_root_dir": project_root(),
         "out_dir": os.path.join(BASE, OUT_DIR_NAME),
         "canvas": CANVAS,
         "default_voice": DEFAULT_VOICE,
@@ -150,18 +152,21 @@ def safe_name(name: str) -> str:
 
 
 def project_root(root: str = "") -> str:
-    """<项目根>/手绘工程/，建好返回绝对路径。
+    """<项目根>/AI生成/手绘/，建好返回绝对路径。
 
-    2026-10-15 改：工程整体搬出素材库，落在 FrameSeek 项目目录下——
-    素材库只留用户自己的原始素材。root 参数保留只为兼容旧调用，不再用于定位。
+    2026-10-16 改：工程从项目根的「手绘工程/」迁进「AI生成/手绘/」——
+    AI 产物（成片 / 绘画 / 手绘工程）统一收在 AI生成/ 下，素材库只放
+    用户自己的原始素材。落点尊重 hub 的 gen_outdir 设置（与成片同根）。
+    root 参数保留只为兼容旧调用，不再用于定位。
     """
-    d = os.path.join(BASE, PROJECT_ROOT_NAME)
+    from core import gen as _gen
+    d = os.path.join(_gen.output_dir(), PROJECT_ROOT_NAME)
     os.makedirs(d, exist_ok=True)
     return d
 
 
 def project_dir(root: str, project: str) -> str:
-    """<项目根>/手绘工程/<项目名>/，不存在则报错。"""
+    """<项目根>/AI生成/手绘/<项目名>/，不存在则报错。"""
     p = os.path.join(project_root(root), safe_name(project))
     if not os.path.isdir(p):
         raise ValueError(f"手绘工程不存在：{p}")
@@ -635,6 +640,99 @@ def qa(root: str, project: str) -> dict:
     """第 8 步：质检——帧数 / 时长 / 音画长度一致性。"""
     return _run(["qa", project_json(os.path.abspath(root), project)],
                 timeout=600)
+
+
+def auto_project(root, text, name="", title="", target_sec=30, tick=None) -> dict:
+    """一键全自动：文稿 → 分幕 → 默认空白纸标注 → 批准 → 逐幕渲染 → 混流成片。
+
+    省掉手动上传线稿、写标注 JSON、批准时间轴等中间步骤。底层仍走手绘引擎，
+    只是把六步串成一条，并用一张默认空白米黄纸当线稿（白板讲解本就是空纸逐笔写）。
+    tick(pct, msg) 用于推进度。
+    """
+    import tempfile
+    from PIL import Image as _Image
+    root = os.path.abspath(root)
+    # 1) 文稿落临时 txt，建工程
+    tf = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8")
+    tf.write((text or "").strip() or "（空内容）")
+    tf.close()
+    try:
+        res = init_project(root=root, script=tf.name, name=(name or "").strip(),
+                           title=(title or "").strip())
+    finally:
+        try:
+            os.unlink(tf.name)
+        except OSError:
+            pass
+    project = res["project"]
+    if tick:
+        tick(8, "工程已建：" + os.path.basename(project))
+    # 2) 分幕
+    sc = suggest_scenes(root=root, project=project, target_sec=int(target_sec or 30))
+    scenes = sc.get("scenes") or []
+    cues = sc.get("cues") or []
+    if not scenes:
+        raise ValueError("分幕失败：没切出任何幕（文稿可能太短）")
+    proj = json.load(open(project_json(root, project), encoding="utf-8"))
+    fps = int(proj.get("fps") or 30)
+    frame_ms = 1000.0 / fps
+    pdir = project_dir(root, project)
+    # 3) 默认空白纸线稿（米黄底，白板讲解用）
+    blank = os.path.join(pdir, "blank_lineart.png")
+    if not os.path.isfile(blank):
+        _Image.new("RGB", (1920, 1080), (245, 236, 215)).save(blank)
+    total = len(scenes)
+
+    def _dur(raw):
+        d = int(round((raw or (int(target_sec or 30) * 1000)) / frame_ms) * frame_ms)
+        return d if d >= 900 else int(round(900 / frame_ms) * frame_ms)
+
+    for i, s in enumerate(scenes):
+        idx = s.get("sceneIndex") or (i + 1)
+        sid = "scene-%02d" % int(idx)
+        dur = _dur(s.get("sceneDurationMs"))
+        cr = s.get("cueRange") or []
+        sub = ""
+        if len(cr) == 2:
+            sub = " ".join(c.get("text", "") for c in cues
+                           if cr[0] <= (c.get("index") or 0) <= cr[1])
+        ann = {
+            "sceneId": sid,
+            "canvas": {"width": 1920, "height": 1080},
+            "storyBasis": (sub or text or "")[:80],
+            "sceneDurationMs": dur,
+            "elements": [{
+                "id": "main", "label": "主体", "sequence": 1,
+                "narrativeRole": "讲解内容",
+                "subtitle": (sub or "")[:60],
+                "type": "structure",
+                "region": {"x": 560, "y": 300, "width": 800, "height": 480},
+                "reveal": {"direction": "left_to_right", "startMs": 300,
+                           "durationMs": int(dur) - 800,
+                           "maskPaddingPx": 20, "protectedRegions": []},
+                "handPath": {"start": [560, 600], "end": [1360, 600],
+                             "easing": "easeInOut"},
+            }],
+        }
+        write_annotation(root=root, project=project, scene_id=sid,
+                         image=blank, annotation=ann)
+        if tick:
+            tick(int(15 + 45 * i / total), "标注第 %d/%d 幕" % (idx, total))
+    # 4) 批准时间轴
+    approve_timeline(root=root, project=project)
+    if tick:
+        tick(62, "时间轴已批准，开始逐幕渲染")
+    # 5) 逐幕渲染（同步，后台线程里跑不阻塞 Flask）
+    for i, s in enumerate(scenes):
+        idx = s.get("sceneIndex") or (i + 1)
+        sid = "scene-%02d" % int(idx)
+        render_scene(root=root, project=project, scene_id=sid, preview_ms=0)
+        if tick:
+            tick(int(64 + 30 * i / total), "渲染第 %d/%d 幕" % (idx, total))
+    # 6) 混流成片（配音需前端已勾联网许可）
+    if tick:
+        tick(95, "渲染完成，合成成片（配音 + 伴奏）")
+    return mix(root=root, project=project, index="none")
 
 
 def approve_timeline(root: str, project: str) -> dict:

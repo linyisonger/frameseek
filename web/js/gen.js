@@ -16,6 +16,8 @@ const GenView = {
     </div>
   </div>
 
+  <el-divider />
+
   <div class="fs-chat" id="chatLog">
     <div v-if="!msgs.length" class="fs-chat-empty" id="chatEmpty">
       说一句话就能出片：描述画面、镜头、光线（英文效果最好）。<br>回车发送 · 成片落在项目「AI生成」目录
@@ -34,8 +36,8 @@ const GenView = {
         <div class="bub-meta">{{ m.name }}<template v-if="m.w"> · {{ m.w }}×{{ m.h }}</template>
           <template v-if="m.seconds"> · {{ m.seconds }}s</template></div>
         <div class="bub-acts">
-          <el-button link size="small" @click="goAssets">去素材页看</el-button>
-          <el-button link size="small" @click="clearChat">清空会话</el-button>
+          <el-button link size="small" @click="goAssets" title="去「素材」页看成片"><el-icon><Film/></el-icon><span>去素材页看</span></el-button>
+          <el-button link size="small" @click="clearChat" title="清空当前会话记录"><el-icon><Delete/></el-icon><span>清空会话</span></el-button>
         </div>
       </template>
       <template v-else>
@@ -49,16 +51,16 @@ const GenView = {
     <div class="fs-composer-main">
       <el-input id="genPrompt" v-model="prompt" type="textarea" :rows="2" resize="none"
         placeholder="描述你想要的画面…（Enter 发送，Shift+Enter 换行）"
-        @keydown.enter.exact.prevent="submit"/>
+        @keydown.enter.exact.prevent="onEnter"/>
       <el-button id="btnGen" type="primary" :disabled="!gen.ready || !prompt.trim()" @click="submit"
-        title="按提示词生成一段视频（英文描述效果最好）。成片落在项目「AI生成」目录，不进素材库">发送</el-button>
+        title="按提示词生成一段视频（英文描述效果最好）。成片落在项目「AI生成」目录，不进素材库"><el-icon><Promotion/></el-icon><span>发送</span></el-button>
     </div>
     <div class="fs-composer-row">
       <el-button id="btnGenRef" size="small" @click="pickRef"
-        title="参考图：上传后用 &lt;Picture 1&gt; 在提示词里引用，锁形象/风格">参考图</el-button>
+        title="参考图：上传后用 &lt;Picture 1&gt; 在提示词里引用，锁形象/风格"><el-icon><Picture/></el-icon><span>参考图</span></el-button>
       <input type="file" ref="refFile" accept="image/*" hidden @change="onRef"/>
-      <span v-if="gen.ref" class="fs-refname clr" @click="dropRef"
-        title="点此移除参考图">已选 {{ gen.refName }} · prompt 里用 &lt;Picture 1&gt; 引用（点此移除）</span>
+      <el-tag v-if="gen.ref" size="small" type="info" effect="plain" closable @close="dropRef"
+        title="已选参考图：prompt 里用 <Picture 1> 引用（点 ✕ 移除）">已选 {{ gen.refName }}</el-tag>
       <el-select id="genDur" v-model="dur" size="small" class="w100" title="时长（5~15 秒）">
         <el-option label="5 秒" :value="5"/><el-option label="8 秒" :value="8"/>
         <el-option label="12 秒" :value="12"/><el-option label="15 秒（上限）" :value="15"/>
@@ -72,20 +74,31 @@ const GenView = {
         <el-option label="高清 1.0MP（慢）" :value="1"/>
       </el-select>
       <el-button id="genMore" link size="small" @click="adv = !adv"
-        title="展开落点目录 / 输出文件名 / 随机种子等高级选项">{{ adv ? '收起 ▴' : '更多 ▾' }}</el-button>
+        title="展开落点目录 / 输出文件名 / 随机种子等高级选项"><el-icon><Setting/></el-icon><span>{{ adv ? '收起 ▴' : '更多 ▾' }}</span></el-button>
     </div>
-    <div v-show="adv" class="fs-composer-adv" id="genAdv">
-      <span class="fs-label">落点</span>
-      <span class="dim" id="genOutDir" title="生成产物不进素材库，单独放项目目录">{{ gen.outDir || '项目目录/AI生成' }}</span>
-      <span class="fs-label">文件名</span>
-      <el-input id="genName" v-model="fname" size="small" class="w200" placeholder="可空，默认按时间戳"/>
-      <span class="fs-label">种子</span>
-      <el-input-number id="genSeed" v-model="seed" size="small" :min="0" controls-position="right"
-        title="0 = 随机；固定同一个数字可复现同一构图"/>
-    </div>
+    <el-form v-show="adv" label-position="top" class="fs-form fs-composer-adv" id="genAdv" @submit.prevent>
+      <el-row :gutter="14">
+        <el-col :xs="24" :sm="12" :md="8">
+          <el-form-item label="落点目录">
+            <span class="dim" id="genOutDir" title="生成产物不进素材库，单独放项目目录">{{ gen.outDir || '项目目录/AI生成' }}</span>
+          </el-form-item>
+        </el-col>
+        <el-col :xs="24" :sm="12" :md="8">
+          <el-form-item label="文件名（可选）">
+            <el-input id="genName" v-model="fname" size="small" placeholder="可空，默认按时间戳"/>
+          </el-form-item>
+        </el-col>
+        <el-col :xs="24" :sm="12" :md="8">
+          <el-form-item label="随机种子">
+            <el-input-number id="genSeed" v-model="seed" size="small" :min="0" controls-position="right"
+              title="0 = 随机；固定同一个数字可复现同一构图"/>
+          </el-form-item>
+        </el-col>
+      </el-row>
+    </el-form>
     <div class="fs-composer-row">
       <span class="fs-label">试试</span>
-      <el-button v-for="e in examples" :key="e.t" size="small" class="gen-ex" @click="prompt = e.p"
+      <el-button v-for="e in examples" :key="e.t" size="small" @click="prompt = e.p"
         :title="'点一下把这段英文示例提示词填进输入框，改改就能发'">{{ e.t }}</el-button>
     </div>
   </div>
@@ -135,6 +148,13 @@ const GenView = {
       e.target.value = '';
     }
     function dropRef() { gen.ref = ''; gen.refName = ''; }
+
+    /* Enter 发送：中文输入法（IME）选词时按 Enter 会带 isComposing/keyCode 229，
+       直接触发 submit 会把半截拼音当提示词发出去——这里拦掉。 */
+    function onEnter(e) {
+      if (e && (e.isComposing || e.keyCode === 229)) return;
+      submit();
+    }
 
     async function submit() {
       const p = (prompt.value || '').trim();
@@ -194,7 +214,7 @@ const GenView = {
 
     return {
       gen, prompt, dur, aspect, mp, seed, fname, adv, msgs, refFile, examples,
-      submit, pickRef, onRef, dropRef,
+      submit, onEnter, pickRef, onRef, dropRef,
       clearChat: () => { msgs.value = []; },
       goAssets: () => { S.tab = 'assets'; },
       mediaUrl,

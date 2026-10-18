@@ -23,7 +23,7 @@ python app.py                        # http://127.0.0.1:8771
 | --- | --- |
 | `hub.db` / `*.db` / `.frameseek/` | 本地索引，含你自己素材库的绝对路径 |
 | `vendor/`（根级，约 259MB） | 本机 venv 里 anyio 半残才塞进去的依赖兜底，正常环境用 pip 装。注意 `web/vendor/` **入库**（Vue/Element Plus 本地依赖，约 1.7MB） |
-| `AI生成/` `手绘工程/` `_hd_src/` `_out/` | 产物与日志 |
+| `AI生成/`（含 `绘画/` 子目录与 `手绘/` 工程） `_hd_src/` `_out/` | 产物与日志 |
 | `_testlib/`（96MB 视频） | 回归脚本的测试素材，自备；没有它 UI 回归跑不起来，主程序不受影响 |
 
 ### 前端架构（2026-10-15 重写 + 按功能拆模块）
@@ -198,7 +198,7 @@ Python 用本机 venv：`C:\Users\Administrator\.workbuddy\binaries\python\envs\
 | -- | ----------------------------- | --- | ----------------------------------- |
 | 1  | 同名外挂字幕 `.srt/.ass/.ssa/.vtt`  | 毫秒  | 视频旁边放同名字幕即可                         |
 | 2  | 内嵌字幕流（`ffmpeg -map 0:s`）      | 秒级  | mkv/mp4 内封的字幕                       |
-| 3  | **OCR 硬字幕识别**（RapidOCR，纯 CPU） | 分钟级 | 看画面认字，4 进程约 7 倍实时（2026-10 调优后）      |
+| 3  | **OCR 硬字幕识别**（RapidOCR，默认 DML 走 GPU） | 分钟级 | 看画面认字，4 进程约 7 倍实时（2026-10 调优后 + DML） |
 | —  | faster-whisper 语音转写           | 已停用 | 保留代码兜底，`config.ASR_ENABLED = False` |
 
 全文索引用 SQLite FTS5 **trigram**，所以"思念""茶花"这种两字中文也能命中（<3 字自动退回 LIKE）。
@@ -274,6 +274,220 @@ RapidOCR 认的是"画面里所有字"，不是"台词"。直接用会混进一�
 真正还能再压的是固定成本：**标定要 18 秒**（20 次独立 ffmpeg seek，每次解一帧），  
 改成一次解码撒 20 帧能省 15 秒——但只对 5 分钟这种短片有意义，整部电影可忽略。
 
+### 把 GPU 拉进来：DirectML provider（2026-10 接入）
+
+OCR 原本纯 CPU 跑（vendor 的 onnxruntime 是 CPU-only build，provider 里根本没有 GPU）。
+现在默认走 **DML**：`vendor/ort_dml/` 里放了 onnxruntime-directml 1.24.4
+（DML 独立发行版的最后版本，73MB），`core/ocr.py` 的 `_setup_dml()` 在引擎构建前
+把它插到 `sys.path` 最前，阴影掉 venv 里的 CPU 版——**必须在任何代码 import
+onnxruntime 之前做**，`sys.modules` 缓存后换包会静默失效。注入点在
+`_apply_threads` 的 `TunedSession`（线程数同样只能在建 session 那一刻定），
+providers 最前加 `DmlExecutionProvider` 即可，ORT 按顺序初始化，失败自动落 CPU。
+
+收益（亮剑 01.mp4，3840×2880，走 app 自己代码路径实测）：
+
+| 口径 | CPU | DML | 加速 |
+|---|---|---|---|
+| 单进程 det / rec | 29ms / 88ms | **14ms / 63ms** | 1.41× |
+| 4 进程 ×2 线程池吞吐 | 41.6 帧/s | **53.5 帧/s** | 1.29× |
+| 识别质量 | — | **9 条台词逐条一致** | — |
+
+收益边界：rec 输入是 48×320 的单行小图，kernel launch 开销吃掉大半收益
+（det 1.8×，rec 只 1.2×）；四个进程抢一块 4060Ti，池级只剩 1.29×。
+开关：`config.OCR_USE_DML`（默认开），环境变量 `FRAMESEEK_OCR_DML=0` 可临时反转做 A/B。
+包缺失/provider 不可用/onnxruntime 已被 import 时自动退回 CPU，不影响识别结果。
+worker 启动日志会打 `provider=dml|cpu`，服务日志可直接核对。
+
+### 高分辨率片先压 1080p 代理再抽帧（2026-10 新增）
+
+ffmpeg 有个绕不过去的事实：**解码器永远吐原生分辨率帧，`scale` 滤镜在解码
+之后**。所以滤镜链里写得再狠，4K 该解的像素一帧都不会少。而 OCR 流式管道
+恰恰是最吃亏的——命令是 `-i → -vf crop,scale → rawvideo`，**全帧解码一帧不跳**，
+Python 端才按 `OCR_STEP` 网格丢帧，等于 4K 片有 80% 的帧"解完就扔"。
+
+唯一的解法是让 ffmpeg 只解码一次：先转一份 1080p 代理，之后 OCR 流、台词截图、
+重扫全部读代理。
+
+**触发条件只看分辨率**（`config.PROXY_TRIGGER_PIXELS`，默认 1920×1080 严格大于）：
+电视剧库 28 部全是 **3840×2880**，像素量是 1080p 的 5.3 倍；电影库 64 部全部
+≤1920 宽，一部都不会触发。
+
+| 环节 | 读哪个 |
+| ---- | ---- |
+| md5 / 元信息 / 封面 / 动图 | 原片 |
+| 外挂 SRT / 内嵌字幕流 / 语音转写 | 原片（外挂 srt 就贴在原片旁边，代理里没有字幕流） |
+| **OCR 帧流 / 台词截图 / 重扫** | **代理** |
+
+画质基本无损，所以只赚时间不亏质量：OCR 送检带宽固定 `OCR_WIDTH=960`，
+3840×2880 的底部 30% 裁带缩到 960 与 1920×1440 裁带缩到 960 **尺寸完全相同**
+（只是多一次重采样），文本结果不受影响；台词截图固定 `SHOT_WIDTH=480`，
+源是 4K 还是 1080p 出来的图基本一样。
+
+配套细节：
+
+- **只在真的需要 OCR 时才建（惰性）**。台词优先级是
+  `外挂 SRT → 内嵌字幕流 → OCR → ASR`，前两级命中就**根本不建代理**。
+  这个坑踩过：原先是无条件先建代理再取台词，结果《潜伏》这种**内嵌了
+  subrip 字幕流的 4K 片**（3136×2160 HEVC 10bit，2 条字幕流各 2556 行，
+  简体流第 2 条就是"据我所知啊/参加旧金山会议的代表"）也被先压了一遍
+  888MB 代理，**白花 7 分钟**——而它 1.4 秒就能拿到 639 条字幕，压根不需要 OCR。
+  现在的判断只做廉价探测（外挂文件 stat + ffprobe 的字幕流列表），0.000 秒出结果。
+- **转码要有进度反馈**。ffmpeg 默认只在 stderr 吐静态统计，而我们 `-v error`
+  把它们全关了，转码阶段对前端**完全静默**——用户看到界面几分钟没动静就以为
+  卡死（这个坑也踩过）。现在开 `-progress pipe:1` 边读边推百分比，
+  实测 10bit 整部 432 秒全程 0%→100% 实时递增（按 2% 一跳，避免刷屏）。
+- **存放** `.frameseek/proxy/`——放缓存目录里的关键原因是 `list_video_files`
+  会整体排除 `CACHE_DIR`，代理天然不会被扫进库、不会被"重新索引"当成新片。
+- **有效期** 代理与原片时长差超过 `PROXY_DUR_TOL`（0.5s）即视为过期并重建。
+  这条不能省：拿一份时长对不上的代理去抽帧，末尾台词的时间点会落在代理时长
+  之外，全部抽不到图。
+- **转码三级降级** GPU 全链路 → CPU 软解+nvenc → libx264 ultrafast，
+  任一级失败自动降级，建失败就删掉半成品回落读原片。
+- **零风险** 代理是纯优化：开关关、片子本就 ≤1080p、有现成字幕、转码失败、
+  异常抛出——六种情况全部回落读原片，不改变任何现有行为。
+
+**提速 3.6 倍：把解码和缩放也搬上 GPU（2026-10）**
+
+原先只有**编码**在GPU 上，解码 4K HEVC 和 lanczos 缩放都还在CPU 上跑，
+而这两步恰好是慢的。瓶颈定位（3136×2160 HEVC Main10，180 秒切片，4060Ti/16核）：
+
+| 方案 | 耗时 | 实时倍率 | 说明 |
+| ---- | ---- | ---- | ---- |
+| CPU 解码 + lanczos + nvenc（改造前） | 34.0s | x5.3 | 只编码在 GPU |
+| CPU 解码 + bicubic + nvenc | 31.8s | x5.7 | 只换插值质量，**只快 6%** |
+| **NVDEC + scale_cuda + nvenc** | **7.2s** | **x24.9** | 解码/缩放/编码全在 GPU |
+| 并行 2~6 段 · GPU | 7.3~8.0s | x22~25 | GPU 已吃满，分段无收益 |
+
+第二行是关键证据：**换缩放算法几乎没用，说明瓶颈根本不在缩放，而在 CPU 软解码**。
+所以提速 4.7 倍的正解是 NVDEC，而不是去调 lanczos。
+
+**GPU 缩放的插值必须显式指定（踩过的坑）**：`scale_cuda` 的 `interp_algo` 默认是
+**nearest**，会**丢台词**。亮剑真烧录字幕片上跑 OCR 端到端（真实入口 `ocr_lines`，
+90 秒片段，3840×2880）：
+
+| 代理插值 | 像素 PSNR | OCR 台词 | 丢失 | 新增 |
+| -------- | --------- | -------- | ---- | ---- |
+| CPU lanczos（基准） | — | 14 条 | — | — |
+| cuda nearest（默认） | 37.8 dB | 14 条 | **2** | 2 |
+| cuda bilinear | 41.1 dB | 14 条 | 1 | 1 |
+| **cuda bicubic** | **41.1 dB** | **14 条** | **0** | **0** |
+| cuda lanczos | 40.0 dB | 15 条 | 0 | 1（多识别一条） |
+
+`bicubic` 与 CPU lanczos 的 OCR 结果**完全一致**，像素 PSNR 41.1 dB 属于视觉无损，
+所以定为默认（`PROXY_CUDA_INTERP=3`）。
+
+**GPU 路径绝对不能加 `-pix_fmt`（踩过的坑）**：`scale_cuda` 的 `format=nv12` 已经
+定死输出格式，再加 `-pix_fmt nv12`（或 `yuv420p`）会让 `auto_scale` 介入协商并直接
+失败：`Impossible to convert between the formats supported by Parsed_scale_cuda_0
+and auto_scale_0`，整条转码 rc≠0。这个坑很阴——**它不是启动时报错，而是产出 0 字节
+文件后靠降级链静默回落到 CPU**，实测整片耗时从 143s 悄悄变成 400s，日志上完全看不出
+走过 GPU。所以 GPU 路径干脆不给 `-pix_fmt`，让编码器直接吃 nv12。
+
+**降级链的必要性**：实测同一部片子 GPU 路径失败（0.8s / 0MB）时，全靠自动降级到
+CPU 软解才拿到结果。任何驱动/滤镜差异都不能让代理功能整体挂掉。
+
+实测（亮剑 01.mp4 整片，3840×2880 HEVC 8bit，43.6 分钟）：
+
+| 口径 | 改造前 | GPU 全链路 |
+| ---- | ------ | ---------- |
+| 触发判断 | 11059200 像素 > 2073600 → 建代理 ✅ | 同左 |
+| 转码耗时 | 383~400 秒 | **141~143 秒（2.4 分钟）** |
+| 实时倍率 | x6.5 | **x18.5** |
+| 代理体积 | 801MB / 2.57Mbps | 801MB（码率封顶，体积不变） |
+| 代理规格 | 1920×1440 yuv420p | 1920×1440 yuv420p（一致） |
+| 二次调用 | 秒回 | 0.16s（幂等命中） |
+
+实测（潜伏 S01E01 整片，3136×2160 HEVC **10bit**，45 分钟，**内嵌字幕流**）：
+
+| 口径 | 结果 |
+| ---- | ---- |
+| 字幕流 | 2 条 subrip（流2 简体 / 流3 繁体，各 2556 行） |
+| `from_embedded` | **1.4 秒拿到 639 条**，首条"据我所知啊" |
+| 代理判断 | 0.000 秒 → **不建代理**（有字幕就不需要 OCR） |
+| （对照）真要转 10bit 源 | 约 70 秒 / 888MB，**37 倍实时**，10bit 无额外开销 |
+
+**码率必须有上限（踩过的坑）**：最初写成 `-rc vbr -cq 23 -b:v 0`，以为 CQ 会自己
+收敛，实际 `-b:v 0` 在 VBR 下等于**放弃码率约束**——nvenc 一路推高码率，把 43 分钟
+的 3840×2880 压成 **2.9GB**（约 9Mbps）的大文件。大代理 + 5倍解码量叠加，扫描
+电视剧库时把服务进程压到 **Segmentation fault**（整个 Flask 服务挂掉，不是普通异常）。
+两个小样本测试（180秒片段）完全掩盖了这个问题——体积随码率线性放大，样本小了看不出来。
+
+现在三重约束：
+
+| 参数 | 值 | 作用 |
+| ---- | ---- | ---- |
+| `PROXY_MAXRATE` | `2500k` | `-maxrate/-bufsize` 码率天花板，CQ 仍主导画质。2.5Mbps 对 960 宽的字幕带识别绰绰有余 |
+| `PROXY_MAX_MB` | `1500` | 代理体积硬上限，超了判死重建——第二道保险，防编码器再次失控 |
+| `PROXY_DUR_TOL` | `0.5` | 时长差超限判过期（防止末尾台词时间点落在代理时长外，抽不到图） |
+
+### 标定缓存：同一剧集只标定一次（2026-10）
+
+识别任何一部片之前，都要先**标定字幕带**：整片均匀撒 20 个点，每点抽一帧跑一次
+OCR，统计框都堆在哪个纵向区间、字高多少、置信度基线、字体指纹。这一步决定
+后续几何筛选的松紧——港片字幕带中心 y≈0.77、日漫 y≈0.66，不标定就只能写死一个
+折中窗口，两头都不讨好。
+
+**成本是每部必付的固定税**：20 次 `-ss seek + 单帧 OCR`，实测约 **23 秒/部**。
+而同一剧集各集的字幕带位置、字高、字体指纹**几乎完全相同**（同一压制组、
+同一版式），27 部《亮剑》重复做26 次纯粹是浪费。
+
+标定结果现在落盘到 `<库>/.frameseek/calib/<键>.json`，键是：
+
+```
+<宽>x<高>_<编码>_<OCR_WIDTH>_<OCR_BAND>_<OCR_STEP>
+例：3840x2880_hevc_960_0.300_0.2
+```
+
+**键的设计是关键**，两个坑：
+
+- **不能用文件 md5** —— 那样每部片一个独立键，缓存等于没做。
+- **不能只按目录** —— 同目录下可能有不同分辨率的片，带位置会差。分辨率必须进键：
+  字幕带的**归一化**坐标依赖裁带比例，4:3（3840×2880）和 16:9（1920×1080）
+  裁同样 30% 带，字高归一化后不同。编码也要进键：H.264 与 HEVC 的压制位置
+  常差几行，混用会让标定带偏，**直接导致整片认不出**（比慢更糟）。
+- **键里不能有 Windows 保留字符**（`| < > : " / \ ? *`）。踩过：分隔符用 `|`
+  直接 PermissionError，缓存永远写不出来，而写入处的 `try/except` 把异常
+  吞了，表面看只是"怎么没变快"。现在分隔符用 `_`，且写入失败会打一行日志。
+
+只有 `ok=True`（样本 ≥6 个框）的标定才写入缓存，失败的不写——避免把坏结果
+固化下来反复命中。`calib_cache_clear(video)` 可清空某个库的缓存。
+
+实测（亮剑 26.mp4）：
+
+| 项 | 首次 | 命中缓存 |
+| --- | --- | --- |
+| 标定耗时 | 23.6 秒 | **0.46 秒**（51×） |
+| 同剧另一集（27.mp4） | — | **0.47 秒** |
+| 识别结果 | — | 逐条完全一致 |
+
+### 解码/OCR 并行：实测无效，代码保留但默认关闭（2026-10）
+
+`_frame_stream` 原本在主线程里迭代，每攒满 24 帧调一次阻塞的 `pool.imap`——
+OCR 算这批的工夫主线程没去读管道，ffmpeg 的 stdout 缓冲一满就自己阻塞，
+于是解码和 OCR 串行相加。看数据像是能省一大截（管道单独跑 46 帧/秒，
+是 OCR 的两倍），于是实现了 `_FrameFeeder`：生产线程预读帧进有界队列，
+主线程只消费，真并行。
+
+**实测整部（亮剑 26.mp4，同一台机器连续跑）：**
+
+| 模式 | 耗时 | 条数 |
+| ---- | ---- | ---- |
+| 串行（改造前） | **924.1 秒** | 871 |
+| 并行（feeder） | **935.1 秒** | 871 |
+
+**没有任何收益**，差异 11 秒在噪声内。原因：解码占的CPU 核，OCR 占的也是
+CPU 核 + DML，16 核不够两边同时跑满——管道那"两倍富余"是空闲时的富余，
+机器一忙就没了。
+
+教训：**动手前应该先测基线可复现性**。这个改造的判断依据是一组 624.5 秒的
+数据，复现时却是 924 秒——那 624 秒是机器空闲时的偶然值。一旦真去复测，
+"解码 278s + OCR 397s 串行相加"这套拆解就站不住了（那是公式倒推，不是实测），
+真正的结论是 OCR 计算本身就是瓶颈（稳态约 16 帧/秒）。
+
+代码保留在 `core/ocr.py` 的 `_FrameFeeder`，由 `FRAMESEEK_OCR_PARALLEL=1`
+开启，默认走串行。保留是因为：若将来换更强的 GPU、DML 占用率下降，
+瓶颈分布可能反转，值得重新评估一次。
+
 ### 台词以"句"为单位：0.2s 网格 + 同句投票（2026-10 重做）
 
 早期的台词本质是"每 0.5s 认一帧、相邻相似的并起来"，不是真正的句子：  
@@ -325,6 +539,16 @@ RapidOCR 认的是"画面里所有字"，不是"台词"。直接用会混进一�
 | `OCR_WORKERS`         | `4`    | 并行进程数。实测 4 是最优点，8 只快 6% 却多一倍内存                                        |
 | `OCR_THREADS`         | `2`    | 每进程 onnxruntime 线程数。**必须显式限住**，否则默认 16                                |
 | `OCR_DET_LIMIT`       | `736`  | 检测模型内部缩放上限。运行时改要用环境变量 `FRAMESEEK_DET_LIMIT`                           |
+| `PROXY_ENABLED`       | `True` | 高分辨率片先压 1080p 代理再抽帧/OCR。只对 >`PROXY_TRIGGER_PIXELS` 的片生效，1080p 直接跳过     |
+| `PROXY_MAX_W`         | `1920` | 代理最大宽度（长边），等比缩放、不裁切                                                        |
+| `PROXY_MAXRATE`       | `2500k`| 码率天花板。**别改成 0**——nvenc VBR 会失控，实测压出 2.9GB 代理把服务压到段错误              |
+| `PROXY_MAX_MB`        | `1500` | 代理体积硬上限，超过判死重建                                                                  |
+| `PROXY_DUR_TOL`       | `0.5`  | 代理与原片时长差超过这个秒数视为过期并重建（防止末尾台词抽不到图）                              |
+| `PROXY_HW_DECODE`     | `True` | NVDEC 硬解 + `scale_cuda` 硬缩放。**关掉慢 3.6 倍**（退回 CPU 软解，实测 141s → 400s）            |
+| `PROXY_CUDA_INTERP`   | `3`    | `scale_cuda` 插值，3=bicubic。**别用默认的 0(nearest)，会丢台词**（实测 14 条丢 2 条）           |
+| `PROXY_CUDA`          | `cuda` | `-hwaccel` 取值。**别改 d3d11va**，与 nvenc 组合会 `CreateInputBuffer failed` 锁不上 surface      |
+| `OCR_CALIB_CACHE`     | `True` | 标定结果落盘复用（同一剧集只标定一次，实测 23.6 秒 → 0.46 秒）。改 `OCR_WIDTH`/`OCR_BAND` 后需 `calib_cache_clear()` |
+| `OCR_PREFETCH`（env） | —     | `FRAMESEEK_OCR_PARALLEL=1` 开启解码/OCR 并行。**实测无效（924s vs 935s），默认关闭**            |
 | `OCR_CX_TOL`          | `0.22` | 框中心距画面中线最远多远                                                          |
 | `OCR_W_MAX`           | `0.88` | 框宽上限，横贯全幅的是水印                                                         |
 | `OCR_H_RATIO_DROP`    | `0.85` | 判定"字号更小"的比值门槛（与下一条同时成立才丢行）                                            |
@@ -649,11 +873,26 @@ tag 徽标/警示文字在半透明背景上的对比度是脚本计算偏差，
 
 ## 5.6 AI 视频生成（对话窗口 → 项目「AI生成」目录）
 
-顶部 **生成** 页是一个对话窗口：输入文案（Enter 发送）→ 本地 MiniMax H3 生成带音频的
-mp4 → 自动落入项目 `AI生成/` 目录（内置只读 AI 库，素材页可筛选到）。
+顶部 **生成** 页是一个对话窗口：输入文案（Enter 发送）→ 生成带音频的 mp4 →
+自动落入项目 `AI生成/` 目录（内置只读 AI 库，素材页可筛选到）。
 成片**只登记媒体信息**（封面/动图/时长），**不做字幕和语音识别**——详见 §0.5。
 
-**架构：单服务 + 直调引擎**（2026-10-14 定型，取代早前的"FrameSeek + ComfyUI 服务"双服务方案）：
+**双后端（2026-10-18 加 Agnes，与生图的 `img_backend` 同构）**：
+
+| backend | 引擎 | 分辨率 | 时长 | 速度 | 联网 | 说明 |
+| -- | -- | -- | -- | -- | -- | -- |
+| `agnes` | Agnes Video 2.5 Flash（API） | 1280×704 | 4~12 秒 | 数十秒~几分钟 | 要 | 默认优先，**成片自带音轨**；中文提示词可直接写 |
+| `h3` | 本地 MiniMax H3 | 736×416（随像素档变） | 3~15 秒 | 5 秒约 10 分钟、10 秒约 40 分钟 | 不要 | 纯离线兜底，**独占 GPU**；英文提示词效果最好 |
+| `auto` | 按 `agnes → h3` 降级 | — | — | — | — | **默认**。agnes 未就绪或失败才回落 H3 |
+
+- `megapixels` 只对 H3 有意义；Agnes 固定 720P。
+- `2:3` / `3:2` 两种宽高比**只有 H3 支持**，选 agnes 时会直接报错而不是静默降级。
+- 显式指定 `backend` 时**不降级**——该后端失败就直接报错，避免"我以为走的云端，
+  其实悄悄跑到了本地慢引擎"。
+- H3 独占 GPU，两个 H3 任务由 `core/gen.py` 内的 `_H3_LOCK` 串行；云端任务不受此限，
+  可与 H3 并行。
+
+**架构 A：`h3` 后端（单服务 + 直调引擎，2026-10-14 定型，取代早前的双服务方案）**：
 
 ```
 对话窗口 / MCP 工具
@@ -672,7 +911,20 @@ core/gen.py ── spawn ──▶ h3gen.py（ComfyUI 便携版 python_embeded �
                          项目「AI生成/」目录 → 只登记媒体信息（不 OCR / 不 ASR）
 ```
 
-要点 / 硬约束：
+**架构 B：`agnes` 后端（云端 API，2026-10-18 新增）**：
+
+```
+core/gen.py ── spawn ──▶ agnes_video.py（skill 脚本）
+                            │  POST /v1/videos 建任务 → 2s 轮询 /agnesapi
+                            │  → status=completed 时下载（自带 AAC 音轨）
+                            ▼
+                       项目「AI生成/」目录
+```
+
+ Agnes 那条线**不走 JSON 行协议**（脚本是提交+轮询+下载一体），所以进度是伪进度：
+提交后推到 92%，下载完收尾。
+
+要点 / 硬约束（H3 后端）：
 
 | 项 | 值 |
 | -- | -- |
@@ -683,6 +935,17 @@ core/gen.py ── spawn ──▶ h3gen.py（ComfyUI 便携版 python_embeded �
 | 分辨率 | 复刻工作流 ResolutionSelector：宽高比 × 目标像素，32 的倍数（默认 16:9 / 0.3MP → 736×416） |
 | 参考图 | 最多 9 张，prompt 里 `<Picture 1>` 引用 |
 | 耗时 | 4060Ti 8G 低显存模式，5.2s 片约 5~7 分钟（采样为主） |
+
+Agnes 后端的坑：
+
+- **免费账号在高峰会报 `503 video_queue_full`**，这不是请求有问题，是服务端队列满。
+  `agnes_video.py` 内部会退避重试 6 次（20~100s），仍失败才抛错——所以一次失败不代表
+  不能出片，隔几分钟重试通常就好了。
+- 判定队列是否恢复的轻量探针：`POST /v1/videos` 但**故意不传 `mode`**，回
+  `400 mode is required` 说明接口正常受理（此时提交多半能过），回 `503` 说明还堵着。
+  探针不建任务、不计费，但会吃一点 RPM，间隔别太密。
+- 成片**自带 AAC 音轨**，后续裁剪/转码**千万别加 `-an`**。
+- `size` 只能是 `720P`，改清晰度要靠 `--aspect-ratio`（换分辨率由服务端按比例给）。
 
 **关键踩坑：DynamicVRAM 必须复刻**。ComfyUI 服务端 `main.py` 在 import torch 前
 `comfy_aimdo.control.init()`，加载模型前 `init_devices()` 并把
@@ -770,18 +1033,24 @@ FrameSeek 的一组工具，Web 侧对应「手绘」面板。
 > 实现流程图（架构分层 / 异步时序 / 实现决策与踩坑）：浏览器打开 [`mcp-flow.html`](mcp-flow.html)
 
 `mcp_server.py` 走 stdio，**不依赖 Web 服务是否在跑**：直接读 hub.db 和各库的  
-`.frameseek/index.db`，识别任务起 daemon 线程跑。共 27 个工具（18 检索/识别/生成 + 9 手绘）：
+`.frameseek/index.db`，识别任务起 daemon 线程跑。共 **37** 个工具
+（26 检索/识别/导出/生成 + 9 手绘 + 会话辅助）：
 
-| 工具                         | 作用                                             |
-| -------------------------- | ---------------------------------------------- |
-| `frameseek_state`          | 总览：全部库 + 激活库 + OCR 引擎 + ASR 走 GPU 还是 CPU       |
+| 工具 | 作用 |
+| --- | --- |
+| `frameseek_doctor` | **一键体检**：引擎可用性 / 每库状态 / 在跑任务 / problems 清单（先跑这个） |
+| `frameseek_state` | 总览：全部库 + 激活库 + OCR 引擎 + ASR 走 GPU 还是 CPU       |
 | `frameseek_stats`          | 全部库合计（库数/素材数/台词数/总时长）                          |
 | `frameseek_list_libraries` | 列出登记的素材库（含素材数/台词数/是否索引）                        |
 | `frameseek_add_library`    | 登记新素材文件夹（可设备注名）                                |
 | `frameseek_remove_library` | 从登记表移除（不动磁盘）                                   |
 | `frameseek_scan`           | 扫描入库（**异步**，可 `all_libraries=True` 扫全部）        |
 | `frameseek_task`           | 查任务进度（传 path 看某个库；也返回全部库正在跑的任务）                |
-| `frameseek_search`         | 按台词搜，**默认跨全部库**，结果带 `lib` 和 `root`             |
+| `frameseek_search`         | 按台词跨库搜，结果带 `lib` 和 `root`             |
+| `frameseek_find_videos`    | 按**片名**跨库找片（认片名，与 search 认台词互补）        |
+| `frameseek_video_summary`  | 单片一站式概览：元信息 + 台词全文（按字数截断）        |
+| `frameseek_list_clips`     | 已导出片段清单（含 Web 端导的）                    |
+| `frameseek_export_clip`    | 导出片段（`subtitle="auto"/"off"/"force"` 烧字幕三档，`line_ids` 批量） |
 | `frameseek_list_videos`    | 列素材（含带方框凭证条数 boxed/no_box）                     |
 | `frameseek_video_info`     | 单个素材详情（时长/来源/凭证统计/封面动图路径）                      |
 | `frameseek_get_lines`      | 列某视频全部台词（时间码 + 文本 + box 摘要：ar/hits/drift/字体指纹） |
@@ -791,9 +1060,12 @@ FrameSeek 的一组工具，Web 侧对应「手绘」面板。
 | `frameseek_boxaudit`       | 方框复查清单（每条凭证指标 + 通过与否 + 原因）                     |
 | `frameseek_recog_line`     | 重新识别**这一句**（`mode=ocr` 看画面 / `mode=asr` 只听这句），只读不写库 |
 | `frameseek_edit_line`      | 改这条台词的文字/起止时间，`save_box=True` 同时写入画面方框         |
-| `frameseek_export_clip`    | 导出某句台词前后 N 秒片段（用搜索结果里的 `root`）                 |
+| `frameseek_img_info`       | 生图三后端摸底：agnes（云端/联网）/ sd15（本地/种子可复现）/ h3（视频抽帧）各自 ready、耗时、是否离线 |
+| `frameseek_generate_image` | **出静态图 PNG**（三后端可插拔，默认 auto 按 agnes→sd15→h3 降级）。**同步返回**路径，带同名 sidecar 留痕参数 |
+| `frameseek_reroll_image`   | 按某张图的 sidecar 参数原样复现、只换新种子（**重掷就靠这个**，sd15 下收敛） |
+| `frameseek_list_images`    | 列 `<项目根>/AI生成/绘画/` 的产物（新的在前，带生成时的全部参数） |
 | `frameseek_gen_info`       | 视频生成引擎状态（ready/missing、参数范围、模型文件是否齐全）            |
-| `frameseek_generate_video` | 提交 MiniMax H3 视频生成（**异步**，`index="none"` 可跳过 ASR）   |
+| `frameseek_generate_video` | 提交视频生成（**异步**）。`backend` 选 `agnes`/`h3`/`auto`，默认 auto |
 | `frameseek_handdraw_info`      | 白板手绘引擎状态（ready/missing、默认音色、纸张底色）           |
 | `frameseek_handdraw_init`      | 文稿/字幕 → 手绘工程（分步管线第 1 步）                       |
 | `frameseek_handdraw_scenes`    | 读字幕出分幕建议（第 2 步）                                    |
@@ -828,6 +1100,55 @@ FrameSeek 的一组工具，Web 侧对应「手绘」面板。
 自测：`python _mcp_e2e.py`（stdio JSON-RPC 全流程：握手 → tools/list →  
 只读工具 → 异步扫描 + 进度轮询 → ping，只动 `_testlib`）。
 
+### 给 LLM 用的设计（2026-10-17 补齐）
+
+工具面从 29 扩到 **33 个**，并按「模型能不能自己走通」重做了一遍：
+
+**① 参数级说明**——以前所有参数只有名字没有解释（靠函数 docstring 顶着），
+`pre`/`post`/`fast`/`line_ids` 这类只能靠猜。现在全部走
+`Annotated[T, Field(description=...)]`，写进 `tools/list` 的 `inputSchema`。
+`use_asr` 这种历史命名在参数说明里直接写明真实语义。
+
+**② 错误返回带 `hint`**——以前只回「在 xxx 里找不到台词 123」，模型只能重试同一个
+调用。现在回「该调哪个工具、该带什么参数」。撞号（id 跨库不唯一）是最高频的坑，
+hint 里专门点明。
+
+**③ 新增 4 个工具**：
+
+| 工具 | 为什么有 |
+| --- | --- |
+| `frameseek_doctor` | 一次给全：引擎可用性 / 每库状态 / 在跑任务 / `problems` 清单。原来要连调 3~4 个工具拼 |
+| `frameseek_find_videos` | **认片名**跨库找片。原来只有认台词的 `search`，用户说「找一下潜伏第三集」就没辙 |
+| `frameseek_video_summary` | 一次拿到元信息 + 台词全文，`video_info` + `get_lines` 两步合一，按字数截断省 token |
+| `frameseek_list_clips` | 已导出片段清单（含 Web 端导的）。原来导完就找不到文件在哪 |
+
+**④ `export_clip` 补齐功能缺口**——`subtitle=true` 烧字幕（对齐 Web 端
+`/api/clip` 已有能力）、`line_ids` 批量导出、`pre/post` 加范围校验。
+
+**⑤ 资源层**（`resources/list` 可读，5 个）：
+
+| URI | 内容 |
+| --- | --- |
+| `frameseek://libraries` | 全部库快照 —— **root 参数的取值来源** |
+| `frameseek://tasks/running` | 在跑任务及进度 |
+| `frameseek://clips` | 已导出片段清单 |
+| `frameseek://schema/handdraw-annotation` | 区域标注 schema + 可改用示例 |
+| `frameseek://tool-catalog` | 按「我想干什么」组织的工具索引 |
+
+> `server.instructions` 也重写成按意图分段的决策指引（原来是一坨连续散文）。
+
+**烧字幕按台词来源自动分流**（Web `/api/clip` 与 MCP `export_clip` 共用
+`core/media.py` 的 `decide_burn`，只有这一处判定规则）：台词来源是 `ocr` 说明
+**画面上本来就印着字幕**，再烧一层必然重影，还得为此强制重编码慢好几倍——
+所以默认 `auto` 档下自动跳过；`asr`/`external`/`embedded` 来源的画面本来没字幕，
+照旧烧。要覆盖用 `off`（一律不烧）或 `force`（一律烧，OCR 字幕纠错后重烧用）。
+Web 端「导出字幕」下拉对应这三档；顺带把原来一个开关管两件事（导出烧录 + 预览字幕带）
+拆成了「导出字幕」和「字幕带」两个独立控件。自动跳过时前端弹提示说明原因。
+
+配套 skill：`.workbuddy/skills/frameseek/SKILL.md`（铁律 / 决策树 / 手绘 8 步 /
+踩坑清单）。工具面探针 `python tools/mcp_probe.py --tools`（看模型眼里的 schema），
+回归测试 `python tools/test_mcp.py`（70 项，端到端跑真实 stdio 子进程）。
+
 UI 回归（都要 Web 服务已在 8771 起；都是无头 Chromium 真点页面）：
 
 | 脚本 | 覆盖 |
@@ -860,7 +1181,7 @@ app.py              Flask Web 服务（API + 页面 + 视频 Range 流）
 mcp_server.py       MCP stdio 服务
 core/hub.py         项目级库登记处（hub.db：libraries / settings / 跨库搜索）
 core/config.py      参数（端口、动图尺寸、ASR 模型、前后秒数…）
-core/gen.py         视频生成调度：校验参数 → spawn h3gen 子进程 → 解析 JSON 行进度
+core/gen.py         视频生成调度：**双后端**（agnes 云端 / h3 本地 / auto 降级）→ 校验参数 → spawn 子进程
 core/handdraw.py    白板手绘调度：包 whiteboard-video-studio 的 studio.py CLI
                     （init/scenes/annotate/render/mix + 标注前置校验、时间轴体检）
 h3gen.py            MiniMax H3 直调引擎（ComfyUI 库方式，不起服务；便携版 python 跑）

@@ -1,0 +1,19 @@
+{
+  "name": "frameseek",
+  "version": "1.0.0",
+  "private": true,
+  "description": "拾帧 FrameSeek · 视频台词素材库（前端逻辑测试）",
+  "scripts": {
+    "test": "node test_route.js && node test_assets_url.js && node test_templates.js && node test_spacing.js && node test_layout.js",
+    "test:route": "node test_route.js",
+    "test:assets": "node test_assets_url.js",
+    "test:templates": "node test_templates.js",
+    "test:spacing": "node test_spacing.js",
+    "test:layout": "node test_layout.js",
+    "probe": "node probe_spacing.js",
+    "probe:align": "node probe_align.js",
+    "probe:mcp": "python mcp_probe.py --tools",
+    "test:mcp": "python test_mcp.py",
+    "test:all": "npm test && python test_mcp.py"
+  }
+}

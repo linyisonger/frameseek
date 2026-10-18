@@ -1,34 +1,105 @@
-/* 拾帧 FrameSeek · Element Plus 深色主题
-   依赖顺序：element-plus.css → element-plus-dark.css → 本文件（放最后才能覆盖） */
+/* 拾帧 FrameSeek · 界面样式
+   依赖顺序：element-plus.css → element-plus-dark.css → 本文件（放最后才能覆盖）
+   视觉参考 vue.youlai.tech (vue3-element-admin)：左侧深色侧边栏 + 白色顶栏 + 浅灰页面底
+   + 白卡软阴影。颜色 / 边框 / 背景一律读 Element Plus 的 --el-* 变量；本文件只新增
+   EP 没有的私有令牌。 */
 
-/* ---------- 主题变量 ---------- */
+/* ---------- 私有令牌（尺寸 / 阴影 / 半透明叠层） ---------- */
 :root {
-  --fs-bg: #0f1720;
-  --fs-bg-soft: #151f2b;
-  --fs-line: #26313f;
-  --fs-brand: #4d9dff;
-  --fs-ok: #2ec27e;
-  --fs-warn: #e6a23c;
-  --fs-bad: #f56c6c;
-  --fs-txt: #d6dee8;
-  --fs-dim: #8a97a8;
   --fs-dock-h: 150px;
+  --fs-topbar-h: 56px;
+  --fs-aside-w: 220px;
+  --fs-radius-card: 8px;
+  --fs-radius-chip: 6px;
+
+  /* ---------- 间距刻度（4 的倍数，全站只准用这几个值）----------
+     一组同类控件 = 一个 gap，不再各写各的。按钮组统一 --fs-gap-btn。 */
+  --fs-gap-xs: 4px;      /* 图标与文字 */
+  --fs-gap-sm: 8px;      /* 按钮组、紧凑控件行 */
+  --fs-gap-md: 12px;     /* 卡片内分组 */
+  --fs-gap-lg: 16px;     /* 区块之间、栅格 */
+  --fs-gap-xl: 24px;     /* 大区块 */
+  --fs-gap-btn: 8px;     /* 横向按钮组间距 */
+
+  /* ---------- 高度刻度 ---------- */
+  /* label-position=top 表单里，label 的固定高度。
+     没有 label 的补位列（按钮列 / 说明列）靠它对齐，整行才不会错位。 */
+  --fs-label-h: 20px;
+  --fs-control-h: 32px;  /* small 控件标准高度 */
+
+  /* ---------- 动效刻度 ----------
+     全站只用这三档时长 + 一条缓动，避免各处各写一套、节奏参差。 */
+  --fs-dur-fast: 120ms;   /* hover / 按下反馈 */
+  --fs-dur: 180ms;        /* 常态过渡（颜色、边框、阴影） */
+  --fs-dur-slow: 280ms;   /* 页面切换等大范围变化 */
+  --fs-ease: cubic-bezier(.4, 0, .2, 1);
+
+  /* 主色：YouLai 蓝在中性灰底上的"提亮版"，比默认 #409EFF 在深底上更亮一点 */
+  --el-color-primary: #4080FF;
+  --el-color-primary-light-3: #5B95FF;
+  --el-color-primary-light-5: #7BABFF;
+  --el-color-primary-light-7: #A0C2FF;
+  --el-color-primary-light-8: #C2D7FF;
+  --el-color-primary-light-9: #1E2A4A;
+  --el-color-primary-dark-2: #2C5BCC;
+
+  --el-color-success: #2ec27e;
+  --el-color-success-light-9: #1F2E25;
+  --el-color-warning: #FFB84D;
+  --el-color-warning-light-9: #2E2716;
+  --el-color-danger: #FF6B6B;
+  --el-color-danger-light-9: #2E1F1F;
+  --el-color-info: #909399;
+
+  /* 主区色板：侧栏深一档 + 页中档 + 卡提亮，三色同色相（中性偏冷灰） */
+  --el-bg-color: #27282F;             /* 卡片 / 容器底 */
+  --el-bg-color-page: #1D1E23;        /* 页面底 */
+  --el-bg-color-overlay: #2A2B33;
+  --el-fill-color-blank: #1D1E23;
+  --el-fill-color-light: #2A2B33;
+  --el-fill-color-lighter: #27282F;
+  --el-fill-color-dark: #3A3B45;
+  --el-fill-color-darker: #45464F;
+
+  --el-text-color-primary: #F2F3F5;
+  --el-text-color-regular: #C9CDD4;
+  --el-text-color-secondary: #86909C;
+  --el-text-color-placeholder: #6E7787;
+  --el-text-color-disabled: #5A6068;
+
+  --el-border-color: #3D3F47;
+  --el-border-color-light: #2A2B33;
+  --el-border-color-lighter: #27282F;
+  --el-border-color-extra-light: #1F2026;
+  --el-border-color-dark: #4A4C56;
+
+  /* 框架专色（EP 没定义，直接私有） */
+  --fs-aside-bg: #14151B;             /* 侧栏：跟主区同色相，比 page 再深一档 */
+  --fs-aside-text: rgba(232, 234, 240, .72);
+  --fs-aside-text-strong: #FFFFFF;
+  --fs-aside-text-dim: rgba(232, 234, 240, .48);
+  --fs-aside-border: rgba(255, 255, 255, .08);
+  --fs-aside-active-bg: #1670FF;      /* 选中态实色蓝 */
+  --fs-topbar-bg: #2A2B33;            /* 顶栏底色：比卡深、比页浅 */
+  --fs-topbar-shadow: 0 1px 0 rgba(0, 0, 0, .35);
+
+  --fs-shadow-card: 0 1px 4px rgba(0, 0, 0, .35);
+  --fs-shadow-card-hover: 0 6px 20px rgba(0, 0, 0, .55);
+
+  /* 半透明叠层：深底上用白透（hover 反馈、二级背景、侧栏选中发光） */
+  --fs-fill-1: rgba(255, 255, 255, .04);
+  --fs-fill-2: rgba(255, 255, 255, .07);
+  --fs-fill-3: rgba(255, 255, 255, .12);
+  --fs-fill-4: rgba(255, 255, 255, .18);
+  /* 品牌色叠层：跟主色同色 */
+  --fs-brand-soft: rgba(64, 128, 255, .16);
+  --fs-brand-soft-2: rgba(64, 128, 255, .28);
+
+  color-scheme: dark;
 }
 
-/* Element Plus 的 dark 变量微调：默认底色偏灰，这里压深一点贴近原来的观感 */
-html.dark {
-  --el-bg-color: var(--fs-bg-soft);
-  --el-bg-color-page: var(--fs-bg);
-  --el-bg-color-overlay: #1b2634;
-  --el-border-color: var(--fs-line);
-  --el-border-color-light: var(--fs-line);
-  --el-border-color-lighter: var(--fs-line);
-  --el-fill-color-blank: var(--fs-bg);
-  --el-text-color-primary: var(--fs-txt);
-  --el-text-color-regular: #c2cbd6;
-  --el-color-primary: var(--fs-brand);
-  --el-color-success: var(--fs-ok);
-}
+/* 兼容旧页里残留 .dark 类（不会切换主题，因为没有 light 主题），保留空段即可 */
+html.dark { color-scheme: dark; }
 
 /* ---------- 基础 ---------- */
 [v-cloak] { display: none; }
@@ -37,197 +108,452 @@ html.dark {
 
 html, body {
   margin: 0; padding: 0; height: 100%;
-  background: var(--fs-bg);
-  color: var(--fs-txt);
+  background: var(--el-bg-color-page);
+  color: var(--el-text-color-primary);
   font: 14px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
 }
 
 code {
-  background: rgba(255, 255, 255, .06);
+  background: var(--fs-fill-1);
   border-radius: 4px; padding: 1px 5px;
   font-family: Consolas, "Courier New", monospace; font-size: 12px;
 }
 
-.dim { color: var(--fs-dim); }
-.dim2 { color: #6c7a8c; }
-.ok { color: var(--fs-ok); }
-.bad { color: var(--fs-bad); }
-.warn { color: var(--fs-warn); }
+/* 语义色一律映射到 EP，不自带色板 */
+.dim { color: var(--el-text-color-secondary); }
+.dim2 { color: var(--el-text-color-disabled); }
+.ok { color: var(--el-color-success); }
+.bad { color: var(--el-color-danger); }
+.warn { color: var(--el-color-warning); }
 .min0 { min-width: 0; }
 .pad { padding: 18px 4px; }
-.note { color: var(--fs-dim); font-size: 12px; }
+.note { color: var(--el-text-color-secondary); font-size: 12px; }
 .w100 { width: 100px; } .w120 { width: 120px; } .w140 { width: 140px; }
 .w160 { width: 160px; } .w200 { width: 200px; } .w260 { width: 260px; }
 
 /* ---------- 主框架 ---------- */
+
+/* ==================== 主框架（左侧深色侧栏） ====================
+   视觉对齐 vue3-element-admin：暗色侧栏 + 浅灰页面底。 */
 .fs-shell { height: 100vh; }
 
+/* 侧栏：常驻深色，不随主题切换 */
 .fs-aside {
-  background: var(--fs-bg-soft);
-  border-right: 1px solid var(--fs-line);
+  background: var(--fs-aside-bg);
+  border-right: none;
   display: flex; flex-direction: column;
   overflow: hidden;
+  width: var(--fs-aside-w) !important;
+  flex: 0 0 var(--fs-aside-w) !important;
 }
 
 .fs-logo {
-  display: flex; align-items: center; gap: 10px;
-  padding: 16px 16px 12px;
+  display: flex; align-items: center; gap: var(--fs-gap-sm);
+  height: var(--fs-topbar-h);
+  padding: 0 18px;
+  border-bottom: 1px solid var(--fs-aside-border);
+  flex: none;
 }
-.fs-logo .fs-mark { width: 34px; height: 34px; flex: none; }
+.fs-logo .fs-mark { width: 30px; height: 30px; flex: none; }
 .fs-logo .fs-mark svg { width: 100%; height: 100%; display: block; }
-.fs-lt { display: flex; flex-direction: column; line-height: 1.2; }
-.fs-lt b { font-size: 15px; font-weight: 700; }
-.fs-lt span { font-size: 11px; color: var(--fs-dim); letter-spacing: .5px; }
+.fs-lt { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.fs-lt b { font-size: 16px; font-weight: 700; color: var(--fs-aside-text-strong);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-lt span { font-size: 11px; color: var(--fs-aside-text-dim);
+  letter-spacing: .6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.fs-menu { flex: 1; border-right: none !important; overflow-y: auto; background: transparent; padding-top: 4px; }
+.fs-menu { flex: 1; border-right: none !important; overflow-y: auto; overflow-x: hidden;
+  background: transparent; padding: 8px 0 12px; }
+.fs-menu::-webkit-scrollbar { width: 6px; }
+.fs-menu::-webkit-scrollbar-thumb { background: rgba(255,255,255,.08); border-radius: 3px; }
 .fs-menu .el-menu-item {
-  height: auto; min-height: 50px; border-radius: 10px;
-  margin: 3px 8px; padding: 7px 12px !important;
-  display: flex; align-items: center; gap: 10px;
-  transition: background .15s, color .15s;
+  height: auto; min-height: 46px; border-radius: 6px;
+  margin: 2px 10px; padding: 8px 12px !important;
+  display: flex; align-items: center; gap: var(--fs-gap-md);
+  background: transparent !important;
+  color: var(--fs-aside-text) !important;
+  transition: background var(--fs-dur-fast), color var(--fs-dur-fast);
 }
-/* 侧栏导航图标：统一做成圆角芯片，让图标清晰地「展示」出来 */
 .fs-menu .el-menu-item .el-icon {
   margin-right: 0; flex: none;
-  width: 32px; height: 32px;
+  width: 22px; height: 22px;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, .06);
-  color: var(--fs-dim);
-  font-size: 18px;
-  transition: background .15s, color .15s;
+  background: transparent !important;
+  color: var(--fs-aside-text);
+  font-size: 17px;
 }
-.fs-menu .el-menu-item.is-active .el-icon {
-  background: rgba(77, 157, 255, .22);
-  color: var(--fs-brand);
-}
-.fs-menu .el-menu-item:not(.is-active):hover .el-icon {
-  background: rgba(255, 255, 255, .12);
-  color: var(--fs-txt);
-}
-.fs-navtxt { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
-.fs-navtxt b { font-size: 14px; font-weight: 600; font-style: normal; }
-.fs-navtxt em { font-size: 11px; color: var(--fs-dim); font-style: normal; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-menu .el-menu-item:hover { background: var(--fs-fill-2) !important;
+  color: var(--fs-aside-text-strong) !important; }
+.fs-menu .el-menu-item:hover .el-icon { color: var(--fs-aside-text-strong); }
 .fs-menu .el-menu-item.is-active {
-  background: rgba(77, 157, 255, .16);
-  color: var(--fs-brand); font-weight: 600;
+  background: var(--fs-aside-active-bg) !important;
+  color: #fff !important;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(22, 112, 255, .35);
 }
-.fs-menu .el-menu-item.is-active .fs-navtxt em { color: rgba(77, 157, 255, .8); }
-.fs-menu .el-menu-item:not(.is-active):hover { background: rgba(255, 255, 255, .05); }
+.fs-menu .el-menu-item.is-active .el-icon { color: #fff; }
+.fs-navtxt { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
+.fs-navtxt b { font-size: 14px; font-weight: 500; font-style: normal; }
+.fs-navtxt em { font-size: 11px; color: var(--fs-aside-text-dim); font-style: normal;
+  margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-menu .el-menu-item.is-active .fs-navtxt em { color: rgba(255,255,255,.8); }
 
-/* 导航徽标 */
+/* 徽标 */
 .fs-badge {
-  margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px;
-  border-radius: 9px; background: rgba(255, 255, 255, .12);
-  color: var(--fs-dim); font-size: 11px; font-style: normal;
-  line-height: 18px; text-align: center;
+  margin-left: auto; min-width: 18px; height: 18px; padding: 0 6px;
+  border-radius: 9px; background: rgba(255,255,255,.12);
+  color: var(--fs-aside-text-strong); font-size: 11px; font-style: normal;
+  line-height: 18px; text-align: center; font-weight: 500;
 }
-.fs-badge.warn { background: rgba(230, 162, 60, .22); color: var(--fs-warn); }
+.fs-badge.warn { background: rgba(255, 180, 60, .22); color: #ffcc66; }
 
-.fs-foot { padding: 10px 14px 14px; border-top: 1px solid var(--fs-line); }
-.fs-stats { font-size: 12px; color: var(--fs-dim); margin-bottom: 4px; }
-.fs-dev { font-size: 11px; }
+.fs-foot { padding: 10px 14px 14px; border-top: 1px solid var(--fs-aside-border); flex: none; }
+.fs-stats { font-size: 12px; color: var(--fs-aside-text-dim); margin-bottom: 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-dev { font-size: 11px; color: var(--fs-aside-text-dim); }
 
-.fs-right { height: 100vh; overflow: hidden; }
-.fs-main { padding: 20px 22px 60px; overflow-y: auto; height: 100%; }
+/* 右侧主区：垂直堆叠顶栏 + 主内容 */
+.fs-right { height: 100vh; overflow: hidden; flex: 1; min-width: 0; }
+.fs-right > .el-container { height: 100%; }
+
+/* ==================== 滚动与动效规范 ====================
+   「流畅」不是加动画，而是三件事：滚动条不突兀、动效时长统一、
+   并尊重系统的「减少动态效果」偏好。 */
+/* 深色底上的滚动条：默认那条浅灰在深底上很扎眼 */
+.fs-main::-webkit-scrollbar,
+.fs-menu::-webkit-scrollbar,
+.fs-bxrows::-webkit-scrollbar,
+.fs-bxview::-webkit-scrollbar,
+.fs-iglist::-webkit-scrollbar { width: 10px; height: 10px; }
+.fs-main::-webkit-scrollbar-thumb,
+.fs-bxrows::-webkit-scrollbar-thumb,
+.fs-bxview::-webkit-scrollbar-thumb,
+.fs-iglist::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .12); border-radius: 5px;
+  border: 2px solid transparent; background-clip: padding-box;
+}
+.fs-main::-webkit-scrollbar-thumb:hover,
+.fs-bxrows::-webkit-scrollbar-thumb:hover,
+.fs-bxview::-webkit-scrollbar-thumb:hover,
+.fs-iglist::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .2); background-clip: padding-box; }
+.fs-main::-webkit-scrollbar-track { background: transparent; }
+
+/* 悬停/展开的动效统一到同一套时长与缓动，避免各处各写一套、节奏参差 */
+.fs-vcard, .fs-libcard, .fs-clip, .fs-rrow, .fs-lstat, .fs-libicon {
+  transition: transform var(--fs-dur) var(--fs-ease),
+              border-color var(--fs-dur) var(--fs-ease),
+              box-shadow var(--fs-dur) var(--fs-ease),
+              background-color var(--fs-dur) var(--fs-ease);
+}
+.el-button, .el-input__wrapper, .el-select__wrapper {
+  transition: background-color var(--fs-dur-fast) var(--fs-ease),
+              border-color var(--fs-dur-fast) var(--fs-ease),
+              color var(--fs-dur-fast) var(--fs-ease),
+              transform var(--fs-dur-fast) var(--fs-ease);
+}
+
+/* ---------- 键盘焦点可见（WCAG 2.4.7）----------
+   Element Plus 默认把 outline 去掉只留 box-shadow，键盘 Tab 时看不清焦点在哪。
+   :focus-visible 只在键盘操作时命中，所以鼠标点击不会留下焦点环。 */
+.fs-main :focus-visible,
+.fs-menu :focus-visible,
+.el-overlay :focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* 页面切换：轻微淡入，让切页不突兀（不加位移，避免晕） */
+.fs-main > .el-container > .el-main > .el-container { animation: fsFade var(--fs-dur-slow) var(--fs-ease); }
+@keyframes fsFade { from { opacity: .35; } to { opacity: 1; } }
+
+/* 进度浮窗出场 */
+.fs-dock-card { animation: fsRise var(--fs-dur) var(--fs-ease); }
+@keyframes fsRise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* 尊重系统「减少动态效果」：关掉所有过渡与动画。
+   前庭功能障碍用户对位移动画敏感，这是可访问性要求（WCAG 2.3.3）。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; scroll-behavior: auto !important;
+  }
+  .fs-vcard:hover, .fs-libcard:hover, .fs-clip:hover { transform: none; }
+}
+
+/* 顶栏已移除：保留令牌（被侧栏 still 使用），样式本身不需要了。
+   fs-main 占满视口，无顶栏高度减除。 */
+.fs-main { padding: 18px 22px 60px; overflow-y: auto; height: 100vh;
+  background: var(--el-bg-color-page); }
 
 /* ---------- 页面通用 ---------- */
 .fs-page { max-width: 1560px; margin: 0 auto; }
 .fs-page-hd {
   display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 16px; margin-bottom: 16px; flex-wrap: wrap;
+  gap: var(--fs-gap-lg); margin-bottom: 18px; flex-wrap: wrap;
 }
-.fs-page-hd h1 { margin: 0 0 3px; font-size: 20px; font-weight: 700; }
-.fs-page-hd p { margin: 0; font-size: 12.5px; color: var(--fs-dim); }
-.fs-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.fs-page-hd > div h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; letter-spacing: .2px;
+  color: var(--el-text-color-primary); }
+/* 标题里的次要信息（片名、数量等）：不能继承 h1 的 20px/600，
+   否则副信息和主标题一样大一样粗，层次全没了。收成正常字号 + 常规字重。 */
+.fs-page-hd h1 .dim {
+  font-size: 13px; font-weight: 400; color: var(--el-text-color-secondary);
+  letter-spacing: 0; margin-left: var(--fs-gap-xs);
+}
+.fs-page-hd > div p { margin: 0; font-size: 13px; color: var(--el-text-color-secondary); }
+.fs-tools { display: flex; align-items: center; gap: var(--fs-gap-sm); flex-wrap: wrap; }
 .fs-tools .mini { width: 180px; }
+.fs-page-hd .fs-tools { padding-top: 2px; }
 
-.fs-card { margin-bottom: 14px; border-radius: 10px; }
-
-/* 统一的次级按钮悬停：所有非主色 / 非危险 / 非文字按钮，hover 时描边与文字转品牌色，
-   让整站按钮的反馈一致，不靠各自的 title 猜。 */
-.el-button:not(.el-button--primary):not(.el-button--danger):not(.is-link):not(.is-text):hover {
-  border-color: var(--fs-brand); color: var(--fs-brand);
+/* 卡片：YouLai 风——白底、1px 浅描边、轻阴影 */
+.fs-card {
+  margin-bottom: 14px;
+  border-radius: var(--fs-radius-card);
+  border: 1px solid var(--el-border-color-light);
+  background: var(--el-bg-color);
+  box-shadow: var(--fs-shadow-card);
 }
-.el-button { transition: background .15s, border-color .15s, color .15s, transform .12s; }
+
+/* 卡片统一规格：素材卡 / 素材库卡 / 片段卡同一套圆角、描边、悬浮反馈。
+   放在最前面，各模块下面只写自己独有的部分，不再重复定义。 */
+.fs-vcard, .fs-libcard, .fs-clip {
+  border-radius: var(--fs-radius-card);
+  border: 1px solid var(--el-border-color-light);
+  background: var(--el-bg-color);
+  box-shadow: var(--fs-shadow-card);
+  transition: transform var(--fs-dur), border-color var(--fs-dur), box-shadow var(--fs-dur);
+}
+.fs-vcard:hover, .fs-libcard:hover, .fs-clip:hover {
+  transform: translateY(-3px);
+  border-color: var(--el-color-primary-light-7);
+  box-shadow: var(--fs-shadow-card-hover);
+}
+
+/* 统一的次级按钮反馈：非主色 / 非危险 / 非文字按钮 hover 转品牌色 */
+.el-button:not(.el-button--primary):not(.el-button--danger):not(.is-link):not(.is-text):hover {
+  border-color: var(--el-color-primary); color: var(--el-color-primary);
+}
+.el-button { transition: background var(--fs-dur-fast), border-color var(--fs-dur-fast), color var(--fs-dur-fast), transform var(--fs-dur-fast); }
 .el-button:active { transform: translateY(1px); }
-.fs-hint { color: var(--fs-dim); font-size: 12px; margin: 6px 0 10px; line-height: 1.7; }
-.fs-label { color: var(--fs-dim); font-size: 12.5px; margin-right: 6px; }
 
-/* ---------- 素材库 ---------- */
-.fs-addrow { display: flex; gap: 8px; flex-wrap: wrap; }
-.fs-addrow .el-input { flex: 1; min-width: 220px; }
-.fs-note { color: var(--fs-dim); font-size: 12px; margin-top: 8px; }
+/* ---------- 按钮间距归一（修「按钮对不齐」）----------
+   Element Plus 内置 `.el-button + .el-button { margin-left: 12px }`，靠相邻兄弟选择器
+   加外边距。本项目所有按钮组都是 flex + gap，两者叠加 → 实际间距 20px；
+   更糟的是按钮被 v-if / <span> 隔开时该 margin 直接失效，
+   同一组按钮的间距就忽大忽小，按钮宽度也跟着参差，看起来"对不齐"。
+   统一做法：一律用 flex gap 控距，把这条 margin 归零。 */
+.el-button + .el-button { margin-left: 0; }
 
+/* 弹窗 / 消息框 footer：EP 默认是 text-align:right，靠上面那条 margin 撑间距。
+   归零后会贴死，所以这里一并转成 flex，用同一个 gap 值，行为跟页面内按钮组一致。 */
+.el-dialog__footer,
+.el-message-box__btns {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: var(--fs-gap-btn); flex-wrap: wrap;
+}
+.el-dialog__footer { padding-top: var(--el-dialog-padding-primary); }
+
+/* el-button-group 是 EP 内部靠 margin 撑间距的组件（本项目没用），
+   保留其原有表现，别被上面的归零规则误伤。 */
+.el-button-group > .el-button + .el-button { margin-left: 0; }
+
+/* ---------- 按钮内「图标 + 文字」间距统一 ----------
+   EP 原生给的是 `.el-button [class*=el-icon] + span { margin-left: 6px }`，
+   只在「图标后面紧跟一个 <span>」时生效。模板里若写裸文本（`</el-icon>刷新`），
+   那条规则匹配不上 → 图标和文字贴死，同一组按钮里有的分开有的贴着，看着没对齐。
+   项目约定：**按钮内的文字一律包 <span>**（tools/fix_icon_text.js 批量改写过），
+   纯 CSS 区分不了裸文本（文本节点不参与 :last-child 判断），所以在模板层解决。
+   这里只把 6px 收进间距令牌，保证全站图标间距一致。 */
+.el-button [class*="el-icon"] + span { margin-left: var(--fs-gap-xs); }
+
+/* 表单底部操作行：按钮与输入框底边对齐，间距走同一个刻度 */
+.fs-form-actions .el-form-item__content { display: flex; align-items: flex-end; gap: var(--fs-gap-btn); flex-wrap: wrap; }
+.fs-hint { color: var(--el-text-color-secondary); font-size: 12px; margin: 6px 0 10px; line-height: 1.7; }
+.fs-label { color: var(--el-text-color-secondary); font-size: 12.5px; margin-right: 6px; }
+
+/* ==================== 统一布局体系（参考 Element Plus Form 布局） ====================
+   凡是有「一组控件」的区块：el-form + label-position="top"，多字段用 el-row/el-col 栅格，
+   章节之间用 el-divider 隔开。全站控件对齐、窄屏自动折行，与 EP 官方 Form 示例一致。 */
+/* ---------- 表单行的两类「补位列」 ----------
+   label-position=top 时，控件内容区的顶部位置由 label 高度决定，
+   所以同一行里没有 label 的列（按钮列、说明列）必须补出同样的高度，否则整行错位。
+
+   · .fs-form-actions —— 补位放的是按钮，底部还要跟输入框底边齐
+   · .fs-col-note     —— 补位放的是说明文字，同样底部对齐
+   两者的占位块高度统一写死成 --fs-label-h，跟 .el-form-item__label 的实际高度对齐。 */
+.fs-form .el-form-item__label {
+  color: var(--el-text-color-secondary); font-weight: 500;
+  line-height: 20px; height: var(--fs-label-h); padding-bottom: 4px;
+  display: flex; align-items: flex-end;
+}
+.fs-form-actions .el-form-item,
+.fs-col-note { padding-top: 0; }
+.fs-form-actions .el-form-item__label { color: transparent; }
+.fs-form-actions .el-form-item__content,
+.fs-col-note > * { margin-top: 0; }
+.fs-form-actions .el-form-item__content {
+  display: flex; align-items: flex-end; gap: var(--fs-gap-btn); flex-wrap: wrap;
+}
+.fs-form-row { margin-bottom: 0; }
+
+/* 说明文字列：文字底部与同行输入框/开关的视觉底边对齐 */
+.fs-col-note { display: flex; align-items: flex-end; }
+.fs-colnote {
+  font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.6;
+  padding-bottom: 6px;                 /* 与 el-input / el-switch 的视觉底边对齐 */
+}
+
+/* el-divider：主题化细线，作为章节分隔 */
+.fs-main .el-divider { margin: 14px 0 18px; border-color: var(--el-border-color); }
+.fs-main .el-divider .el-divider__text {
+  color: var(--el-text-color-secondary); font-size: 12px;
+  background: var(--el-bg-color-page); letter-spacing: .5px;
+}
+.fs-card .fs-form { margin-top: 2px; }
+
+/* ---------- 仪表盘 KPI 磁贴（YouLai 风：左色块 + 右大字） ----------
+   四个磁贴内容行数不同（有的 2 行、有的 3 行），不锁高就会一行高一行矮。
+   用「三行骨架」保证每格都是 主数/标题/副注 三行，缺的那行补空位占位。 */
+.fs-statrow { margin: 0 0 var(--fs-gap-lg); }
+.fs-statrow .el-col { display: flex; }
+.fs-statrow .el-card { width: 100%; }
+.fs-stat {
+  padding: 18px 20px; display: flex; align-items: center; gap: var(--fs-gap-md);
+  margin-bottom: 0;
+}
+.fs-stat .ic {
+  width: 48px; height: 48px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; color: #fff; flex: none;
+}
+.fs-stat .ic.p { background: linear-gradient(135deg, #4080FF, #7BABFF); }
+.fs-stat .ic.s { background: linear-gradient(135deg, #2ec27e, #6FE3AC); }
+.fs-stat .ic.w { background: linear-gradient(135deg, #FFB84D, #FFE0A8); }
+.fs-stat .ic.d { background: linear-gradient(135deg, #FF6B6B, #FFA8A8); }
+.fs-stat .ic.a { background: linear-gradient(135deg, #A78BFA, #C4B5FD); }
+.fs-stat .ic.t { background: linear-gradient(135deg, #5CDBD3, #A0EBE6); }
+.fs-stat .body { flex: 1; min-width: 0; }
+/* 三行统一行高：主数 22px / 标题 12.5px / 副注 11.5px，
+   行高写死成固定值，这样有无副注的磁贴总高度也一致。 */
+.fs-stat .body b { display: block; font-size: 22px; font-weight: 700; line-height: 30px;
+  color: var(--el-text-color-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-stat .body span { font-size: 12.5px; color: var(--el-text-color-secondary);
+  line-height: 18px; margin-top: 2px; display: block; }
+.fs-stat .body .delta { font-size: 11.5px; margin-top: 2px; line-height: 16px;
+  color: var(--el-text-color-secondary); display: block; min-height: 16px; }
+.fs-stat .body .delta b { display: inline; font-size: 11.5px; font-weight: 600; }
+.fs-stat .body .delta.up b { color: var(--el-color-success); }
+.fs-stat .body .delta.down b { color: var(--el-color-danger); }
+
+/* 素材库卡（旧风格那条 3px 渐变条与新设计冲突，这里收成 1px 细线） */
+.fs-note { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 8px; }
 .fs-libcards {
-  display: grid; gap: 16px;
+  display: grid; gap: var(--fs-gap-lg);
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
 }
-.fs-libcard {
-  position: relative; border-radius: 14px; overflow: hidden;
-  background: var(--fs-bg-soft); border: 1px solid var(--fs-line);
-  transition: transform .16s, border-color .16s, box-shadow .16s;
-}
+.fs-libcard { position: relative; overflow: hidden; }
 .fs-libcard::before {
-  content: ''; position: absolute; left: 0; top: 0; right: 0; height: 3px;
-  background: linear-gradient(90deg, var(--fs-brand), var(--fs-ok));
-  opacity: 0; transition: opacity .16s;
+  content: ''; position: absolute; left: 14px; top: 0; right: 14px; height: 2px;
+  background: var(--el-color-success); border-radius: 0 0 2px 2px;
+  opacity: 0; transition: opacity var(--fs-dur);
 }
-.fs-libcard.is-indexed::before { opacity: 1; }
-.fs-libcard.is-missing::before { background: var(--fs-bad); opacity: 1; }
+.fs-libcard.is-indexed::before { opacity: .85; }
+.fs-libcard.is-missing::before { background: var(--el-color-danger); opacity: .85; }
+.fs-libcard.is-missing { opacity: .85; }
 .fs-libcard .el-card__header {
-  padding: 14px 16px 12px; border-bottom: 1px solid var(--fs-line);
-  background: linear-gradient(180deg, rgba(255, 255, 255, .04), transparent);
+  padding: 14px 16px 12px; border-bottom: 1px solid var(--el-border-color-lighter);
+  background: transparent;
 }
 .fs-libcard .el-card__body { padding: 0 16px 16px; }
-.fs-libcard:hover { transform: translateY(-3px); border-color: var(--fs-brand); box-shadow: 0 14px 34px rgba(0,0,0,.38); }
-.fs-libcard.is-missing { opacity: .75; }
 
-.fs-libcard-hd { display: flex; align-items: center; gap: 11px; }
+.fs-libcard-hd { display: flex; align-items: center; gap: var(--fs-gap-md); }
 .fs-libicon {
-  width: 38px; height: 38px; border-radius: 10px; flex: none;
+  width: 38px; height: 38px; border-radius: var(--fs-radius-chip); flex: none;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(255, 255, 255, .07); color: var(--fs-dim);
-  font-size: 19px; transition: background .15s, color .15s;
+  background: var(--fs-fill-2); color: var(--el-text-color-secondary);
+  font-size: 19px; transition: background var(--fs-dur-fast), color var(--fs-dur-fast);
 }
-.fs-libcard:hover .fs-libicon { background: rgba(77, 157, 255, .14); color: var(--fs-brand); }
-.fs-libicon.ok { background: rgba(46, 194, 126, .12); color: var(--fs-ok); }
-.fs-libicon.missing { background: rgba(245, 108, 108, .12); color: var(--fs-bad); }
+.fs-libcard:hover .fs-libicon { background: rgba(77, 157, 255, .14); color: var(--el-color-primary); }
+.fs-libicon.ok { background: rgba(46, 194, 126, .12); color: var(--el-color-success); }
+.fs-libicon.missing { background: rgba(245, 108, 108, .12); color: var(--el-color-danger); }
 .fs-libcard-hd .min0 { flex: 1; min-width: 0; }
 .fs-libcard-hd b { display: block; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fs-libcard-hd .note { font-size: 12px; color: var(--fs-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fs-libcard-hd .note { font-size: 12px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fs-libpath {
-  font-size: 11.5px; color: var(--fs-dim); margin: 12px 0 0;
+  font-size: 11.5px; color: var(--el-text-color-secondary); margin: 12px 0 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Consolas, monospace;
 }
+/* 库卡统计三格：等分网格。用 flex + flex:1 时格子会被内容宽度带偏
+   （时长那格文本最长，会把整行撑歪），grid 三等分才是真对齐。 */
 .fs-libstats {
-  display: flex; align-items: center; gap: 10px;
-  margin: 14px 0 10px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--fs-gap-sm); margin: var(--fs-gap-md) 0 10px;
 }
 .fs-lstat {
-  flex: 1; display: flex; align-items: center; gap: 8px;
-  padding: 9px 10px; border-radius: 10px;
-  background: rgba(255, 255, 255, .035);
+  display: flex; align-items: center; gap: var(--fs-gap-sm);
+  padding: 9px 10px; border-radius: var(--fs-radius-chip);
+  background: var(--fs-fill-1); min-width: 0;
 }
-.fs-lstat .el-icon { font-size: 17px; color: var(--fs-dim); }
-.fs-lstat b { display: block; font-size: 15px; font-weight: 600; color: var(--fs-txt); line-height: 1.1; white-space: nowrap; }
-.fs-lstat span { font-size: 11px; color: var(--fs-dim); white-space: nowrap; }
+.fs-lstat > div { min-width: 0; }
+.fs-lstat .el-icon { font-size: 17px; color: var(--el-text-color-secondary); flex: none; }
+.fs-lstat b { display: block; font-size: 15px; font-weight: 600; color: var(--el-text-color-primary);
+  line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fs-lstat span { font-size: 11px; color: var(--el-text-color-secondary); white-space: nowrap;
+  display: block; line-height: 1.3; }
 .fs-libmeta {
-  display: flex; align-items: center; gap: 5px;
-  font-size: 11.5px; color: var(--fs-dim); margin-bottom: 14px;
+  display: flex; align-items: center; gap: var(--fs-gap-xs);
+  font-size: 11.5px; color: var(--el-text-color-secondary); margin-bottom: var(--fs-gap-md);
 }
 .fs-libmeta .el-icon { font-size: 13px; }
-.fs-libft { display: flex; gap: 8px; flex-wrap: wrap; }
-.fs-libft .el-button { flex: 1 1 auto; min-width: 70px; }
-.fs-libft .el-button .el-icon { font-size: 14px; margin-right: 3px; }
+/* 库卡底部按钮：3 列等宽网格。
+   之前是 flex + flex:1 1 0，六个按钮折成两行后，**每一行各自等分**，
+   于是上行三等分、下行三等分，同一列上下宽度不同（换行位置一变更乱）。
+   改成固定 3 列 grid，跨行的同一列宽度天然一致。 */
+.fs-libft {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--fs-gap-btn);
+}
+.fs-libft .el-button { width: 100%; margin-left: 0; min-width: 0; }
+.fs-libft .el-button > span { overflow: hidden; text-overflow: ellipsis; }
+
+/* 库级实时进度条（库自己跑任务时显示） */
+.fs-libprog { margin: 12px 0 14px; padding: 10px 12px; border-radius: var(--fs-radius-chip);
+  background: var(--fs-fill-1); }
+.fs-libprog .el-progress { margin-bottom: 6px; }
+.fs-libprog-meta { display: flex; align-items: center; justify-content: space-between;
+  gap: var(--fs-gap-sm); font-size: 12px; line-height: 1.5; }
+.fs-libprog-meta .dim { flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 任务中的库：左边描品牌色，标识在跑 */
+.fs-libcard.has-task { border-color: var(--fs-brand-soft-2); }
+.fs-libcard.has-task .el-card__header {
+  background: linear-gradient(180deg, var(--fs-brand-soft), transparent);
+}
+
+/* 库内影片表格（卡内展开） */
+.fs-libexpand { margin-top: var(--fs-gap-xs); }
+.fs-libexpand .num { font-variant-numeric: tabular-nums; }
+.fs-libexpand .dim.fs-vdir-sep { margin-left: var(--fs-gap-xs); font-size: 11.5px; }
+.fs-libexpand .el-table { font-size: 12.5px; --el-table-border-color: var(--el-border-color-lighter); }
+/* 影片列表整行可点击跳转素材页：给个手型光标 + 悬停提示 */
+.fs-libexpand .el-table__body tr { cursor: pointer; }
+.fs-libexpand .el-table__row:hover td { background: var(--fs-brand-soft); }
+.fs-libexpand .el-table th.el-table__cell { background: var(--fs-fill-1) !important;
+  color: var(--el-text-color-secondary); font-weight: 500; }
+/* 表格里线条数=0 的影片：红字提示 */
+.fs-libexpand b.bad { color: var(--el-color-danger); }
+
+/* 库卡片底部元信息分隔点 */
+.fs-libmeta .sep { margin: 0 6px; color: var(--el-text-color-placeholder); }
+.fs-libmeta .warn { color: var(--el-color-warning); }
 
 .fs-iglist { max-height: 340px; overflow-y: auto; }
 .fs-igrow {
-  display: flex; align-items: center; gap: 10px;
-  padding: 7px 0; border-bottom: 1px solid var(--fs-line);
+  display: flex; align-items: center; gap: var(--fs-gap-sm);
+  padding: 7px 0; border-bottom: 1px solid var(--el-border-color);
 }
 .fs-igrow .min0 { flex: 1; }
-.fs-upload-icon { font-size: 44px; color: var(--fs-dim); margin-bottom: 8px; }
+.fs-upload-icon { font-size: 44px; color: var(--el-text-color-secondary); margin-bottom: 8px; }
 
 /* ---------- 检索 ---------- */
 .fs-bigsearch { margin-bottom: 12px; }
@@ -235,77 +561,97 @@ code {
 .fs-bigsearch .el-input-group__append .el-button {
   border: none; border-radius: 0 6px 6px 0; height: 100%; margin: -1px;
 }
-.fs-searchcfg {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  font-size: 12.5px; color: var(--fs-dim);
-}
-.fs-searchcfg .el-input-number { width: 84px; }
+.fs-cfg-inline { display: flex; align-items: center; gap: var(--fs-gap-sm); flex-wrap: wrap; }
+.fs-cfg-inline .el-input-number { width: 84px; }
 
-.fs-results { display: flex; flex-direction: column; gap: 8px; }
-.fs-rrow {
-  display: flex; gap: 12px; align-items: center;
-  padding: 10px; border-radius: 10px; background: var(--fs-bg-soft);
-  border: 1px solid var(--fs-line);
+.fs-results { display: flex; flex-direction: column; gap: var(--fs-gap-sm); }
+.fs-result-summary {
+  display: flex; align-items: center; gap: var(--fs-gap-sm);
+  font-size: 12.5px; padding: 0 2px;
 }
+/* 检索结果行：缩略图固定 168×94，台词长短只影响右侧文字区高度，
+   但整行用 align-items:center 让两侧始终居中对齐，不会一头高一头低。 */
+.fs-rrow {
+  display: flex; gap: var(--fs-gap-md); align-items: center;
+  padding: 10px; border-radius: var(--fs-radius-chip);
+  background: var(--el-bg-color); border: 1px solid var(--el-border-color);
+  transition: border-color var(--fs-dur), background var(--fs-dur);
+}
+.fs-rrow:hover { border-color: var(--el-color-primary-light-7);
+  background: var(--el-fill-color-lighter); }
 .fs-rrow img {
   width: 168px; height: 94px; object-fit: cover; border-radius: 6px;
   cursor: pointer; flex: none; background: #000;
 }
 .fs-rbody { flex: 1; min-width: 0; }
-.fs-rbody .ts { font-size: 12px; color: var(--fs-dim); margin-bottom: 3px; }
+.fs-rbody .ts { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 3px; }
 .fs-rbody .ts .el-tag { margin: 0 6px; }
 .fs-rbody .txt { font-size: 15px; line-height: 1.5; word-break: break-all; }
-.fs-rbody .from { font-size: 12px; color: var(--fs-dim); margin-top: 3px; }
+.fs-rbody .from { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 3px; }
 .fs-rbody mark { background: rgba(77, 157, 255, .3); color: #fff; border-radius: 2px; padding: 0 2px; }
-.fs-rrow .ops { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.fs-rrow .ops { display: flex; flex-direction: column; gap: var(--fs-gap-btn); flex: none; }
 
+/* 方框凭证角标：在 v-html 字符串里用，没法换成 el-tag，所以沿用 EP 语义色 */
 .boxinfo, .boxwarn, .boxok, .boxfont {
-  font-size: 11px; padding: 1px 6px; border-radius: 8px; margin-left: 6px;
+  font-size: 11px; padding: 1px 6px; border-radius: 8px; margin-left: var(--fs-gap-xs);
 }
-.boxok { background: rgba(46, 194, 126, .16); color: var(--fs-ok); }
-.boxwarn { background: rgba(245, 108, 108, .16); color: var(--fs-bad); }
-.boxinfo { background: rgba(255, 255, 255, .08); color: var(--fs-dim); }
-.boxfont { background: rgba(230, 162, 60, .18); color: var(--fs-warn); }
+.boxok { background: rgba(46, 194, 126, .16); color: var(--el-color-success); }
+.boxwarn { background: rgba(245, 108, 108, .16); color: var(--el-color-danger); }
+.boxinfo { background: var(--fs-fill-2); color: var(--el-text-color-secondary); }
+.boxfont { background: rgba(230, 162, 60, .18); color: var(--el-color-warning); }
 
 .fs-empty-tip {
-  display: flex; flex-direction: column; gap: 8px; align-items: center;
-  padding: 70px 20px; color: var(--fs-dim); text-align: center;
+  display: flex; flex-direction: column; gap: var(--fs-gap-sm); align-items: center;
+  padding: 70px 20px; color: var(--el-text-color-secondary); text-align: center;
 }
-.fs-empty-tip b { font-size: 15px; color: var(--fs-txt); }
+.fs-empty-tip b { font-size: 15px; color: var(--el-text-color-primary); }
 .fs-empty-tip span { max-width: 520px; font-size: 12.5px; }
 
 /* ---------- 素材 ---------- */
 .fs-filtercard .fs-frow {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 6px 0; border-bottom: 1px dashed var(--fs-line);
+  display: flex; align-items: center; gap: var(--fs-gap-sm); flex-wrap: wrap;
+  padding: 4px 0 0;
 }
-.fs-filtercard .fs-frow:last-child { border-bottom: none; }
-.fs-fchips { display: flex; gap: 10px; flex-wrap: wrap; flex: 1; }
+.fs-fchips { display: flex; gap: var(--fs-gap-sm); flex-wrap: wrap; flex: 1; }
 .fs-fsum { font-size: 12px; }
 
+/* 筛选面板底部的"当前链接参数"：让用户看得见地址栏被写成什么样 */
+.fs-urlcode {
+  font-family: ui-monospace, Consolas, "Cascadia Mono", monospace;
+  font-size: 11.5px; padding: 2px 7px; border-radius: 5px;
+  background: var(--fs-bg-sunken, #17181d); color: var(--el-color-primary);
+  border: 1px solid var(--el-border-color);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 锁定单部影片时的提示条 */
+.fs-pinalert { margin-bottom: 14px; }
+.fs-pinalert .el-alert__title { width: 100%; }
+.fs-pinbar {
+  display: flex; align-items: center; gap: var(--fs-gap-sm); flex-wrap: wrap;
+  font-size: 12.5px;
+}
+
 .fs-videos {
-  display: grid; gap: 18px;
+  display: grid; gap: var(--fs-gap-lg);
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 }
-.fs-vcard {
-  position: relative; border-radius: 14px;
-  background: var(--fs-bg-soft); border: 1px solid var(--fs-line);
-  cursor: pointer; overflow: hidden;
-  transition: transform .18s, border-color .18s, box-shadow .18s;
-}
-.fs-vcard:hover { transform: translateY(-4px); border-color: var(--fs-brand); box-shadow: 0 16px 38px rgba(0,0,0,.4); }
-.fs-vthumb { position: relative; aspect-ratio: 16/9; overflow: hidden; border-radius: 14px 14px 0 0; background: #000; }
-/* ··· 按钮：dropdown 整体提到缩略图右上角，并且必须脱离文档流。
-   el-dropdown 默认是 inline-flex，留在流里会在缩略图和片名之间撑出
-   一条匿名行盒（高 = 字号 × 行高 = 14 × 1.6 = 22.4px），
-   这就是「片名和预览图间距过大」的根因。下拉菜单是 teleport 到 body 的，不受影响 */
+/* AI 生成产物的缩略图底色 */
+.fs-aicard .fs-vthumb { background: #1a1a1a; }
+.fs-vcard { position: relative; cursor: pointer; overflow: hidden; }
+.fs-vthumb { position: relative; aspect-ratio: 16/9; overflow: hidden;
+  border-radius: var(--fs-radius-card) var(--fs-radius-card) 0 0; background: #000; }
+/* ··· 按钮：dropdown 整体提到缩略图右上角，且必须脱离文档流。
+   el-dropdown 默认 inline-flex，留在流里会在缩略图和片名之间撑出一条匿名行盒
+   （高 = 字号 × 行高 = 14 × 1.6 ≈ 22px），这就是「片名和预览图间距过大」的根因。
+   下拉菜单 teleport 到 body，不受影响。 */
 .fs-vcard .el-dropdown {
   position: absolute; top: 8px; right: 8px; z-index: 3;
   line-height: 0;
 }
 .fs-vcard img {
   width: 100%; height: 100%; object-fit: cover; display: block;
-  border-radius: 0; transition: transform .35s ease;
+  border-radius: 0; transition: transform var(--fs-dur-slow) var(--fs-ease);
 }
 .fs-vcard:hover .fs-vthumb img { transform: scale(1.08); }
 .fs-vgrad {
@@ -318,212 +664,177 @@ code {
   background: rgba(0, 0, 0, .62); color: #fff; font-size: 11.5px;
   padding: 2px 7px; border-radius: 6px; pointer-events: none;
   font-family: Consolas, monospace; letter-spacing: .3px;
-  box-shadow: 0 2px 6px rgba(0,0,0,.25);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
 }
 .fs-vplay {
   position: absolute; inset: 0; z-index: 2;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 6px;
+  gap: var(--fs-gap-xs);
   background: rgba(0, 0, 0, .38);
   color: #fff; font-size: 12px; font-weight: 600;
-  opacity: 0; transition: opacity .2s;
+  opacity: 0; transition: opacity var(--fs-dur);
   backdrop-filter: blur(2px);
 }
 .fs-vplay .el-icon { font-size: 32px; opacity: .95; }
 .fs-vcard:hover .fs-vplay { opacity: 1; }
+/* 缩略图右上角的圆形 ··· 按钮：浮在图上，所以自己描边 + 毛玻璃，不跟 EP 按钮走 */
 .fs-vmore {
   position: static;
-  background: rgba(255, 255, 255, .14) !important;
+  background: var(--fs-fill-4) !important;
   color: #fff !important;
   width: 30px; height: 30px; min-height: 30px; padding: 0;
   border: 1px solid rgba(255, 255, 255, .22) !important;
   border-radius: 50% !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,.22);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .22);
   backdrop-filter: blur(3px);
-  transition: background .15s, transform .12s, box-shadow .15s;
+  transition: background var(--fs-dur-fast), transform var(--fs-dur-fast), box-shadow var(--fs-dur-fast);
 }
 .fs-vmore .el-icon { font-size: 16px; }
-.fs-vmore:hover { background: rgba(255, 255, 255, .26) !important; transform: scale(1.08); box-shadow: 0 4px 12px rgba(0,0,0,.35); }
+.fs-vmore:hover { background: rgba(255, 255, 255, .26) !important; transform: scale(1.08); box-shadow: 0 4px 12px rgba(0, 0, 0, .35); }
 .fs-vmeta { padding: 11px 13px 13px; }
+.fs-vimg, .fs-vvid { width: 100%; height: 100%; object-fit: cover; display: block; cursor: pointer; background: #000; }
+.fs-vtype { position: absolute; left: 8px; top: 8px; z-index: 2; background: rgba(0, 0, 0, .62);
+  color: #fff; font-size: 11px; line-height: 1; padding: 3px 7px; border-radius: 5px; pointer-events: none; }
 .fs-vmeta b {
   display: block; font-size: 14px; line-height: 1.35; font-weight: 600;
-  color: var(--fs-txt); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* 二级目录前缀：压暗一档，让真正的片名仍然是视觉主角 */
-.fs-vdir { color: var(--fs-dim); font-weight: 400; }
+/* 二级目录前缀：压暗一档，让真正的片名仍是视觉主角 */
+.fs-vdir { color: var(--el-text-color-secondary); font-weight: 400; }
 .fs-vsub {
-  display: flex; align-items: center; gap: 6px;
-  margin-top: 5px; font-size: 12px; color: var(--fs-dim);
+  display: flex; align-items: center; gap: var(--fs-gap-xs);
+  margin-top: 5px; font-size: 12px; color: var(--el-text-color-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.fs-dot {
-  width: 7px; height: 7px; border-radius: 50%; flex: none;
-  background: var(--fs-dim);
-}
-.fs-dot.ok { background: var(--fs-ok); }
+.fs-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--el-text-color-secondary); }
+.fs-dot.ok { background: var(--el-color-success); }
 .fs-dot.ai { background: linear-gradient(135deg, #a78bfa, #60a5fa); }
-.fs-dot.err { background: var(--fs-bad); }
-.fs-vlib { color: var(--fs-txt); font-weight: 500; }
-.fs-vline { color: var(--fs-dim); }
-/* AI 生成产物的隔离标记：不做字幕识别，单独一档（契约不可删，_ai_isolate_ui_check 守着） */
-.fs-vai {
-  color: #a78bfa; font-weight: 500;
+.fs-dot.err { background: var(--el-color-danger); }
+.fs-vlib { color: var(--el-text-color-primary); font-weight: 500; }
+.fs-vline { color: var(--el-text-color-secondary); }
+/* AI 生成产物的隔离标记：不做字幕识别，单独一档紫色（契约不可删，_ai_isolate_ui_check 守着） */
+.fs-vai { color: #a78bfa; font-weight: 500; }
+
+/* 滚动分页：底部加载提示，整行跨列 */
+.fs-loadmore {
+  grid-column: 1 / -1;
+  text-align: center; padding: 16px 0 24px; font-size: 13px;
+  display: flex; align-items: center; justify-content: center; gap: var(--fs-gap-xs);
 }
+.fs-loadmore .el-icon { font-size: 15px; }
 
 /* ---------- AI 生成 / 手绘（对话） ---------- */
-.fs-page-gen { display: flex; flex-direction: column; height: calc(100vh - 110px); }
+.fs-page-gen, .fs-page-aidraw { display: flex; flex-direction: column; height: calc(100vh - 78px); }
+/* AI 绘画仿 AI 生成：生成后的图在中间气泡里居中 */
+.fs-page-aidraw .fs-bub { max-width: 88%; }
+.fs-bub .bub-pic {
+  width: 100%; max-width: 520px; border-radius: var(--fs-radius-chip); display: block;
+  margin: 2px auto 4px; background: #000; cursor: zoom-in;
+}
+.fs-bub .bub-pic-prompt { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px; line-height: 1.5; }
 .fs-chat {
   flex: 1; overflow-y: auto; padding: 8px 4px 14px;
-  display: flex; flex-direction: column; gap: 10px; min-height: 180px;
+  display: flex; flex-direction: column; gap: var(--fs-gap-sm); min-height: 180px;
 }
 .fs-chat-empty {
-  margin: auto; text-align: center; color: var(--fs-dim);
+  margin: auto; text-align: center; color: var(--el-text-color-secondary);
   font-size: 13px; line-height: 1.9; padding: 40px 20px;
 }
 .fs-bub {
   max-width: 78%; padding: 10px 13px; border-radius: 12px;
-  background: var(--fs-bg-soft); border: 1px solid var(--fs-line);
+  background: var(--el-bg-color); border: 1px solid var(--el-border-color);
 }
 .fs-bub.me {
   align-self: flex-end;
-  background: rgba(77, 157, 255, .16); border-color: rgba(77, 157, 255, .4);
+  background: var(--fs-brand-soft); border-color: rgba(77, 157, 255, .4);
 }
 .fs-bub .bub-txt { white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
-.fs-bub .bub-meta { font-size: 11px; color: var(--fs-dim); margin-top: 5px; }
-.fs-bub .bub-err { color: var(--fs-bad); white-space: pre-wrap; }
+.fs-bub .bub-meta { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 5px; }
+.fs-bub .bub-err { color: var(--el-color-danger); white-space: pre-wrap; }
 .fs-bub .bub-video { width: 100%; max-width: 460px; border-radius: 8px; display: block; background: #000; }
-.fs-bub .bub-acts { margin-top: 6px; display: flex; gap: 8px; }
+.fs-bub .bub-acts { margin-top: 6px; display: flex; gap: var(--fs-gap-sm); }
 .fs-bub .bub-media img, .fs-bub .bub-media video {
   max-width: 100%; max-height: 320px; border-radius: 8px; margin-top: 6px; display: block;
 }
-.hd-kv { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; font-size: 12.5px; }
-.hd-kv b { font-weight: 600; }
-.hd-kv span { color: var(--fs-dim); margin-left: 8px; font-weight: 400; }
 
-.fs-composer { border-top: 1px solid var(--fs-line); padding-top: 12px; }
-.fs-composer-main { display: flex; gap: 8px; align-items: flex-end; }
+.fs-composer { border-top: 1px solid var(--el-border-color); padding-top: 12px; }
+.fs-composer-main { display: flex; gap: var(--fs-gap-sm); align-items: flex-end; }
 .fs-composer-main .el-textarea { flex: 1; }
 .fs-composer-main .el-button { height: 54px; }
 .fs-composer-row {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 9px;
+  display: flex; align-items: center; gap: var(--fs-gap-sm); flex-wrap: wrap; margin-top: 9px;
 }
 .fs-composer-adv {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  margin-top: 9px; padding: 10px; border-radius: 8px; background: rgba(255, 255, 255, .04);
+  margin-top: 9px; padding: 12px 12px 2px; border-radius: 8px; background: var(--fs-fill-1);
 }
-.fs-refname { font-size: 12px; cursor: pointer; }
-.fs-refname.clr { color: var(--fs-brand); }
 
+/* 手绘：聊天区限高，别把 composer 顶出屏幕 */
 .fs-hdchat { max-height: 380px; }
-
-/* ---------- 手绘 ---------- */
-.fs-steps { margin-bottom: 18px; }
-/* 步骤条可点击跳转：分步向导的核心导航 */
-.fs-steps .el-step { cursor: pointer; }
-.fs-steps .el-step:hover .el-step__title { color: var(--fs-brand); }
-.fs-steps .el-step__head:hover .el-step__icon { border-color: var(--fs-brand); }
-
-/* 工程 / 当前幕 / 时间轴：常驻横幅 */
-.fs-hdproj { font-size: 13px; }
-.fs-hdctx {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-}
-.fs-hdctx-sep {
-  width: 1px; height: 16px; background: var(--fs-line); flex: none;
-}
-.fs-hdctx-advice {
-  max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.fs-hd-dirs { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 11.5px; }
-
-/* 步骤导航条 */
-.fs-hdnav {
-  display: flex; align-items: center; gap: 12px;
-  margin-bottom: 14px; padding: 9px 14px;
-  border-radius: 10px; background: var(--fs-bg-soft); border: 1px solid var(--fs-line);
-}
-.fs-hdnav-mid {
-  flex: 1; display: flex; align-items: baseline; gap: 8px;
-  min-width: 0; font-size: 13px;
-}
-.fs-hdnav-mid b { color: var(--fs-brand); font-weight: 600; flex: none; }
-.fs-hdnav-mid span {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px;
-}
-
-.fs-hd-row {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 9px;
-}
-.fs-scenes { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-.fs-scene {
-  padding: 7px 10px; border-radius: 8px; background: rgba(255, 255, 255, .04);
-  font-size: 12.5px;
-}
-.fs-scene b { margin-right: 8px; }
+.fs-hd-simple .fs-hint { margin-top: 4px; }
 
 /* ---------- 方框复查 ---------- */
-.fs-page-box { display: flex; flex-direction: column; height: calc(100vh - 110px); }
+.fs-page-box { display: flex; flex-direction: column; height: calc(100vh - 78px); }
 
 .fs-bxsum {
-  display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
-  padding: 12px 16px; border-radius: 10px; margin-bottom: 12px;
-  background: var(--fs-bg-soft); border: 1px solid var(--fs-line);
+  display: flex; align-items: center; gap: var(--fs-gap-xl); flex-wrap: wrap;
+  padding: 12px 16px; border-radius: var(--fs-radius-chip); margin-bottom: 12px;
+  background: var(--el-bg-color); border: 1px solid var(--el-border-color);
 }
 .bxs { display: flex; flex-direction: column; align-items: center; min-width: 62px; }
 .bxs b { font-size: 20px; line-height: 1.2; }
-.bxs span { font-size: 11px; color: var(--fs-dim); }
-.bxreasons { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.bxs span { font-size: 11px; color: var(--el-text-color-secondary); }
+.bxreasons { display: flex; gap: var(--fs-gap-sm); flex-wrap: wrap; margin-left: auto; }
 
 .fs-bxwrap {
   display: grid; grid-template-columns: minmax(280px, 380px) 1fr;
-  gap: 12px; flex: 1; min-height: 0;
+  gap: var(--fs-gap-md); flex: 1; min-height: 0;
 }
 .fs-bxlist {
   display: flex; flex-direction: column; min-height: 0;
-  background: var(--fs-bg-soft); border: 1px solid var(--fs-line); border-radius: 10px;
+  background: var(--el-bg-color); border: 1px solid var(--el-border-color);
+  border-radius: var(--fs-radius-chip);
 }
 .fs-bxbar {
-  display: flex; align-items: center; gap: 8px; padding: 10px;
-  border-bottom: 1px solid var(--fs-line);
+  display: flex; align-items: center; gap: var(--fs-gap-sm); padding: 10px;
+  border-bottom: 1px solid var(--el-border-color);
 }
 .fs-bxbar .el-input { flex: 1; }
 .fs-bxrows { flex: 1; overflow-y: auto; padding: 6px; }
 .fs-bxrow {
   display: grid; grid-template-columns: 96px 1fr auto;
-  gap: 8px; align-items: center; padding: 7px 9px; border-radius: 7px;
+  gap: var(--fs-gap-sm); align-items: center; padding: 7px 9px; border-radius: 7px;
   cursor: pointer; font-size: 13px;
 }
 .fs-bxrow:hover { background: rgba(255, 255, 255, .05); }
-.fs-bxrow.on { background: rgba(77, 157, 255, .16); }
-.bxts { font-size: 11.5px; color: var(--fs-dim); font-family: Consolas, monospace; }
+.fs-bxrow.on { background: var(--fs-brand-soft); }
+.bxts { font-size: 11.5px; color: var(--el-text-color-secondary); font-family: Consolas, monospace; }
 .bxts .dim2 { display: block; }
 .bxtx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bxmark { font-size: 10.5px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
-.bxmark.ok { background: rgba(46, 194, 126, .16); color: var(--fs-ok); }
-.bxmark.bad { background: rgba(245, 108, 108, .16); color: var(--fs-bad); }
-.bxmark.nobox { background: rgba(230, 162, 60, .18); color: var(--fs-warn); }
-.bxmark.skip { background: rgba(255, 255, 255, .08); color: var(--fs-dim); }
+.bxmark.ok { background: rgba(46, 194, 126, .16); color: var(--el-color-success); }
+.bxmark.bad { background: rgba(245, 108, 108, .16); color: var(--el-color-danger); }
+.bxmark.nobox { background: rgba(230, 162, 60, .18); color: var(--el-color-warning); }
+.bxmark.skip { background: var(--fs-fill-2); color: var(--el-text-color-secondary); }
 
 .fs-bxview {
   overflow-y: auto; padding: 12px; min-height: 0;
-  background: var(--fs-bg-soft); border: 1px solid var(--fs-line); border-radius: 10px;
+  background: var(--el-bg-color); border: 1px solid var(--el-border-color);
+  border-radius: var(--fs-radius-chip);
 }
 .fs-bxhead {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; flex-wrap: wrap; margin-bottom: 10px;
+  gap: var(--fs-gap-sm); flex-wrap: wrap; margin-bottom: 10px;
 }
 .bxhts { font-size: 12.5px; font-family: Consolas, monospace; }
-.bxtools { display: flex; align-items: center; gap: 8px; }
+.bxtools { display: flex; align-items: center; gap: var(--fs-gap-sm); }
 
 .fs-bximg { position: relative; margin-bottom: 10px; }
-.fs-bximg img {
-  width: 100%; border-radius: 8px; display: block; background: #000;
-}
+.fs-bximg img { width: 100%; border-radius: 8px; display: block; background: #000; }
 .fs-bximg .spin {
   padding: 60px 0; text-align: center;
-  background: rgba(255, 255, 255, .04); border-radius: 8px;
+  background: var(--fs-fill-1); border-radius: 8px;
 }
-.bxlegend { display: flex; gap: 14px; margin-top: 6px; font-size: 11px; color: var(--fs-dim); }
+.bxlegend { display: flex; gap: var(--fs-gap-md); margin-top: var(--fs-gap-sm); font-size: 11px; color: var(--el-text-color-secondary); }
 .bxlegend i {
   display: inline-block; width: 14px; height: 3px; margin-right: 5px; vertical-align: middle;
 }
@@ -531,83 +842,112 @@ code {
   background-image: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 8px);
 }
 
-.fs-bxtext { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.fs-bxtext { display: flex; gap: var(--fs-gap-md); flex-wrap: wrap; margin-bottom: 10px; }
 .bxfld {
   flex: 1; min-width: 220px; padding: 8px 10px; border-radius: 8px;
-  background: rgba(255, 255, 255, .04);
+  background: var(--fs-fill-1);
 }
-.bxfld span { display: block; font-size: 11px; color: var(--fs-dim); margin-bottom: 3px; }
+.bxfld span { display: block; font-size: 11px; color: var(--el-text-color-secondary); margin-bottom: 3px; }
 .bxfld b { font-size: 14px; word-break: break-all; }
 
 .fs-bxfoot {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; flex-wrap: wrap;
+  gap: var(--fs-gap-md); flex-wrap: wrap;
 }
-.bxverdict { font-size: 12.5px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.bxverdict.ok b { color: var(--fs-ok); }
-.bxverdict.bad b { color: var(--fs-bad); }
-.bxverdict.nobox b { color: var(--fs-warn); }
-.bxverdict.skip b { color: var(--fs-dim); }
-.bxacts { display: flex; gap: 6px; flex-wrap: wrap; }
+.bxverdict { font-size: 12.5px; display: flex; gap: var(--fs-gap-sm); align-items: center; flex-wrap: wrap; }
+.bxverdict.ok b { color: var(--el-color-success); }
+.bxverdict.bad b { color: var(--el-color-danger); }
+.bxverdict.nobox b { color: var(--el-color-warning); }
+.bxverdict.skip b { color: var(--el-text-color-secondary); }
+.bxacts { display: flex; gap: var(--fs-gap-btn); flex-wrap: wrap; }
 
 .fs-bxprobe { margin-top: 10px; font-size: 12.5px; }
 .bxpv { margin-bottom: 8px; }
-.bxpv.ok b { color: var(--fs-ok); }
-.bxpv.bad b { color: var(--fs-bad); }
-.bxpbtbl, .bxmtbl {
-  width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px;
-}
+.bxpv.ok b { color: var(--el-color-success); }
+.bxpv.bad b { color: var(--el-color-danger); }
+.bxpbtbl, .bxmtbl { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
 .bxpbtbl td, .bxmtbl td {
-  padding: 4px 8px; border-bottom: 1px solid var(--fs-line); text-align: left;
+  padding: 4px 8px; border-bottom: 1px solid var(--el-border-color); text-align: left;
 }
-.bxpbtbl tr.ok td { color: var(--fs-ok); }
-.bxpbtbl tr.bad td { color: var(--fs-bad); }
-.bxmtbl td:first-child { color: var(--fs-dim); width: 40%; }
-.bxmtbl td.ok { color: var(--fs-ok); }
-.bxmtbl td.bad { color: var(--fs-bad); }
-.bxmtbl td.warn { color: var(--fs-warn); }
-
-.fs-mgrid { display: flex; gap: 16px; margin: 10px 0; flex-wrap: wrap; }
-.fs-mgrid span { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.bxpbtbl tr.ok td { color: var(--el-color-success); }
+.bxpbtbl tr.bad td { color: var(--el-color-danger); }
+.bxmtbl td:first-child { color: var(--el-text-color-secondary); width: 40%; }
+.bxmtbl td.ok { color: var(--el-color-success); }
+.bxmtbl td.bad { color: var(--el-color-danger); }
+.bxmtbl td.warn { color: var(--el-color-warning); }
 
 /* ---------- 片段 ---------- */
-.fs-clips {
-  display: grid; gap: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+/* 片段卡用 el-row/el-col 排布：el-col 本身不是 flex 容器，
+   里面的 el-card 不会自动撑满列高 → 一行里台词长短不一时卡片高度参差。
+   让列变成纵向 flex、卡片 flex:1，同一行就等高了。 */
+.fs-clips > .el-col { margin-bottom: var(--fs-gap-md); display: flex; }
+.fs-clips > .el-col > .el-card { width: 100%; display: flex; flex-direction: column; }
+.fs-clip { overflow: hidden; }
+/* 卡头(video)固定比例，卡体吃掉剩余高度，底部操作区自然贴底对齐 */
+.fs-clip .el-card__body {
+  padding: 10px 12px 12px; flex: 1;
+  display: flex; flex-direction: column;
 }
-.fs-clip .txt { font-size: 13px; margin-bottom: 3px; word-break: break-all; }
-.fs-clip video {
-  width: 100%; border-radius: 6px; margin-top: 8px; display: block; background: #000;
+.fs-clip video { width: 100%; border-radius: 8px; display: block; background: #000; }
+/* 台词最多两行，卡片高度才不会参差不齐 */
+.fs-clip .txt {
+  font-size: 13.5px; line-height: 1.5; margin: 8px 0 2px; word-break: break-all;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
-.chipops { display: flex; gap: 10px; margin-top: 6px; }
+.fs-clip .dim { font-size: 12px; }
+.fs-clip .ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 元信息：库名/时长/字幕标记/体积/时间，一行放不下自动折行 */
+.fs-clip .metas {
+  display: flex; align-items: center; gap: var(--fs-gap-xs); flex-wrap: wrap; margin-top: var(--fs-gap-xs);
+}
+/* 操作区顶到底部：一行片段卡的按钮在同一条基线上（margin-top:auto 吃掉剩余空间） */
+.chipops {
+  display: flex; gap: var(--fs-gap-btn); flex-wrap: wrap;
+  margin-top: auto; padding-top: var(--fs-gap-sm);
+}
+.fs-clip .metas .el-tag { height: 20px; padding: 0 6px; }
 
 /* ---------- 进度浮窗 ---------- */
 .fs-dock {
   position: fixed; right: 16px; bottom: 16px; z-index: 3000;
   width: min(420px, calc(100vw - 32px));
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: var(--fs-gap-sm);
 }
-.fs-dock-card { border-radius: 10px; }
-.fs-dock-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12.5px; }
+.fs-dock-card { border-radius: 12px; }
+.fs-dock-hd { display: flex; align-items: center; gap: var(--fs-gap-sm); margin-bottom: 6px; font-size: 12.5px; }
 .fs-dock-hd b { flex: none; }
 .fs-dock-hd .dim { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fs-dock-pct { font-weight: 700; color: var(--fs-brand); flex: none; }
+.fs-dock-hd .el-button .el-icon { font-size: 13px; margin-right: var(--fs-gap-xs); }
+/* 百分比固定宽度 + 等宽数字，扫进度时不会左右跳 */
+.fs-dock-pct {
+  font-weight: 700; color: var(--el-color-primary); flex: none;
+  min-width: 34px; text-align: right; font-variant-numeric: tabular-nums;
+}
 /* 当前正在识别的视频（二级目录带目录前缀）——收起状态也看得见 */
 .fs-dock-file {
-  display: flex; align-items: center; gap: 5px; margin-top: 6px;
-  font-size: 12px; color: var(--fs-txt); font-family: Consolas, monospace;
+  display: flex; align-items: center; gap: var(--fs-gap-xs); margin-top: var(--fs-gap-sm);
+  font-size: 12px; color: var(--el-text-color-primary); font-family: Consolas, monospace;
 }
-.fs-dock-file .el-icon { flex: none; color: var(--fs-brand); }
+.fs-dock-file .el-icon { flex: none; color: var(--el-color-primary); }
 .fs-dock-file > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* 已识别的画面帧数：数字对齐，扫的时候不会左右跳 */
 .fs-dock-frames {
-  margin-top: 3px; font-size: 11.5px; color: var(--fs-dim);
+  margin-top: 3px; font-size: 11.5px; color: var(--el-text-color-secondary);
   font-variant-numeric: tabular-nums;
 }
-.fs-dock-msg { font-size: 11.5px; color: var(--fs-dim); margin-top: 5px; }
+.fs-dock-msg { font-size: 11.5px; color: var(--el-text-color-secondary); margin-top: 5px; }
 
 /* ---------- 播放器 ---------- */
 .fs-player-video { width: 100%; max-height: 62vh; background: #000; border-radius: 8px; display: block; }
+.fs-player-wrap { position: relative; width: 100%; line-height: 0; }
+.fs-subtitle {
+  position: absolute; left: 0; right: 0; bottom: 8%;
+  text-align: center; pointer-events: none;
+  font-size: clamp(15px, 2.2vw, 24px); line-height: 1.45;
+  text-shadow: 0 1px 3px #000, 0 0 8px #000; color: #fff;
+  padding: 0 5%; box-sizing: border-box; margin: 0;
+  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  letter-spacing: .5px;
+}
 
 /* ---------- 窄屏 ---------- */
 @media (max-width: 1000px) {

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<!-- 间距验证页（真实渲染）
+     用真实的 Vue + Element Plus 渲染 el-button，让浏览器算出最终间距。
+     验证三件事：
+       1. 相邻按钮 margin-left 归零，间距只由 gap 决定（不会 8+12=20px）
+       2. 同组按钮间距全相等、库卡底部按钮等宽
+       3. 按钮内「图标+文字」间距一致（不管图标后面是 span 还是裸文本）
+     用 file:// 直接打开即可，不依赖后端。 -->
+<html class="dark" lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../web/vendor/element-plus.css">
+<link rel="stylesheet" href="../web/vendor/element-plus-dark.css">
+<link rel="stylesheet" href="../web/style.css">
+<style>
+  body { margin: 0; padding: 20px; background: #1D1E23; }
+  .case { margin-bottom: 20px; }
+  .case h3 { color: #F2F3F5; font: 600 13px/1.6 system-ui; margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<pre id="out" style="color:#7BABFF;font:12px/1.8 Consolas,monospace;white-space:pre-wrap"></pre>
+
+<script src="../web/vendor/vue.global.prod.js"></script>
+<script src="../web/vendor/element-plus.min.js"></script>
+<script>
+const { createApp, ref, onMounted } = Vue;
+
+const out = [];
+let fails = 0;
+function chk(cond, msg, detail) {
+  if (!cond) fails++;
+  out.push((cond ? 'PASS  ' : 'FAIL  ') + msg + (detail ? '  ->  ' + detail : ''));
+}
+function gap(a, b) {
+  return +(b.getBoundingClientRect().left - a.getBoundingClientRect().right).toFixed(2);
+}
+
+const Probe = {
+  template: `
+  <div>
+    <div class="case">
+      <h3>1. 工具栏 · 三个按钮（flex + gap）</h3>
+      <div class="fs-tools" id="c1">
+        <el-button>刷新</el-button>
+        <el-button type="primary">打开片段目录</el-button>
+        <el-button>第三个</el-button>
+      </div>
+    </div>
+
+    <div class="case">
+      <h3>2. 素材库卡底部 · 四个按钮（最容易参差的地方）</h3>
+      <div class="fs-libft" id="c2">
+        <el-button size="small"><span class="el-icon"><i></i></span><span>索引</span></el-button>
+        <el-button size="small"><span class="el-icon"><i></i></span><span>打开目录</span></el-button>
+        <el-button size="small">编辑</el-button>
+        <el-button size="small">上传</el-button>
+      </div>
+    </div>
+
+    <div class="case">
+      <h3>3. 混排 · 图标后有 span vs 裸文本</h3>
+      <div class="fs-tools" id="c3">
+        <el-button title="重新扫描各素材库的片段目录">
+        <span class="el-icon"><i></i></span><span>刷新</span></el-button>
+        <el-button title="在资源管理器里打开当前库的片段输出目录">
+        <span class="el-icon"><i></i></span><span>打开片段目录</span></el-button>
+        <el-button link size="small" tag="a"
+            title="把这个 mp4 下载到本地"><span class="el-icon"><i></i></span><span>下载</span></el-button>
+        <el-button link size="small"
+            title="在资源管理器里打开这个片段所在的文件夹"><span class="el-icon"><i></i></span><span>文件夹</span></el-button>
+        <el-button link size="small" type="danger"
+            title="删除这个片段（连同它的 .srt）"><span class="el-icon"><i></i></span><span>删除</span></el-button>
+        <el-button size="small" title="重新拉取产物列表"><span class="el-icon"><i></i></span><span>刷新</span></el-button>
+      </div>
+    </div>
+
+    <div class="case">
+      <h3>4. 弹窗 footer（原来靠 12px margin 撑，归零后会贴死）</h3>
+      <div class="el-dialog__footer" id="c4">
+        <el-button>取消</el-button>
+        <el-button type="primary">保存</el-button>
+      </div>
+    </div>
+  </div>`,
+  setup() {
+    onMounted(() => setTimeout(run, 200));   // 等 EP 组件渲染完
+    return {};
+  },
+};
+
+createApp(Probe).use(ElementPlus).mount('#app');
+
+function run() {
+  const $ = id => document.getElementById(id);
+  const bs = id => [...$(id).querySelectorAll('.el-button')];
+
+  /* 1. 工具栏 */
+  const b1 = bs('c1');
+  out.push('--- 1. 工具栏三按钮 ---');
+  if (b1.length === 3) {
+    const g = [gap(b1[0], b1[1]), gap(b1[1], b1[2])];
+    const ml = getComputedStyle(b1[1]).marginLeft;
+    chk(Math.abs(g[0] - g[1]) < 0.01, '两个相邻间距完全相等', JSON.stringify(g));
+    chk(Math.abs(g[0] - 8) < 0.01, '间距 = 8px (--fs-gap-sm)', g[0] + 'px');
+    chk(ml === '0px', '第二个按钮 margin-left 已归零', ml);
+    chk(g[0] < 12, '未与 EP 的 12px 叠加（叠加会是 20px）', g[0] + 'px');
+  } else out.push('SKIP（按钮数 ' + b1.length + '）');
+
+  /* 2. 库卡底部 */
+  const b2 = bs('c2');
+  out.push('\n--- 2. 库卡底部四按钮 ---');
+  if (b2.length === 4) {
+    const w = b2.map(b => +b.getBoundingClientRect().width.toFixed(2));
+    const g = b2.slice(0, -1).map((b, i) => gap(b, b2[i + 1]));
+    chk(Math.max.apply(null, w) - Math.min.apply(null, w) < 0.5, '四个按钮等宽', JSON.stringify(w));
+    chk(g.every(x => Math.abs(x - g[0]) < 0.01), '三个间距全相等', JSON.stringify(g));
+    chk(Math.abs(g[0] - 8) < 0.01, '间距 = 8px (--fs-gap-btn)', g[0] + 'px');
+  } else out.push('SKIP（按钮数 ' + b2.length + '）');
+
+  /* 3. 图标 + 文字：全部来自真实项目模板 */
+  const b3 = bs('c3');
+  out.push('\n--- 3. 真实模板按钮的图标间距（' + b3.length + ' 个）---');
+  if (b3.length >= 4) {
+    function iconGap(btn) {
+      const ic = btn.querySelector('.el-icon');
+      if (!ic) return null;
+      const mr = parseFloat(getComputedStyle(ic).marginRight) || 0;
+      // 取紧跟在图标之后的兄弟 span（EP 会多包一层无 class 的 span，不能取第一个）
+      const sp = ic && ic.nextElementSibling
+                && ic.nextElementSibling.tagName === 'SPAN' ? ic.nextElementSibling : null;
+      const ml = sp ? (parseFloat(getComputedStyle(sp).marginLeft) || 0) : 0;
+      return +(mr + ml).toFixed(2);
+    }
+    const g = b3.map(iconGap).filter(x => x !== null);
+    const labels = b3.map(b => b.textContent.trim().slice(0, 6));
+    chk(g.length === b3.length, '每个按钮都取到间距', g.length + '/' + b3.length);
+    chk(g.every(x => x > 0), '无 0 间距（图标不再贴住文字）', JSON.stringify(g));
+    chk(g.every(x => Math.abs(x - 4) < 0.01), '全部 = 4px (--fs-gap-xs)', JSON.stringify(g));
+    chk(new Set(g).size === 1, '所有按钮间距完全一致（无一个 6px 一个贴死）',
+        JSON.stringify(labels) + ' → ' + JSON.stringify(g));
+  } else out.push('SKIP（按钮数 ' + b3.length + '）');
+
+  /* 4. 弹窗 footer */
+  const c4 = $('c4');
+  out.push('\n--- 4. 弹窗 footer ---');
+  if (c4) {
+    const b4 = [].slice.call(c4.querySelectorAll('.el-button'));
+    const disp = getComputedStyle(c4).display;
+    const g = b4.length === 2 ? gap(b4[0], b4[1]) : -1;
+    chk(disp === 'flex', 'footer display=flex（间距改由 gap 承担）', disp);
+    chk(g > 0, '按钮未贴死', g + 'px');
+    chk(Math.abs(g - 8) < 0.01, '间距 = 8px，与页面内按钮组一致', g + 'px');
+  } else out.push('SKIP');
+
+  out.unshift(fails === 0 ? '全部通过' : ('有 ' + fails + ' 项失败'));
+  document.getElementById('out').textContent = out.join('\n');
+  document.title = fails === 0 ? 'ALL_PASS' : 'HAS_FAIL';
+}
+</script>
+</body>
+</html>

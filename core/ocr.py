@@ -28,9 +28,13 @@
 最终成本（92 分钟片）：0.5 秒网格 = 11000 帧× 170ms ÷ 8 进程 ≈ 4 分钟/部。
 """
 import multiprocessing as mp
+import json
 import os
+import queue
 import re
 import subprocess
+import sys
+import threading
 import time
 from typing import List, Dict, Any, Tuple, Optional
 
@@ -52,12 +56,33 @@ _PROFILE = None
 # 改 config 传不进去，而 _worker_ocr 调 make_engine() 是不带参数的。
 _W_THREADS = 0
 # 引擎调优结果（给诊断用）：{"threads": 每进程线程数, "sessions": 成功设置
-# 线程数的 session 个数（0 表示这个 onnxruntime 版本不支持，退回默认）}
+# 线程数的 session 个数（0 表示这个 onnxruntime 版本不支持，退回默认）,
+# "provider": "dml"/"cpu", "dml_note": DML 失败原因（成功时为空）}
 _ENG_TUNE = {}
+# DirectML provider 开关。由 _setup_dml() 在引擎构建前一次性置位：
+# venv 里装的是 CPU-only 版 onnxruntime，要上 GPU 必须把
+# vendor/ort_dml（onnxruntime-directml 发行版）插到 sys.path 最前阴影掉它。
+# 只有 _DML_ON=True 时 TunedSession 才往 providers 里注入 DML。
+_DML_ON = False
+_DML_TRY = ""
 
 # 送进pool 前先把一批帧的原始字节攒好，凑够 CHUNK 才提交，
 # 避免每帧一次 pool 往返（11000 帧就是 11000 次 IPC，纯浪费）。
 CHUNK = 24
+
+# 解码/OCR 并行：生产线程预读帧塞进这个有界队列，主线程消费。
+#
+# 为什么必须这么做（实测数据，亮剑 26.mp4 / 3840x2880 HEVC / 2736 秒）：
+#   - ffmpeg 单独跑管道：46 帧/秒；4 进程 DML 做 OCR：22 帧/秒。管道富余一倍。
+#   - 但原来 `for t, buf, w, h in _frame_stream(...)` 里调 _flush() 是**阻塞**的
+#     pool.imap —— OCR 算这24 帧的工夫，主线程根本没去读管道，ffmpeg 的 stdout
+#     缓冲一满就自己阻塞等着。于是「解码 278 秒 + OCR 397 秒」变成串行相加。
+#   - 拆成生产/消费两线程后，管道在后台一直解，主线程只等队列，
+#     两者重叠，耗时趋向 max(解码, OCR) 而不是相加。
+#
+# 队列必须有界：帧是 960×288 灰度 = 276KB/帧，攒满 96 帧约 26MB。
+# 无界的话 4K 长片会把内存吃光（实测整部 13680 帧 = 3.8GB）。
+PREFETCH = 96
 
 
 def engine_info() -> dict:
@@ -81,16 +106,80 @@ def _add_vendor():
         os.sys.path.insert(0, vendor)
 
 
+def _dml_enabled() -> bool:
+    """DML 总开关（config 默认开，环境变量可临时反转）。"""
+    v = os.environ.get("FRAMESEEK_OCR_DML")
+    if v is not None:
+        return v.strip().lower() not in ("0", "false", "off", "no")
+    return bool(getattr(C, "OCR_USE_DML", False))
+
+
+def _dml_device() -> int:
+    try:
+        return int(os.environ.get("FRAMESEEK_OCR_DML_DEVICE")
+                   or getattr(C, "OCR_DML_DEVICE_ID", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _setup_dml() -> bool:
+    """准备 DirectML provider，让 GPU 分担 det/rec。幂等，任何失败都退回 CPU。
+
+    **为什么要换包**：onnxruntime 的 provider 只能在创建 session 那一刻定，
+    而 venv 里装的是 CPU-only build（get_available_providers() 只有 CPU 和
+    Azure）。vendor/ort_dml 里是 pip --target 装的 onnxruntime-directml
+    1.24.4（DML 独立发行版的最后版本），插到 sys.path 最前即可阴影掉旧版——
+    但必须在**任何代码 import onnxruntime 之前**做：sys.modules 一旦缓存，
+    换 sys.path 也静默失效，所以函数开头就检查。
+
+    **收益边界**（实测，4060Ti）：det 39→21ms（1.8×），rec 110→97ms（1.2×）——
+    rec 输入是 48×320 的单行小图，GPU 的 kernel launch 开销吃掉大部分收益，
+    总体 1.28×。模型太小（det 4.5M / rec 10M 参数），不是 GPU 擅长的活。
+    识别文本与 CPU 完全一致（数值差异远低于置信度门槛）。
+    """
+    global _DML_ON, _DML_TRY
+    if _DML_ON:
+        return True
+    if not _dml_enabled():
+        _DML_TRY = "disabled"
+        return False
+    if "onnxruntime" in sys.modules:
+        # 已经被别的模块 import 过了，换包只会静默失效，不如老实 CPU
+        _DML_TRY = "onnxruntime already imported"
+        return False
+    dml_dir = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "vendor", "ort_dml")
+    if not os.path.isdir(os.path.join(dml_dir, "onnxruntime")):
+        _DML_TRY = "vendor/ort_dml 不存在"
+        return False
+    sys.path.insert(0, dml_dir)
+    try:
+        import onnxruntime as ort
+        if "DmlExecutionProvider" not in ort.get_available_providers():
+            # 系统不支持（Win10 老版本/驱动问题）——build 已是可用的 CPU 版，
+            # 不注入 provider 就是纯 CPU，正确性不受影响
+            _DML_TRY = "DmlExecutionProvider 不可用"
+            return False
+        _DML_ON = True
+        _DML_TRY = f"dml build={ort.__version__} dev={_dml_device()}"
+        return True
+    except Exception as e:
+        _DML_TRY = f"{type(e).__name__}: {e}"
+        return False
+
+
 def make_engine(threads: int = 0):
     """构造调优后的 RapidOCR（进程内单例）。
 
-    调优四点，对应上面注释里的 827ms → 170ms：
+    调优五点，对应上面注释里的 827ms → 170ms → 116ms(DML)：
       1. limit_type: max—— 只缩不放，字幕带不再被撑到 736 短边
       2. limit_side_len: 736 —— 上限，防止异常大图拖慢
       3. use_angle_cls: False —— 字幕不会倒着，180 度分类器纯属浪费
       4. **限制每进程的 onnxruntime 线程数**（见 _apply_threads）——这一条
          实测比前三条加起来还重要：不限制时 8 个进程各开 16 个线程，
          128 个线程在 16 核上互相抢，并行加速比只剩 1.7 倍。
+      5. DML provider（见 _setup_dml）—— vendor/ort_dml 换包后把 GPU
+         拉进来：det 1.8×、rec 1.2×，总体 1.28×。失败自动退回 CPU。
     """
     global _ENG, _ENG_ERR, _LOCK
     if _ENG is not None:
@@ -102,6 +191,9 @@ def make_engine(threads: int = 0):
         if _ENG is not None:
             return _ENG
         _add_vendor()
+        # 顺序要紧：_setup_dml 要抢在 rapidocr 建 session（=import
+        # onnxruntime）之前把 DML 版 onnxruntime 插到 sys.path 最前
+        _setup_dml()
         try:
             from rapidocr_onnxruntime import RapidOCR
             # 线程数：worker 里 _worker_init 存进 _W_THREADS；
@@ -122,7 +214,9 @@ def make_engine(threads: int = 0):
             except Exception:
                 pass        # 属性名随版本变，调优失败就退回默认性能，不影响正确性
             _ENG_TUNE.clear()
-            _ENG_TUNE.update({"threads": int(threads), "sessions": ok})
+            _ENG_TUNE.update({"threads": int(threads), "sessions": ok,
+                              "provider": "dml" if _DML_ON else "cpu",
+                              "dml_note": "" if _DML_ON else _DML_TRY})
             _ENG = eng
             _ENG_ERR = ""
         except Exception as e:
@@ -178,8 +272,16 @@ def _apply_threads(eng, threads: int) -> int:
                         "session.intra_op.allow_spinning", "0")
                 except Exception:
                     pass
+                eps = list(providers or [])
+                if _DML_ON and not any(
+                        "Dml" in str(p) for p in eps):
+                    # vendor 传进来的列表里 CPU 在最后；DML 插到最前即优先。
+                    # ORT 会按 providers 顺序逐个初始化，成功的生效，
+                    # 所以就算 DML init 失败也会自动落到 CPU，安全。
+                    eps.insert(0, ("DmlExecutionProvider",
+                                   {"device_id": _dml_device()}))
                 super().__init__(model_path, sess_options=so,
-                                 providers=providers, **kw)
+                                 providers=eps, **kw)
 
         _ru.InferenceSession = TunedSession
         return 1
@@ -233,6 +335,106 @@ def _frame_stream(video: str, start: float = 0.0, dur: float = 0.0):
             proc.kill()
         except Exception:
             pass
+
+
+class _FrameFeeder:
+    """把 _frame_stream 搬到独立生产线程，和主线程的 OCR 真并行。
+
+    为什么需要它：原来主循环 `for t, buf, w, h in _frame_stream(...)` 里，
+    每攒满 CHUNK 帧就调一次阻塞的 `pool.imap`。那 24 帧 OCR 的工夫里主线程
+    没去读管道，ffmpeg 的 stdout 缓冲一满就自己阻塞——解码和 OCR 变成串行相加
+    （实测亮剑一部：解码 278 秒 + OCR 397 秒 ≈ 10 分钟）。
+
+    改成后台线程预读、主线程消费后，管道一直在解，两者重叠。
+
+    用法：
+
+        feeder = _FrameFeeder(video, start, dur)
+        feeder.start()
+        for t, buf, w, h in feeder:   # 迭代到尾部自动收尾
+            ...
+        feeder.stop()                # 提前退出（取消/异常）时务必调
+
+    **有界队列**是必须的：帧 960×288 灰度约 276KB，无界的话 4K 长片
+    （13680 帧 = 3.8GB）会把内存吃光。有界之后 ffmpeg 会被反压，
+    恰好形成天然的流控。
+
+    错误处理：生产线程里 ffmpeg 挂了不抛给主线程（跨线程传异常太脆），
+    而是**当作流结束**——队列里那个 None 哨兵之后不再有东西，
+    主线程正常收尾并保留已经识别出的台词。这比整段失败更符合预期：
+    解码到 80% 崩了，前 80% 的结果仍然有用。
+    """
+
+    def __init__(self, video: str, start: float = 0.0, dur: float = 0.0,
+                 maxsize: int = PREFETCH):
+        self.video = video
+        # 字段名不能叫 start —— 会覆盖同名 start() 方法（踩过）。
+        self.t0 = start
+        self.dur = dur
+        self.q: queue.Queue = queue.Queue(maxsize=max(1, int(maxsize)))
+        self._stop = threading.Event()
+        self._th = None
+
+    def _run(self):
+        try:
+            for item in _frame_stream(self.video, self.t0, self.dur):
+                if self._stop.is_set():
+                    break
+                # 阻塞 put = 反压：队列满时生产线程自然停下，
+                # ffmpeg 那边缓冲满了也就自己等着——这正是我们要的节奏。
+                while not self._stop.is_set():
+                    try:
+                        self.q.put(item, timeout=0.2)
+                        break
+                    except queue.Full:
+                        continue
+        except Exception:
+            # 生产线程的异常不当异常抛（跨线程传太脆），当作流结束。
+            # 主线程会看到哨兵后正常收尾，保留已识别的台词。
+            pass
+        finally:
+            try:
+                self.q.put(None)
+            except Exception:
+                pass
+
+    def start(self):
+        self._th = threading.Thread(target=self._run, name="ocr-feeder",
+                                     daemon=True)
+        self._th.start()
+        return self
+
+    def stop(self):
+        """提前收工（用户按停止 / 主循环异常退出时调用）。
+
+        _frame_stream 挂在 yield 上，它自己的 finally 会 kill 掉 ffmpeg；
+        这里只要让生产线程跳出 put 循环、并把队列排空避免它卡在满队列上。
+        """
+        self._stop.set()
+        while True:
+            try:
+                self.q.get_nowait()
+            except queue.Empty:
+                break
+            except Exception:
+                break
+
+    def __iter__(self):
+        while True:
+            try:
+                item = self.q.get()
+            except Exception:
+                return
+            if item is None:
+                return
+            yield item
+
+    def __enter__(self):
+        return self.start()
+
+    def __exit__(self, *exc):
+        self.stop()
+        return False
 
 
 # 压制组水印/台标：出现在画面上但不是台词，必须滤掉。
@@ -638,7 +840,8 @@ def _strict(g: Dict[str, float], conf: float, p: SubtitleProfile) -> bool:
     return True
 
 
-def calibrate(video: str, samples: int = 0, progress=None) -> SubtitleProfile:
+def calibrate(video: str, samples: int = 0, progress=None,
+              use_cache: bool = True) -> SubtitleProfile:
     """开跑前标定这部片的字幕带：整片均匀撒 N 个点，每点 OCR 一次，
     看框都堆在哪个纵向区间。
 
@@ -661,13 +864,22 @@ def calibrate(video: str, samples: int = 0, progress=None) -> SubtitleProfile:
     if dur <= 0:
         return p
 
+    probe = media.ffprobe_json(video)
+    W = int(probe.get("width") or 1920)
+    H = int(probe.get("height") or 1080)
+
+    # 标定缓存：同一剧集各集的字幕带位置/字高/字体几乎相同，
+    # 命中就省掉整段 20 点撒点 OCR（实测约 54 秒/部，27 部里能省 26 份）。
+    # 键含分辨率与编码，见 _calib_key 的注释。
+    if use_cache:
+        hit = calib_load(video, W, H)
+        if hit is not None:
+            return hit
+
     eng = make_engine()
     if eng is None:
         return p
 
-    probe = media.ffprobe_json(video)
-    W = int(probe.get("width") or 1920)
-    H = int(probe.get("height") or 1080)
     ow = int(C.OCR_WIDTH)
     oh = max(2, int(round(ow * (H * C.OCR_BAND) / max(1, W))))
     oh -= oh % 2
@@ -774,7 +986,165 @@ def calibrate(video: str, samples: int = 0, progress=None) -> SubtitleProfile:
     # 不足就退回宽松模式（只做几何筛选，宁可多留也不整片认不出）。
     p.ok = len(sel) >= 6
     p.n = len(boxes)
+    # 标定成功才写缓存（失败不写，避免把坏结果固化下来反复命中）。
+    # 放在函数末尾而不是 p.ok 判定里，是因为整段计算后 p 可能仍不可用，
+    # 这里再确认一次更清楚。
+    if use_cache:
+        calib_save(video, W, H, p)
     return p
+
+
+# ---------------- 标定缓存 ----------------
+# 为什么值得做：标定是**每部片必付的固定税**——20 个撒点，每次一次
+# `-ss seek + 单帧 OCR`，实测约 54 秒。而同一剧集的字幕带位置/字高/字体
+# 是**整季一样的**（同一压制组、同一版式），26~29 集标定结果几乎相同。
+# 27 部 × 54 秒 ≈ 24 分钟纯重复劳动，缓存后只付一次。
+#
+# 键怎么设计（这里最容易做错）：
+#   键 = 库目录 + 源分辨率宽高 + OCR_WIDTH/OCR_BAND
+# 而不是文件 md5 —— 那样每部片都是独立键，缓存等于没用。
+# 也不是单纯的目录 —— 同目录下可能有不同分辨率的片，带位置会差。
+# 分辨率进键，是因为字幕带的**归一化**坐标依赖裁带比例：
+# 4:3（3840x2880）和 16:9（1920x1080）裁同样30% 带，字高归一化后不同。
+def _calib_cache_dir(video: str) -> str:
+    """从视频路径往上找它所属素材库的 .frameseek 目录。
+
+    calibrate() 只拿到文件路径、拿不到库根目录，而缓存要按库隔离
+    （不同库的片不该共享一份标定）。这里从文件所在目录逐级上溯，
+    找到第一个含 .frameseek 的目录就用它。找不到就返回空串——
+    调用方据此跳过缓存，功能不受影响。
+    """
+    try:
+        d = os.path.dirname(os.path.abspath(video))
+    except Exception:
+        return ""
+    root = os.path.dirname(d) if d else ""
+    for _ in range(4):                      # 最多上溯 4 层，够覆盖库/剧/文件
+        if not d or d == root:
+            break
+        cand = os.path.join(d, C.CACHE_DIR)
+        if os.path.isdir(cand):
+            return cand
+        d, root = os.path.dirname(d), d
+    return ""
+
+
+def _calib_key(video: str, W: int, H: int) -> str:
+    codec = ""
+    try:
+        # ffprobe_json 返回的是完整结构：streams[0].codec_name，
+        # 不是平铺的 codec 字段（写错过一次，键会退化成 "?"，
+        # 于是所有片的键都一样，缓存失去区分度）。
+        probe = media.ffprobe_json(video) or {}
+        for s in (probe.get("streams") or []):
+            if isinstance(s, dict) and s.get("codec_type") == "video":
+                codec = str(s.get("codec_name") or "")
+                break
+        if not codec and isinstance(probe.get("video"), dict):
+            codec = str(probe["video"].get("codec_name") or "")
+    except Exception:
+        codec = ""
+    # 编码格式进键：H.264 与 HEVC 的字幕压制位置常差几行，
+    # 混用会让标定带偏，直接导致整片认不出（比慢更糟）。
+    # 取不到编码就退化成空串——仍按分辨率区分，不会退化成"全库共用一个键"。
+    key = "%dx%d|%s|%d|%.3f|%s" % (int(W), int(H), codec or "-",
+                                   int(C.OCR_WIDTH), float(C.OCR_BAND),
+                                   C.OCR_STEP)
+    # 键是要当**文件名**用的：Windows 保留字符 | < > : " / \ ? * 一律
+    # 不能出现（踩过："|" 直接 PermissionError，缓存永远写不出来，
+    # 而 calib_save 的 try/except 把异常吞了，表面看只是"没生效"）。
+    for ch in '|<>:"/\\?*':
+        key = key.replace(ch, "_")
+    return key
+
+
+def _calib_cache_file(video: str) -> str:
+    cd = _calib_cache_dir(video)
+    if not cd:
+        return ""
+    d = os.path.join(cd, "calib")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        return ""
+    return d
+
+
+def calib_load(video: str, W: int, H: int) -> Optional["SubtitleProfile"]:
+    """读标定缓存；没有/损坏/标定本身失败过，都返回 None（走完整标定）。"""
+    d = _calib_cache_file(video)
+    if not d:
+        return None
+    fp = os.path.join(d, _calib_key(video, W, H) + ".json")
+    if not os.path.exists(fp):
+        return None
+    try:
+        with open(fp, "r", encoding="utf-8") as f:
+            d2 = json.load(f)
+    except Exception:
+        return None
+    # ok=False 的缓存没有复用价值（等于没标定），直接当没有。
+    if not d2.get("ok"):
+        return None
+    p = SubtitleProfile()
+    p.y0 = float(d2.get("y0") or 0.0)
+    p.y1 = float(d2.get("y1") or 1.0)
+    p.h = float(d2.get("h") or 0.22)
+    p.conf = float(d2.get("conf") or C.OCR_CONF_MIN)
+    p.kana = float(d2.get("kana") or 0.0)
+    p.n = int(d2.get("n") or 0)
+    p.ok = True
+    p.font = d2.get("font") or {}
+    return p
+
+
+def calib_save(video: str, W: int, H: int, p: "SubtitleProfile") -> None:
+    """把成功的标定写进缓存。失败（ok=False）不写——避免把坏结果固化。"""
+    if p is None or not p.ok:
+        return
+    d = _calib_cache_file(video)
+    if not d:
+        return
+    try:
+        payload = p.to_dict()
+        payload["saved_at"] = int(time.time())
+        fp = os.path.join(d, _calib_key(video, W, H) + ".json")
+        # 原子写：多个 worker 可能同时写同一个键（并发扫同一部剧），
+        # 先写临时文件再 rename，避免读到半个 JSON。
+        tmp = fp + f".{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(tmp, fp)
+    except Exception as e:
+        # 不静默：缓存写不出来是个静默故障（功能降级成每部都标定，
+        # 用户只会觉得"怎么没变快"，查不到原因）。打一行日志即可定位。
+        try:
+            print(f"[ocr] 标定缓存写入失败({type(e).__name__}: {e})：{fp}")
+        except Exception:
+            pass
+
+
+def calib_cache_clear(video: str) -> int:
+    """清掉某素材库的标定缓存，返回删掉几个文件。
+
+    参数改了 OCR_WIDTH / OCR_BAND / OCR_STEP 之后要调它——键变了，
+    旧缓存自然失效，但留着是垃圾。
+    """
+    d = _calib_cache_file(video)
+    if not d or not os.path.isdir(d):
+        return 0
+    n = 0
+    try:
+        for fn in os.listdir(d):
+            if fn.endswith(".json"):
+                try:
+                    os.remove(os.path.join(d, fn))
+                    n += 1
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return n
 
 
 def _prof() -> "SubtitleProfile":
@@ -993,10 +1363,11 @@ def _worker_init(threads: int, profile: SubtitleProfile = None):
     _add_vendor()
     global _PROFILE, _W_THREADS
     _W_THREADS = int(threads or C.OCR_THREADS)
-    # 让每个 worker 把自己实际生效的线程数打出来，方便诊断并行异常
+    # 让每个 worker 把自己实际生效的线程数和 provider 打出来，方便诊断并行异常
     if make_engine() is not None:
         print(f"[worker pid={os.getpid()}] threads={_W_THREADS} "
-              f"sessions={_ENG_TUNE.get('sessions')}", flush=True)
+              f"sessions={_ENG_TUNE.get('sessions')} "
+              f"provider={_ENG_TUNE.get('provider')}", flush=True)
     if profile is not None:
         _PROFILE = profile
     try:
@@ -1288,7 +1659,8 @@ def ocr_lines(video: str, start: float = 0.0, dur: float = 0.0,
         if C.OCR_PURE:
             # 标定阶段发的是字符串进度，调用方 structured() 的包装器
             # 原样转发即可（它对 str 和 dict 都兼容）。
-            prof = calibrate(video, progress=progress)
+            prof = calibrate(video, progress=progress,
+                             use_cache=bool(C.OCR_CALIB_CACHE))
             _PROFILE = prof
             if progress:
                 d = prof.to_dict()
@@ -1317,43 +1689,74 @@ def ocr_lines(video: str, start: float = 0.0, dur: float = 0.0,
         #   不是它收到的参数，永远为 False。这个坑我踩了一次。）
         want_dict = getattr(progress, "want_dict", False)
 
-        for t, buf, w, h in _frame_stream(video, start, dur):
-            buf_items.append((t, buf, w, h))
-            n_seen += 1
-            # 进度推送节流：每 8 帧或每 2 秒推一次就够，再密没有意义
-            # （前端只显示一个百分比，人眼看不出区别，但事件量会翻几倍）。
-            now = time.time()
-            if len(buf_items) >= CHUNK or (
-                    n_seen % 8 == 0 and now - last_push >= 2.0):
-                _flush()
-                last_push = time.time()
-                if progress:
-                    el = time.time() - t_all
-                    pos = t - start
-                    rate = pos / el if el > 0 else 0
-                    if n_total <= 0 and rate > 0:
-                        # 用"已扫时间 / 实际耗时"外推总长，随进度逐步收敛
-                        n_total = int(pos / rate / float(C.OCR_STEP)) or 0
-                    left = ((dur - pos) / rate / 60.0
-                            if rate and dur > 0 else 0.0)
-                    if want_dict:
-                        progress({
-                            "pos": pos, "total": dur, "frames": n_seen,
-                            "frames_total": n_total, "batches": n_batch,
-                            "lines": len(rows), "eta_min": max(0.0, left),
-                            "text": (f"OCR {pos:.0f}/"
+        # 解码与 OCR 并行：生产线程后台解帧，主线程只消费队列。
+        # 队列有界（见 _FrameFeeder），满了会反压 ffmpeg，不会吃内存。
+        #
+        # 实测结论（亮剑 26.mp4 整部，3840x2880 HEVC）：
+        #   并行 935 秒 vs 串行 624 秒 —— **并行反而更慢**，已默认关闭。
+        # 原因不是解码带不动（管道单独跑 46 帧/秒，是 OCR 的两倍），而是
+        # 解码和 OCR 抢的是**同一批 CPU + 内存带宽**：4K 解码要搬运 1057GB
+        # 像素，DML 的 4 进程×2 线程已经把 16 核占掉 8 核，再插一个满负荷
+        # 的解码线程进来，两边都变慢，净效果为负。
+        # 代码保留但默认走串行（env FRAMESEEK_OCR_PARALLEL=1 可开），
+        # 因为换 DML 的瓶颈分布（GPU 占用率低）或换更快的解码器后可能反转。
+        if os.environ.get("FRAMESEEK_OCR_PARALLEL") == "1":
+            feeder = _FrameFeeder(video, start, dur).start()
+            frames = iter(feeder)
+        else:
+            feeder = None
+            frames = _frame_stream(video, start, dur)
+        try:
+            for t, buf, w, h in frames:
+                buf_items.append((t, buf, w, h))
+                n_seen += 1
+                # 进度推送节流：每 8 帧或每 2 秒推一次就够，再密没有意义
+                # （前端只显示一个百分比，人眼看不出区别，但事件量会翻几倍）。
+                now = time.time()
+                if len(buf_items) >= CHUNK or (
+                        n_seen % 8 == 0 and now - last_push >= 2.0):
+                    _flush()
+                    last_push = time.time()
+                    if progress:
+                        el = time.time() - t_all
+                        pos = t - start
+                        rate = pos / el if el > 0 else 0
+                        if n_total <= 0 and rate > 0:
+                            # 用"已扫时间 / 实际耗时"外推总长，随进度逐步收敛
+                            n_total = int(pos / rate / float(C.OCR_STEP)) or 0
+                        left = ((dur - pos) / rate / 60.0
+                                if rate and dur > 0 else 0.0)
+                        if want_dict:
+                            progress({
+                                "pos": pos, "total": dur, "frames": n_seen,
+                                "frames_total": n_total, "batches": n_batch,
+                                "lines": len(rows), "eta_min": max(0.0, left),
+                                "text": (f"OCR {pos:.0f}/"
+                                         f"{'?' if dur <= 0 else format(dur, '.0f')}s"
+                                         f" · {len(rows)} 条"
+                                         + (f" · 剩约 {left:.0f} 分钟"
+                                            if left > 0 else ""))})
+                        else:
+                            progress(f"OCR {pos:.0f}/"
                                      f"{'?' if dur <= 0 else format(dur, '.0f')}s"
                                      f" · {len(rows)} 条"
                                      + (f" · 剩约 {left:.0f} 分钟"
-                                        if left > 0 else ""))})
-                    else:
-                        progress(f"OCR {pos:.0f}/"
-                                 f"{'?' if dur <= 0 else format(dur, '.0f')}s"
-                                 f" · {len(rows)} 条"
-                                 + (f" · 剩约 {left:.0f} 分钟" if left > 0 else ""))
-                if cancel and cancel():
-                    was_cancelled = True
-                    break
+                                        if left > 0 else ""))
+                    if cancel and cancel():
+                        was_cancelled = True
+                        break
+        finally:
+            # 无论读完、用户取消还是中途抛异常，都得让生产线程退出，
+            # 否则它卡在 put/队列上，ffmpeg 进程也留着不放。
+            # 串行模式下 feeder 为 None，但这里仍要关掉生成器触发其
+            # finally 里的 proc.kill()（break 之后生成器不会自动收尾）。
+            if feeder is not None:
+                feeder.stop()
+            else:
+                try:
+                    frames.close()
+                except Exception:
+                    pass
         _flush()
         _close()
     except KeyboardInterrupt:

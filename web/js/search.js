@@ -3,7 +3,7 @@
 'use strict';
 const { reactive, computed, ref, watch, onMounted, onUnmounted, onActivated, nextTick } = Vue;
 const FS = window.FS;
-const { S, api, play, clipLine, hl, esc, mediaUrl } = FS;
+const { S, api, play, clipLine, hl, esc, mediaUrl, toast } = FS;
 
 const SearchView = {
   template: `
@@ -18,22 +18,59 @@ const SearchView = {
                 clearable @keyup.enter="doSearch" @clear="onClear">
         <template #prefix><el-icon><Search></Search></el-icon></template>
         <template #append>
-          <el-button id="btnSearch" type="primary" @click="doSearch"
+          <el-button id="btnSearch" type="primary" :loading="searching" @click="doSearch"
             title="跨全部已登记库搜台词，中文子串也行（回车等价）。搜到的每句都能一键导出前后各 N 秒">搜索</el-button>
         </template>
       </el-input>
     </div>
-    <div class="fs-searchcfg">
-      <span class="fs-label">导出片段</span>
-      前 <el-input-number id="pre" v-model="pre" :min="0" :max="60" size="small" controls-position="right"/> 秒
-      后 <el-input-number id="post" v-model="post" :min="0" :max="60" size="small" controls-position="right"/> 秒
-      <el-switch id="fast" v-model="fast" size="small" active-text="秒切"
-        title="秒切＝直接拷贝原视频流（快，但只能落在关键帧上，切点可能差半秒）。不勾则重编码，切点帧精确，慢一些"/>
-      <span class="dim">搜到的每句都能一键导出前后各 N 秒，直接拖进剪映</span>
-    </div>
+    <el-form label-position="top" class="fs-form" @submit.prevent>
+      <el-row :gutter="14">
+        <el-col :xs="24" :sm="12" :md="7" :lg="7">
+          <el-form-item label="导出片段时长（秒）">
+            <div class="fs-cfg-inline">
+              前 <el-input-number id="pre" v-model="pre" :min="0" :max="60" size="small" controls-position="right"/> 后 <el-input-number id="post" v-model="post" :min="0" :max="60" size="small" controls-position="right"/>
+            </div>
+          </el-form-item>
+        </el-col>
+        <el-col :xs="12" :sm="6" :md="5" :lg="4">
+          <el-form-item label="剪辑模式">
+            <el-switch id="fast" v-model="fast" size="small" active-text="秒切" inactive-text="精确"
+              title="秒切＝直接拷贝原视频流（快，但只能落在关键帧上，切点可能差半秒）。不勾则重编码，切点帧精确，慢一些"/>
+          </el-form-item>
+        </el-col>
+        <el-col :xs="12" :sm="6" :md="5" :lg="4">
+          <el-form-item label="导出字幕">
+            <el-select id="submode" v-model="subMode" size="small"
+              title="自动＝画面本来就带字幕的素材（台词来自 OCR 识别）跳过烧录，其余照旧烧；关闭＝一律不烧；强制＝一律烧（OCR 字幕有错字、纠完想重烧一份时用）">
+              <el-option label="自动" value="auto"/>
+              <el-option label="关闭" value="off"/>
+              <el-option label="强制" value="force"/>
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :xs="12" :sm="6" :md="4" :lg="4">
+          <el-form-item label="字幕带">
+            <el-switch id="subtitle" v-model="subBand" size="small" active-text="开" inactive-text="关"
+              title="预览播放时在画面底部显示当前这句台词（只影响预览，不会烧进导出的片段）"/>
+          </el-form-item>
+        </el-col>
+        <!-- 说明文字独占一列：对齐到与上方控件同一基线。
+             原来用 <el-form-item label=" "> 拿空格占位，label 是个真实节点、
+             高度由内容撑出来，跟旁边几列的控件对不齐。改成纯文本 + 底部对齐。 -->
+        <el-col :xs="24" :sm="24" :md="3" :lg="5" class="fs-col-note">
+          <div class="fs-colnote">搜到的每句都能一键导出前后各 N 秒，直接拖进剪映</div>
+        </el-col>
+      </el-row>
+    </el-form>
   </el-card>
 
+  <el-divider />
+
   <div v-if="rows.length" class="fs-results" id="results">
+    <div class="fs-result-summary dim" id="resultSum">
+      {{ resultSummary }}
+      <el-tag v-if="capped" size="small" type="warning" effect="plain">仅显示前 {{ rows.length }} 条</el-tag>
+    </div>
     <div v-for="r in rows" :key="r.id" class="fs-rrow">
       <img :src="shotUrl(r)" loading="lazy" @click="playRow(r)"/>
       <div class="fs-rbody">
@@ -63,6 +100,8 @@ const SearchView = {
     const q = ref('');
     const rows = ref([]);
     const searched = ref(false);
+    const searching = ref(false);
+    const capped = ref(false);      // 命中达到后端上限，可能被截断
 
     const pre = computed({
       get: () => S.pre, set: v => { S.pre = v == null ? 0 : v; },
@@ -71,15 +110,33 @@ const SearchView = {
       get: () => S.post, set: v => { S.post = v == null ? 0 : v; },
     });
     const fast = computed({ get: () => S.fast, set: v => { S.fast = !!v; } });
+    const subMode = computed({
+      get: () => S.subMode,
+      set: v => { S.subMode = ['off', 'force'].includes(v) ? v : 'auto'; },
+    });
+    const subBand = computed({
+      get: () => S.subBand, set: v => { S.subBand = !!v; },
+    });
 
     async function doSearch() {
       const kw = (q.value || '').trim();
-      if (!kw) return;
+      if (!kw) { toast('先输入要搜的台词或片名', 'warning'); return; }
       searched.value = true;
-      rows.value = await api(
-        `/api/search?q=${encodeURIComponent(kw)}&scope=all&limit=300`);
+      searching.value = true;
+      try {
+        const r = await api(
+          `/api/search?q=${encodeURIComponent(kw)}&scope=all&limit=300`);
+        rows.value = r || [];
+        // 后端按 limit 截断：恰好或超过 300 就提示可能没列全
+        capped.value = (rows.value.length >= 300);
+      } finally {
+        searching.value = false;
+      }
     }
-    function onClear() { searched.value = false; rows.value = []; }
+    function onClear() { searched.value = false; rows.value = []; capped.value = false; }
+
+    const resultSummary = computed(() =>
+      `命中 ${rows.value.length} 句`);
 
     /* 方框凭证标记：这条台词在画面上有没有一个真实的框撑着 */
     function boxMark(r) {
@@ -111,7 +168,8 @@ const SearchView = {
     }
 
     return {
-      q, rows, searched, pre, post: post_, fast,
+      q, rows, searched, searching, capped, resultSummary, pre, post: post_, fast,
+      subMode, subBand,
       doSearch, onClear, boxMark,
       hl: t => hl(t, q.value),
       shotUrl: r => mediaUrl(r.shot || r.cover, r.root),

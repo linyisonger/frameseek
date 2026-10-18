@@ -7,14 +7,16 @@
 <link rel="stylesheet" href="/vendor/element-plus.css">
 <link rel="stylesheet" href="/vendor/element-plus-dark.css">
 <link rel="stylesheet" href="/style.css">
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22fsg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%235aa8ff%22%2F%3E%3Cstop%20offset%3D%22.55%22%20stop-color%3D%22%234d9dff%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%232ec27e%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2215%22%20fill%3D%22url(%23fsg)%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%2216%22%20width%3D%2238%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%23ffffff%22%2F%3E%3Cpath%20d%3D%22M26.5%2026%20L37.5%2032%20L26.5%2038%20Z%22%20fill%3D%22%230f1826%22%2F%3E%3Ccircle%20cx%3D%2253%22%20cy%3D%2249%22%20r%3D%222.6%22%20fill%3D%22%23ffffff%22%20opacity%3D%22.65%22%2F%3E%3Ccircle%20cx%3D%2253%22%20cy%3D%2241%22%20r%3D%222.6%22%20fill%3D%22%23ffffff%22%20opacity%3D%22.38%22%2F%3E%3C%2Fsvg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22fsg%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%221%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23165DFF%22%2F%3E%3Cstop%20offset%3D%22.55%22%20stop-color%3D%224d9dff%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%2300B42A%22%2F%3E%3C%2FlinearGradient%3E%3C%2Fdefs%3E%3Crect%20width%3D%2264%22%20height%3D%2264%22%20rx%3D%2215%22%20fill%3D%22url(%23fsg)%22%2F%3E%3Crect%20x%3D%2213%22%20y%3D%2216%22%20width%3D%2238%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%23ffffff%22%2F%3E%3Cpath%20d%3D%22M26.5%2026%20L37.5%2032%20L26.5%2038%20Z%22%20fill%3D%22%230E4AD9%22%2F%3E%3Ccircle%20cx%3D%2253%22%20cy%3D%2249%22%20r%3D%222.6%22%20fill%3D%22%23ffffff%22%20opacity%3D%22.65%22%2F%3E%3Ccircle%20cx%3D%2253%22%20cy%3D%2241%22%20r%3D%222.6%22%20fill%3D%22%23ffffff%22%20opacity%3D%22.38%22%2F%3E%3C%2Fsvg%3E">
+<script>/* 默认就是深色：整个拾帧项目不再提供白天模式。
+   EP dark.css 依赖 html.dark 类触发，保留它不变量；这里的空脚本仅占位，防新增误删。</script>
 </head>
 <body>
 
 <!-- ==================== 主框架 ==================== -->
 <div id="app" v-cloak>
   <el-container class="fs-shell">
-    <el-aside class="fs-aside" width="212px">
+    <el-aside class="fs-aside" width="220px">
       <div class="fs-logo">
         <div class="fs-mark">
           <svg viewBox="0 0 64 64" aria-hidden="true">
@@ -50,6 +52,12 @@
           <el-icon><magic-stick></magic-stick></el-icon>
           <span class="fs-navtxt"><b>AI 生成</b><em>对话式出片</em></span>
         </el-menu-item>
+        <el-menu-item index="aidraw" data-tab="aidraw">
+          <!-- 注意：不能用 <picture>，它是原生 HTML 元素，Vue 会当普通标签解析、图标不显示。
+               侧栏是 in-DOM 模板，图标必须写 kebab-case。 -->
+          <el-icon><brush-filled></brush-filled></el-icon>
+          <span class="fs-navtxt"><b>AI 绘画</b><em>三后端生图</em></span>
+        </el-menu-item>
         <el-menu-item index="hd" data-tab="hd">
           <el-icon><edit-pen></edit-pen></el-icon>
           <span class="fs-navtxt"><b>手绘</b><em>白板动画讲解</em></span>
@@ -74,7 +82,7 @@
       </div>
     </el-aside>
 
-    <el-container class="fs-right">
+    <el-container class="fs-right" direction="vertical">
       <el-main class="fs-main">
         <!-- keep-alive：切页签不销毁组件。方框复查一部片的清单要 verify 好几秒，
              每次切回来都重拉一遍没法忍；素材页的筛选状态、手绘的工程状态同理。 -->
@@ -83,6 +91,7 @@
           <search-view   v-else-if="tab === 'search'"></search-view>
           <assets-view   v-else-if="tab === 'assets'"></assets-view>
           <gen-view      v-else-if="tab === 'gen'"></gen-view>
+          <aidraw-view   v-else-if="tab === 'aidraw'"></aidraw-view>
           <handdraw-view v-else-if="tab === 'hd'"></handdraw-view>
           <box-view      v-else-if="tab === 'box'"></box-view>
           <clips-view    v-else-if="tab === 'clips'"></clips-view>
@@ -105,9 +114,9 @@
         <el-tag size="small" v-if="dockPhase(t)" type="info">{{ dockPhase(t) }}</el-tag>
         <span class="fs-dock-pct">{{ dockPct(t) }}%</span>
         <el-button link size="small" @click="dockOpen = !dockOpen"
-          :title="dockOpen ? '收起详情' : '展开详情'">{{ dockOpen ? '收起' : '展开' }}</el-button>
+          :title="dockOpen ? '收起详情' : '展开详情'"><el-icon v-if="dockOpen"><arrow-up/></el-icon><el-icon v-else><arrow-down/></el-icon><span>{{ dockOpen ? '收起' : '展开' }}</span></el-button>
         <el-button id="dockStop" size="small" type="danger" plain @click="onStop(t)"
-          title="中途停止。已经识别完的素材都会保留，下次索引会跳过它们、从断点接着往下跑">停止</el-button>
+          title="中途停止。已经识别完的素材都会保留，下次索引会跳过它们、从断点接着往下跑"><el-icon><circle-close/></el-icon><span>停止</span></el-button>
       </div>
       <el-progress :percentage="dockPct(t)" :stroke-width="8" :show-text="false"/>
       <div class="fs-dock-file" :title="t.file || ''">
@@ -123,7 +132,10 @@
   <!-- ==================== 播放器 ==================== -->
   <el-dialog v-model="player.on" :title="player.title" width="62%" top="6vh"
              destroy-on-close @closed="onPlayerClosed" class="fs-player-dlg">
-    <video ref="videoEl" controls preload="metadata" class="fs-player-video"></video>
+    <div class="fs-player-wrap">
+      <video ref="videoEl" controls preload="metadata" class="fs-player-video"></video>
+      <div class="fs-subtitle" v-show="player.sub">{{ player.sub }}</div>
+    </div>
     <template #footer>
       <el-button @click="player.on = false">关闭</el-button>
       <el-button type="primary" @click="clipHere">导出此处 ± 片段</el-button>
@@ -142,6 +154,7 @@
 <script src="/js/search.js"></script>
 <script src="/js/assets.js"></script>
 <script src="/js/gen.js"></script>
+<script src="/js/aidraw.js"></script>
 <script src="/js/handdraw.js"></script>
 <script src="/js/box.js"></script>
 <script src="/js/clips.js"></script>

@@ -185,6 +185,76 @@ class Indexer:
         return _prog
 
     # ---- 单个文件 ----
+    # ---- 1080p 代理（4K 片先压一份，OCR 流/抽帧都读它）----
+    def _prepare_proxy(self, path: str, meta: dict = None,
+                       cb: Callable[[str], None] = None) -> str:
+        """确保这部片有 1080p 代理，返回抽帧/OCR 该读的路径。
+
+        多数情况返回的还是原片——代理开关关、片子本来就 ≤1080p、建代理失败，
+        都直接读原片，不影响任何现有行为。
+
+        转码 4K 要 6~8 分钟，必须把进度推到前端：不然界面几分钟没动静，
+        用户会以为卡死（这个坑踩过一次）。这里把 media 的"代理转码 N%"转成
+        任务 tick + 实时事件两道通道。
+        """
+        name = os.path.basename(path)
+
+        def _cb(msg: str):
+            # 前端文案：代理转码 42% · 30.mp4
+            shown = f"{msg} · {name}"
+            if cb:
+                try:
+                    cb(shown)
+                except Exception:
+                    pass
+            # 事件通道：让进度浮窗能实时刷新（不刷新任务表的话，
+            # 单素材重识别那条路前端本来就不看 task 表）
+            pct = 0
+            if "%" in msg:
+                try:
+                    pct = int(msg.split("%", 1)[0].split()[-1])
+                except Exception:
+                    pct = 0
+            try:
+                self._ev("proxy", shown, proxy_pct=pct)
+            except Exception:
+                pass
+            self._tick(shown)
+
+        try:
+            return media.ensure_proxy(path, self.cd, meta, cb=_cb)
+        except Exception:
+            # 代理是纯优化，任何异常都不能让索引失败——回落读原片
+            return path
+
+    def _proxy_if_ocr_needed(self, path: str, meta: dict = None,
+                             cb: Callable[[str], None] = None) -> str:
+        """**只有在真的需要 OCR 时**才建 1080p 代理，否则返回原片。
+
+        为什么不能无脑建：4K 代理一部要 6~8 分钟、800MB 起步。而《潜伏》这类
+        内嵌了 subrip 字幕流的片子，字幕 1.4 秒就能拿到 639 条，压根不需要
+        OCR——先建代理就是纯浪费（实测白花 7 分钟 + 888MB）。
+        台词优先级是 外挂 SRT -> 内嵌字幕流 -> OCR -> ASR，前两级命中就不用建。
+
+        这里的判断刻意**只做廉价探测**，不做全量解析：
+          · 外挂：直接看同名 .srt/.ass 是否存在（一次 stat）
+          · 内嵌：ffprobe 报没报 subtitle 流（已由 meta.sub_streams 给出）
+        探测说"没有"才建代理——万一探测漏了，最坏结果也只是白建一次代理，
+        OCR 结果不受任何影响，所以宁可漏判也不误判成"要建"。
+        """
+        try:
+            if not getattr(C, "PROXY_ENABLED", True):
+                return path
+            # 外挂字幕
+            if media.srt_sidecar(path):
+                return path
+            # 内嵌字幕流（meta 里已有，index_file 传的就是 video_meta 结果）
+            if meta and (meta.get("sub_streams") or []):
+                return path
+            return self._prepare_proxy(path, meta, cb=cb)
+        except Exception:
+            return path
+
     def index_file(self, path: str, cb: Callable[[str], None] = None) -> Dict[str, Any]:
         path = os.path.abspath(path)
         rel = os.path.relpath(path, self.root)
@@ -263,15 +333,24 @@ class Indexer:
             cb(f"台词 {name}")
             self._ev("lines", f"台词 {name}")
 
+        # 4K 片按需建 1080p 代理（≤1080p 直接返回原片，几乎零开销）。
+        #
+        # 坑（踩过）：原先是**无条件**先建代理再取台词，结果《潜伏》这种
+        # 内嵌了 subrip 字幕流的4K 片（639 条、1.4 秒就能拿到）也被先压了
+        # 一遍888MB 代理，白花 7 分钟——而它压根不需要 OCR。
+        # 现在改成惰性：只有真的要跑 OCR 才建。判断"有没有现成字幕"用
+        # 便宜的探测（外挂文件存在性 + ffprobe 的字幕流列表），不做全量解析。
+        proxy = self._proxy_if_ocr_needed(path, meta, cb=cb)
+
         _prog = self._mk_prog(name, cb, label=self._cur_file)
 
         rows, source, err = asr.get_lines(path, self.use_asr, progress=_prog,
-                                          cancel=self._ck())
+                                          cancel=self._ck(), ocr_video=proxy)
         if err == "__cancelled__":
             return self._mark_cancelled(vid, name)
         self._maybe_srt(path, rows, source, name, cb)
         if rows:
-            self._write_shots(vid, path, rows, tag, cb, src=source)
+            self._write_shots(vid, proxy, rows, tag, cb, src=source)
         self.store.update_video(vid, status="ok" if not err else "error",
                                 line_source=source, line_count=len(rows),
                                 err=err or "")
@@ -353,17 +432,19 @@ class Indexer:
             cb(f"补台词 {name}")
             self._ev("lines", f"台词 {name}")
 
+        proxy = self._proxy_if_ocr_needed(path, old, cb=cb)
+
         _prog = self._mk_prog(name, cb, label=self._cur_file)
 
         rows, source, err = asr.get_lines(path, self.use_asr, progress=_prog,
-                                          cancel=self._ck())
+                                          cancel=self._ck(), ocr_video=proxy)
         if err == "__cancelled__":
             r = self._mark_cancelled(old["id"], name)
             r["refilled"] = True
             return r
         self._maybe_srt(path, rows, source, name, cb)
         if rows:
-            self._write_shots(old["id"], path, rows, tag, cb, src=source)
+            self._write_shots(old["id"], proxy, rows, tag, cb, src=source)
         self.store.update_video(old["id"], status="ok" if not err else "error",
                                 line_source=source, line_count=len(rows),
                                 err=err or "")
@@ -621,17 +702,22 @@ class Indexer:
 
             _prog = self._mk_prog(v["name"], cb, single=True)
 
+            # 注意：这里是「重新识别」，force 或上一轮来源是 ocr 时会**跳过**
+            # 外挂/内嵌字幕强制走 OCR，所以代理仍要用惰性判断（v 是 DB 行，
+            # 没有 sub_streams 字段，得现探一次），否则为用不上的 OCR 白建代理。
+            proxy = self._proxy_if_ocr_needed(path, None, cb=cb)
+
             skip_ext = force or prev_src == "ocr"
             skip_emb = bool(force)
             rows, source, err = asr.get_lines(
                 path, True, progress=_prog,
                 skip_external=skip_ext, skip_embedded=skip_emb,
-                cancel=self._ck())
+                cancel=self._ck(), ocr_video=proxy)
             if err == "__cancelled__":
                 return self._stop_single(vid, v, cleared, "重新识别")
             self._maybe_srt(path, rows, source, v["name"], cb)
             if rows:
-                self._write_shots(vid, path, rows, tag, cb, src=source)
+                self._write_shots(vid, proxy, rows, tag, cb, src=source)
                 self._purge_orphan_shots(old_shots, rows)
             self.store.update_video(vid, status="ok" if not err else "error",
                                     line_source=source, line_count=len(rows),
@@ -708,7 +794,9 @@ class Indexer:
                 return self._stop_single(vid, v, cleared, "语音识别")
             self._maybe_srt(path, rows, "asr", v["name"], cb)
             if rows:
-                self._write_shots(vid, path, rows, tag, cb, src="asr")
+                # 语音转写读原片音频；抽帧可以走 1080p 代理（惰性判断）
+                proxy = self._proxy_if_ocr_needed(path, None, cb=cb)
+                self._write_shots(vid, proxy, rows, tag, cb, src="asr")
                 self._purge_orphan_shots(old_shots, rows)
             self.store.update_video(vid, status="ok" if not err else "error",
                                     line_source="asr", line_count=len(rows),

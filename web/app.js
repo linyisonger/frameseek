@@ -5,14 +5,15 @@
 'use strict';
 const { reactive, computed, ref, watch, onMounted, onUnmounted, onActivated, nextTick } = Vue;
 const FS = window.FS;
-const { S, LIVE, PHASE, api, post, esc, toast, loadLibs, addClips, connectLive } = FS;
+const { S, LIVE, PHASE, Route, api, post, esc, toast, loadLibs, addClips,
+        connectLive, fmtDur } = FS;
 
 /* ==================== 主应用 ==================== */
 const App = {
   components: {
     LibsView: FS.LibsView, SearchView: FS.SearchView, AssetsView: FS.AssetsView,
-    GenView: FS.GenView, HanddrawView: FS.HanddrawView, BoxView: FS.BoxView,
-    ClipsView: FS.ClipsView,
+    GenView: FS.GenView, AidrawView: FS.AidrawView, HanddrawView: FS.HanddrawView,
+    BoxView: FS.BoxView, ClipsView: FS.ClipsView,
   },
   setup() {
     const videoEl = ref(null);
@@ -21,10 +22,10 @@ const App = {
       ? `${S.libs.length} 个库 · ${S.totals.videos} 个素材 · ${S.totals.lines} 条台词`
       : '还没有登记素材库');
 
-    // AI 生成任务不进全局浮窗：生成页的对话气泡里已经有进度条和状态，
-    // 右下角再弹一张卡是重复信息，而且生成页切走再切回来（keep-alive）气泡还在。
+    // AI 生成 / AI 绘画任务不进全局浮窗：各自页面里已有进度展示，
+    // 右下角再弹一张卡是重复信息，而且切走再切回来（keep-alive）状态还在。
     const taskList = computed(() => Object.values(S.tasks || {})
-      .filter(t => t.kind !== 'gen'));
+      .filter(t => t.kind !== 'gen' && t.kind !== 'aidraw'));
 
     function dockPct(t) { return t.total ? Math.min(100, Math.round(t.done / t.total * 100)) : 0; }
     function dockPhase(t) { return PHASE[t.phase] || ''; }
@@ -78,12 +79,16 @@ const App = {
 
     function onTab(name) {
       S.tab = name;
-      if (location.hash.slice(1) !== name) history.replaceState(null, '', '#' + name);
+      // 切页签 = 丢弃该页的 URL 参数（筛选是页面级状态，不是全局的）。
+      // 但用 Route.set 而不是裸 replaceState：让 hash 与 S.tab 始终一致，
+      // 顺带把广播打出去，子页签能知道自己是被"切回来"还是"刷新进来的"。
+      if (Route.parse().tab !== name) Route.set(name, {}, true);
     }
 
     function onPlayerClosed() {
       const v = videoEl.value;
       if (v) { v.pause(); v.src = ''; }
+      S.player.sub = '';
     }
     async function clipHere() {
       const v = videoEl.value;
@@ -93,7 +98,7 @@ const App = {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ root: c.root, video_id: c.video_id,
           start: v.currentTime, end: v.currentTime + 1,
-          pre: S.pre, post: S.post, fast: S.fast }),
+          pre: S.pre, post: S.post, fast: S.fast, subtitle: S.subMode }),
       });
       await addClips(r);
       S.player.on = false;
@@ -101,9 +106,10 @@ const App = {
 
     onMounted(async () => {
       await loadLibs();
-      const h = (location.hash || '').slice(1);
-      const tabs = ['libs', 'search', 'assets', 'gen', 'hd', 'box', 'clips'];
-      onTab(tabs.includes(h) ? h : 'libs');
+      // 先按 hash 定位页签（无 hash / 非法值回素材库），再让 Route 接管后续变更。
+      const r = Route.parse();
+      S.tab = Route.tabs.indexOf(r.tab) >= 0 ? r.tab : 'libs';
+      Route.init();
       connectLive();
       // 首屏可能正有任务在跑（服务端线程还活着）。只当临时快照——
       // WS 一旦推来真事件就会覆盖它；WS 不可用时它才长期顶替轮询。
@@ -119,7 +125,8 @@ const App = {
     });
 
     return {
-      S, tab: computed(() => S.tab), onTab, statsText, taskList, videoEl,
+      S, tab: computed(() => S.tab), onTab, statsText,
+      taskList, videoEl,
       dockPct, dockPhase, dockEta, dockLive, docFrames, dockMsg, onStop,
       onPlayerClosed, clipHere,
       libs: computed(() => S.libs), ocr: computed(() => S.ocr),
@@ -128,6 +135,7 @@ const App = {
       clips: computed(() => S.clips),
       player: computed(() => S.player),
       dockOpen: computed({ get: () => S.dockOpen, set: v => { S.dockOpen = v; } }),
+      fmtDur,
     };
   },
 };

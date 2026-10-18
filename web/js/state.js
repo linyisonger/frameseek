@@ -76,7 +76,7 @@ const S = reactive({
   builtinLibs: [],     // 内置只读库（AI 生成）
   activeRoot: '',
   hubDb: '',
-  totals: { videos: 0, lines: 0 },
+  totals: { videos: 0, lines: 0, duration: 0 },
   ocr: { ok: true, err: '', loaded: false },
   step: 0.2,           // OCR 采样步长，跟服务端 config.OCR_STEP 保持一致
   all: [],             // 跨库素材全量
@@ -84,16 +84,28 @@ const S = reactive({
   boxNoBox: 0,         // 方框复查无框条数（侧栏徽标）
   clips: [],
   pre: 5, post: 5, fast: true,
+  /* 导出烧字幕：auto | off | force。
+     auto = 画面本来就带字幕的素材（台词来自 OCR 识别）自动跳过烧录，其余照旧烧，
+     避免在已有字幕的画面下方压出一道重影，还白白强制重编码慢好几倍。
+     force 是给「OCR 字幕有错字、纠完想重烧一份」留的出口。
+     判定逻辑在服务端 core/media.py decide_burn，前后端只有这一处规则。 */
+  subMode: 'auto',
+  subBand: false,          // 预览字幕带：播放时在画面底部显示当前台词，默认关闭
   tasks: {},
+  /* 资产页待办跳转：素材库发出"打开这部影片"事件时，若 assets 组件还没挂过，
+     就暂存到这里，assets.js 首次 onMounted/onActivated 时消费掉（消费完置 null） */
+  pendingOpen: null,
   dockOpen: false,      // 右下角浮窗默认收起（有任务也只露一条细条，要进度展开）
-  player: { on: false, title: '', src: '', cur: null },
+  player: { on: false, title: '', src: '', cur: null, sub: '' },
+  theme: 'dark',         // 拾帧只支持深色模式，保留字段以兼容老 LS / 模板引用
 });
 
 /* ---------- 实时进度：WebSocket → SSE → 轮询 ---------- */
 const LIVE = { on: false, mode: 'none', ws: null, es: null, poll: null, known: new Set() };
 
 const PHASE = { ocr: 'OCR 识别', shots: '截图分片', calib: '字幕标定',
-                cover: '封面', gif: '动图', lines: '台词', clear: '清理旧台词' };
+                cover: '封面', gif: '动图', lines: '台词', clear: '清理旧台词',
+                proxy: '压 1080p 代理' };
 
 function onLive(ev) {
   if (!ev || ev.type === 'ping' || ev.type === 'hello') return;
@@ -127,6 +139,7 @@ function onLive(ev) {
     S.tasks[k] = merged;
     if (ev.kind === 'gen') BUS.emit('gen:tick', k, ev.done || 0, ev.message || '');
     if (ev.kind === 'handdraw') BUS.emit('hd:tick', k, ev.done || 0, ev.message || '');
+    if (ev.kind === 'aidraw') BUS.emit('aidraw:tick', k, ev.done || 0, ev.message || '');
     return;
   }
 
@@ -138,6 +151,11 @@ function onLive(ev) {
     if (s.handdraw) {
       BUS.emit('hd:done', s);
       toast(s.error ? `手绘任务失败：${s.error}` : `手绘完成：${s.name || ''}`,
+            s.error ? 'error' : 'success');
+    } else if (s.aidraw) {
+      BUS.emit('aidraw:done', k, s);
+      toast(s.error ? `绘画失败：${s.error}`
+                    : `绘画完成：${s.name || ''}，已落入「AI生成/绘画」目录`,
             s.error ? 'error' : 'success');
     } else if (s.gen) {
       BUS.emit('gen:done', k, s);
@@ -201,6 +219,7 @@ function startFallbackPoll() {
     (ts || []).forEach(t => {
       next[t.root || t.lib] = Object.assign({}, t, { lib: t.lib });
       if (t.kind === 'gen') BUS.emit('gen:tick', t.root, t.done || 0, t.message || '');
+      if (t.kind === 'aidraw') BUS.emit('aidraw:tick', t.root, t.done || 0, t.message || '');
     });
     S.tasks = next;
     if (!ts || !ts.length) {
@@ -228,11 +247,34 @@ async function loadLibs() {
 }
 
 /* ---------- 播放器 ---------- */
+/* 字幕带：开启 S.subBand 后，播放时按当前时间高亮对应台词 */
+let _subLines = null;
+function _fetchSubLines(video_id, root) {
+  _subLines = [];
+  fetch(`/api/lines?video_id=${video_id}&root=${encodeURIComponent(root || '')}`)
+    .then(r => (r.ok ? r.json() : []))
+    .then(rows => { _subLines = Array.isArray(rows) ? rows : []; })
+    .catch(() => { _subLines = []; });
+}
+function _updateSubtitle(t) {
+  if (!_subLines || !_subLines.length) {
+    if (S.player.sub) S.player.sub = '';
+    return;
+  }
+  let cur = '';
+  for (const ln of _subLines) {
+    const s = ln.start || 0, e = ln.end || (ln.start || 0) + 3;
+    if (t >= s && t < e) { cur = ln.text || ''; break; }
+  }
+  if (S.player.sub !== cur) S.player.sub = cur;
+}
+
 function play(video_id, start, title, root) {
   S.player.cur = { video_id, root: root || '' };
   S.player.title = title || '预览';
   S.player.src = `/stream/${video_id}?root=${encodeURIComponent(root || '')}`;
   S.player.start = start || 0;
+  S.player.sub = '';
   S.player.on = true;
   nextTick(() => {
     const v = document.querySelector('.fs-player-video');
@@ -242,21 +284,94 @@ function play(video_id, start, title, root) {
       v.currentTime = Math.max(0, (start || 0) - Math.min(S.pre || 5, 2));
       v.play().catch(() => {});
     };
+    // 字幕带：开启时拉取整片台词，随播放进度高亮当前句
+    if (S.subBand) {
+      v.ontimeupdate = () => _updateSubtitle(v.currentTime);
+      _fetchSubLines(video_id, root);
+    } else {
+      v.ontimeupdate = null;
+      _subLines = null;
+    }
   });
 }
 
 /* ---------- 片段导出 ---------- */
 async function addClips(r) {
   if (!r || !r.ok) { toast((r && r.err) || '导出失败', 'error'); return; }
-  S.clips = (r.clips || []).concat(S.clips);
+  // 打上导出时刻：列表按时间倒序，后端还没重扫目录时新片段也能排在最前
+  const now = Date.now() / 1000;
+  const got = (r.clips || []).map(c => Object.assign({ mtime: now }, c));
+  S.clips = got.concat(S.clips);
   S.tab = 'clips';
+  // 自动跳过烧录时说明原因（比如 OCR 源画面本来就有字幕），否则用户会以为开关没生效
+  if (r.sub_note) toast(r.sub_note, 'warning');
 }
 function clipLine(line_id, root) {
   return api('/api/clip', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ root, line_id, pre: S.pre, post: S.post, fast: S.fast }),
+    body: JSON.stringify({ root, line_id, pre: S.pre, post: S.post,
+      fast: S.fast, subtitle: S.subMode }),
   }).then(addClips);
 }
+
+/* ==================== URL 路由：#页签?参数 ====================
+   整站只有一个 hash，没有 vue-router。约定：
+     #assets                 → 素材页，不带筛选
+     #assets?lib=1,2&q=片名&sort=mtime&dur=s30,m30&vid=123&root=D:\片库
+   参数会被各页面消费（目前只有素材页），同时素材页的筛选变化也会反写回 URL
+   （replace，不塞满历史），这样链接可以直接复制分享 / 浏览器前进后退可用。 */
+const TABS = ['libs', 'search', 'assets', 'gen', 'aidraw', 'hd', 'box', 'clips'];
+
+const Route = {
+  tabs: TABS,
+  q: {},                        // 当前 hash 上的参数（assets 页读它）
+  build(tab, q) {
+    const p = new URLSearchParams();
+    Object.keys(q || {}).forEach(k => {
+      const v = q[k];
+      if (v === '' || v == null || v === false) return;
+      if (Array.isArray(v) ? !v.length : false) return;
+      p.set(k, Array.isArray(v) ? v.join(',') : String(v));
+    });
+    const s = p.toString();
+    return '#' + tab + (s ? '?' + s : '');
+  },
+  parse() {
+    const h = (location.hash || '').replace(/^#/, '');
+    const i = h.indexOf('?');
+    const tab = (i < 0 ? h : h.slice(0, i)) || '';
+    const q = {};
+    if (i >= 0) {
+      try {
+        new URLSearchParams(h.slice(i + 1)).forEach((v, k) => { q[k] = v; });
+      } catch (e) { /* 参数畸形就当没带 */ }
+    }
+    return { tab, q };
+  },
+  /* 解析当前 hash → 同步 tab 状态 → 广播。各页面在这里读 q。 */
+  dispatch(hard) {
+    const r = Route.parse();
+    Route.q = r.q;
+    if (Route.tabs.indexOf(r.tab) >= 0 && r.tab !== S.tab) S.tab = r.tab;
+    BUS.emit('route:change', { tab: r.tab, q: r.q, hard: !!hard });
+  },
+  /* 写 URL 并立刻广播。replace 默认 true（筛选联动不塞历史）；
+     push 用于「从素材库点某部影片跳到素材页」这种明确的一次跳转。 */
+  set(tab, q, replace) {
+    const h = Route.build(tab, q);
+    try {
+      if (replace === false) history.pushState(null, '', h);
+      else history.replaceState(null, '', h);
+    } catch (e) { location.hash = h.slice(1); return; }
+    if (h === (location.hash || '')) { Route.dispatch(); return; }
+    Route.dispatch();
+  },
+  init() {
+    window.addEventListener('hashchange', () => Route.dispatch(true));
+    window.addEventListener('popstate', () => Route.dispatch(true));
+    Route.dispatch(true);
+  },
+};
 
 /* BUS.on 返回取消函数，组件销毁时解绑，避免已卸载的面板还在响应实时事件 */
 {
@@ -274,13 +389,13 @@ function clipLine(line_id, root) {
 /* ==================== 对外暴露 ==================== */
 // 各功能模块从 window.FS 取自己要的东西，互不耦合。
 window.FS = {
-  S, BUS, LIVE, PHASE,
+  S, BUS, LIVE, PHASE, Route,
   api, post, esc, hl, mediaUrl, hdUrl,
   fmtDur, fmtAgo, fmtSec, toast, LS,
   connectLive, loadLibs, play, clipLine, addClips, startPoll,
 };
 
 // 给回归脚本留的口子（基础项；gen/hd/box 会在各自模块里追加）。
-window.__FS = { S, api, post, play, toast, loadLibs };
+window.__FS = { S, api, post, play, toast, loadLibs, Route };
 
 })();

@@ -98,6 +98,39 @@ class Hub:
         with self._conn() as conn:
             conn.execute("UPDATE libraries SET name=? WHERE id=?", (name, lid))
 
+    def update(self, lid: int, name: str = "", path: str = "") -> Dict[str, Any]:
+        """编辑库：备注名 / 路径。
+           两项都允许独立修改：空字符串代表「不改」，
+           - 路径改了要走同一份 abspath/存在性/冲突校验，并通过返回值告诉调用者清除缓存
+        """
+        cur = self.get(lid)
+        if not cur:
+            return {"ok": False, "err": "没有这个素材库"}
+
+        new_path = cur["path"]
+        if path is not None and str(path).strip():
+            new_path = os.path.abspath(str(path).strip().strip('"').strip("'"))
+            if not os.path.isdir(new_path):
+                return {"ok": False, "err": f"目录不存在：{new_path}"}
+            with self._conn() as conn:
+                dupe = conn.execute(
+                    "SELECT id FROM libraries WHERE path=? AND id<>?",
+                    (new_path, lid)).fetchone()
+            if dupe:
+                return {"ok": False, "err": "新路径已被别的库占用"}
+
+        new_name = (name if name else cur["name"]).strip() or cur["name"]
+
+        with self._conn() as conn:
+            conn.execute("UPDATE libraries SET name=?, path=? WHERE id=?",
+                         (new_name, new_path, lid))
+        # 路径变了 —— 让调用方清掉旧 path 对应的 store 缓存（store 按 abs path 缓存）
+        old_abs = os.path.abspath(cur["path"])
+        new_abs = os.path.abspath(new_path)
+        return {"ok": True, "id": lid, "name": new_name, "path": new_path,
+                "old_abs_path": old_abs if old_abs != new_abs else "",
+                "stats": self.stats_of(new_path)}
+
     def get(self, lid: int):
         with self._conn() as conn:
             r = conn.execute("SELECT * FROM libraries WHERE id=?", (lid,)).fetchone()

@@ -28,6 +28,8 @@ const BoxView = {
     </div>
   </div>
 
+  <el-divider />
+
   <div class="fs-bxsum" id="bxSum" v-if="rep">
     <div class="bxs"><b>{{ rep.total }}</b><span>台词</span></div>
     <div class="bxs"><b class="ok">{{ rep.passed }}</b><span>方框已验</span></div>
@@ -126,17 +128,35 @@ const BoxView = {
 
   <!-- 编辑台词 -->
   <el-dialog v-model="editDlg" title="编辑台词" width="560px">
-    <div class="fs-hint">{{ curRow ? curRow.start_str + ' → ' + curRow.end_str : '' }}
-      · {{ curRow ? (curRow.src || '未知来源') : '' }} 来源</div>
-    <el-input id="bxEText" v-model="editForm.text" type="textarea" :rows="3" placeholder="这句话的文本"/>
-    <div class="fs-mgrid">
-      <span>开始（秒）<el-input-number id="bxEStart" v-model="editForm.start" :step="0.01" size="small" controls-position="right"/></span>
-      <span>结束（秒）<el-input-number id="bxEEnd" v-model="editForm.end" :step="0.01" size="small" controls-position="right"/></span>
-    </div>
-    <el-checkbox id="bxESaveBox" v-model="editForm.save_box" label="同时把这次识别到的画面方框写进库"/>
-    <div class="fs-hint">勾上后会重新抽 3 帧跑 OCR，三帧文字都对得上才写入；不一致会直接告诉你，什么都不会改。</div>
-    <el-button v-if="liveTxt" size="small" @click="editForm.text = liveTxt"
-      :title="'把识别到的这句话直接填进上面的文本框，再手动修一修'">用「{{ liveTxt.slice(0, 14) }}{{ liveTxt.length > 14 ? '…' : '' }}」填入</el-button>
+    <el-form label-position="top" class="fs-form" @submit.prevent>
+      <div class="fs-hint">{{ curRow ? curRow.start_str + ' → ' + curRow.end_str : '' }}
+        · {{ curRow ? (curRow.src || '未知来源') : '' }} 来源</div>
+      <el-form-item label="这句台词">
+        <el-input id="bxEText" v-model="editForm.text" type="textarea" :rows="3" placeholder="这句话的文本"/>
+      </el-form-item>
+      <el-row :gutter="14">
+        <el-col :xs="24" :sm="12">
+          <el-form-item label="开始（秒）">
+            <el-input-number id="bxEStart" v-model="editForm.start" :step="0.01" size="small"
+              controls-position="right" style="width: 100%"/>
+          </el-form-item>
+        </el-col>
+        <el-col :xs="24" :sm="12">
+          <el-form-item label="结束（秒）">
+            <el-input-number id="bxEEnd" v-model="editForm.end" :step="0.01" size="small"
+              controls-position="right" style="width: 100%"/>
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-form-item>
+        <el-checkbox id="bxESaveBox" v-model="editForm.save_box" label="同时把这次识别到的画面方框写进库"/>
+      </el-form-item>
+      <div class="fs-hint">勾上后会重新抽 3 帧跑 OCR，三帧文字都对得上才写入；不一致会直接告诉你，什么都不会改。</div>
+      <el-form-item v-if="liveTxt">
+        <el-button size="small" @click="editForm.text = liveTxt"
+          :title="'把识别到的这句话直接填进上面的文本框，再手动修一修'">用「{{ liveTxt.slice(0, 14) }}{{ liveTxt.length > 14 ? '…' : '' }}」填入</el-button>
+      </el-form-item>
+    </el-form>
     <template #footer>
       <el-button id="mCancel" @click="editDlg = false">取消</el-button>
       <el-button id="mYes" type="primary" @click="saveEdit">保存</el-button>

@@ -269,7 +269,7 @@ def transcribe(video: str, model_size: str = None, lang: str = None,
 
 def get_lines(video: str, use_asr: bool = None, progress=None,
               skip_external: bool = False, skip_embedded: bool = False,
-              cancel=None) -> Tuple[List[Dict[str, Any]], str, str]:
+              cancel=None, ocr_video: str = None) -> Tuple[List[Dict[str, Any]], str, str]:
     """返回 (台词列表, 来源, 错误信息)。
 
     来源取值：external(外挂SRT) / embedded(内嵌) / ocr(画面硬字幕) /
@@ -289,6 +289,10 @@ def get_lines(video: str, use_asr: bool = None, progress=None,
 
     cancel 是无参可调用对象（返回 True 表示用户要停）。中断时返回空台词 +
     错误码 "__cancelled__"，**不会**落库也不会写 .srt。
+
+    `ocr_video` = 4K 片先压好的 1080p 代理（media.ensure_proxy）。**只给 OCR 分支
+    用**：外挂/内嵌字幕流和语音转写都必须读原片（外挂 srt 就贴在原片旁边，
+    代理里没有字幕流）。没给就一路读原片。
     """
     # 外挂和内嵌字幕是"白捡的"，任何情况下都先读
     if not skip_external:
@@ -314,7 +318,11 @@ def get_lines(video: str, use_asr: bool = None, progress=None,
             # OCR 分支一律发结构化 dict（带帧级完成度）；下游 _prog /
             # ocr_lines 的 str 分支仍兼容普通调用方。
             ocr_prog = ocr_mod.structured(progress) if progress else None
-            rows, oerr = ocr_mod.ocr_lines(video, progress=ocr_prog, cancel=cancel)
+            # 抽帧源优先用 1080p 代理（4K 片省 5 倍解码量，画质无损——
+            # OCR 送检带宽固定 OCR_WIDTH，缩完是同一张图）
+            ocr_src = ocr_video or video
+            rows, oerr = ocr_mod.ocr_lines(ocr_src, progress=ocr_prog,
+                                           cancel=cancel)
             if rows:
                 if C.SUB_SEARCH_SAVE:
                     try:
