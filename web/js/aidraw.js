@@ -1,7 +1,7 @@
-/* 拾帧 FrameSeek · AI 绘画模块（双后端生图：Agnes / SD1.5） */
+/* 拾帧 FrameSeek · AI 绘画模块（双后端生图：Agnes / SD1.5，两种本地方案：写实 / 卡通） */
 (function () {
 'use strict';
-const { reactive, ref, onMounted, onActivated, onUnmounted } = Vue;
+const { reactive, ref, computed, onMounted, onActivated, onUnmounted } = Vue;
 const FS = window.FS;
 const { S, BUS, api, post, toast, startPoll, hdUrl } = FS;
 
@@ -18,39 +18,12 @@ const AidrawView = {
 <div class="fs-page fs-page-aidraw">
   <div class="fs-page-hd">
     <div><h1>AI 绘画</h1>
-      <p>双后端生图 · 产物落在项目「AI生成/绘画」目录 · 参数留痕可重掷</p></div>
+      <p>双后端生图 · 两种本地方案：写实 / 卡通·插画 · 产物落在项目「AI生成/绘画」目录</p></div>
     <div class="fs-tools">
       <el-tag v-for="b in info.backends" :key="b.id" size="small"
         :type="b.ready ? (b.id === info.default ? 'success' : 'info') : 'danger'"
         :title="b.note + ' · ' + b.eta">{{ b.name }}<template v-if="!b.ready"> · 未就绪</template></el-tag>
       <el-button size="small" @click="loadOutputs" title="重新拉取产物列表"><el-icon><Refresh/></el-icon><span>刷新</span></el-button>
-    </div>
-  </div>
-
-  <!-- 对话区：生成后的图片在中间气泡里居中展示（仿 AI 生成） -->
-  <div class="fs-chat" id="aidrawChat">
-    <div v-if="!items.length && !run" class="fs-chat-empty" id="aidrawEmpty">
-      还没有产物。写个提示词点「生成」——默认 Agnes 秒出，本地 SD1.5 约 5~20 秒。
-    </div>
-    <div v-if="run" class="fs-bub sys">
-      <el-progress :percentage="run.pct || 0" :stroke-width="6"/>
-      <div class="bub-meta">{{ run.msg || '排队中' }}<template v-if="run.pct"> · {{ run.pct }}%</template></div>
-    </div>
-    <div v-for="it in items" :key="it.file" class="fs-bub">
-      <img class="bub-pic" :src="hdUrl(it.file)" loading="lazy" @click="openZoom(it)" :title="'点此放大：' + it.name"/>
-      <div class="bub-meta">
-        <el-tag size="small" :type="it.meta.backend === 'agnes' ? 'warning' : 'success'">{{ (it.meta.backend || '?').toUpperCase() }}</el-tag>
-        <span>{{ it.meta.w || '?' }}×{{ it.meta.h || '?' }}</span>
-        <span v-if="it.meta.seed">seed {{ it.meta.seed }}</span>
-        <span>{{ fmtAgo(it.mtime) }}</span>
-      </div>
-      <div class="bub-pic-prompt" v-if="it.meta.prompt" :title="it.meta.prompt">{{ it.meta.prompt }}</div>
-      <div class="bub-acts">
-        <el-button link size="small" @click="openZoom(it)" title="放大查看"><el-icon><ZoomIn/></el-icon><span>放大</span></el-button>
-        <el-button link size="small" :disabled="running" @click="reroll(it)" title="用同一组参数重掷（换新种子）"><el-icon><Refresh/></el-icon><span>重掷</span></el-button>
-        <el-button link size="small" tag="a" :href="hdUrl(it.file)" download :title="'下载：' + it.name"><el-icon><Download/></el-icon><span>下载</span></el-button>
-        <el-button link size="small" @click="goAssets" title="去「素材」页查看（归入 AI 生成素材库）"><el-icon><Picture/></el-icon><span>去素材库</span></el-button>
-      </div>
     </div>
   </div>
 
@@ -61,9 +34,12 @@ const AidrawView = {
         placeholder="描述你想要的画面…（Enter 提交，Shift+Enter 换行。中文也可，场景描述越具体越好）"
         @keydown.enter.exact.prevent="onEnter"/>
       <el-button id="btnAidraw" type="primary" :disabled="running || !prompt.trim()" @click="submit"
-        title="按提示词生成一张图。默认 Agnes（API 秒出），也可选本地 SD1.5"><el-icon><MagicStick/></el-icon><span>生成</span></el-button>
+        title="按提示词生成一张图。默认 Agnes（API 秒出），也可选本地 SD1.5（写实/卡通）"><el-icon><MagicStick/></el-icon><span>生成</span></el-button>
     </div>
     <div class="fs-composer-row">
+      <el-select id="aidrawScheme" v-model="scheme" size="small" class="w140" title="出图方案（仅本地 SD1.5 生效；Agnes 云后端忽略）">
+        <el-option v-for="s in info.schemes" :key="s.id" :label="s.label" :value="s.id"/>
+      </el-select>
       <el-select id="aidrawBackend" v-model="backend" size="small" class="w200" title="生图后端">
         <el-option v-for="b in info.backends" :key="b.id" :label="b.name" :value="b.id"
           :disabled="!b.ready">
@@ -86,27 +62,27 @@ const AidrawView = {
       <el-row :gutter="14">
         <el-col :xs="24" :sm="12" :md="8">
           <el-form-item label="负向词（可选）">
-            <el-input id="aidrawNeg" v-model="negative" size="small" placeholder="不想出现的元素（可空）"/>
+            <el-input id="aidrawNeg" v-model="negative" size="small" placeholder="不想出现的元素（可空，不展开则随方案默认）"/>
           </el-form-item>
         </el-col>
         <el-col :xs="24" :sm="12" :md="8">
           <el-form-item label="采样步数">
             <el-input-number id="aidrawSteps" v-model="steps" size="small" :min="8" :max="50" controls-position="right"
-              title="采样步数：SD1.5 默认 20，越多越慢"/>
+              title="采样步数：SD1.5 默认随方案（写实 25 / 卡通 20）"/>
           </el-form-item>
         </el-col>
         <el-col :xs="24" :sm="12" :md="8">
           <el-form-item label="CFG 贴合度">
             <el-input-number id="aidrawCfg" v-model="cfg" size="small" :min="1" :max="15" :step="0.5" controls-position="right"
-              title="提示词贴合度：默认 7"/>
+              title="提示词贴合度：默认随方案（写实 7.5 / 卡通 6）"/>
           </el-form-item>
         </el-col>
         <el-col :xs="24" :sm="12" :md="8">
           <el-form-item label="LoRA">
             <el-select id="aidrawLora" v-model="lora" size="small" title="SD1.5 线稿 LoRA（models/loras/ 下）">
+              <el-option label="随方案（写实空 / 卡通线稿）" value=""/>
               <el-option label="simple-lineart_v6（线稿）" value="simple-lineart_v6.safetensors"/>
               <el-option label="Detailed_LineArt（细线）" value="Detailed_LineArt.safetensors"/>
-              <el-option label="不用 LoRA" value=""/>
             </el-select>
           </el-form-item>
         </el-col>
@@ -123,7 +99,57 @@ const AidrawView = {
           </el-form-item>
         </el-col>
       </el-row>
+      <div class="fs-hint dim">未展开「更多」时，LoRA / 负向词 / 步数 / CFG / 锁构图强度都会随所选方案取默认值；展开并改了才以你填的为准。</div>
     </el-form>
+  </div>
+
+  <!-- 生成进度（生成中显示在画廊上方） -->
+  <div v-if="run" class="fs-aidraw-run">
+    <el-progress :percentage="run.pct || 0" :stroke-width="6"/>
+    <div class="bub-meta">{{ run.msg || '排队中' }}<template v-if="run.pct"> · {{ run.pct }}%</template></div>
+  </div>
+
+  <!-- 画廊：生成结果以卡片形式呈现，各属性用图标标注 -->
+  <div class="fs-aidraw-grid" id="aidrawGrid">
+    <div v-if="!items.length && !run" class="fs-aidraw-empty dim">
+      还没有产物。写个提示词点「生成」——默认 Agnes 秒出；选本地 SD1.5 再挑「写实 / 卡通」方案。
+    </div>
+    <div v-for="it in items" :key="it.file" class="fs-acard" :title="it.name">
+      <div class="fs-acard-img">
+        <img :src="hdUrl(it.file)" loading="lazy" @click="openZoom(it)" :title="'点此放大：' + it.name"/>
+        <el-button class="fs-acard-del" size="small" circle type="danger" @click="del(it)"
+          title="删除源文件（不可恢复）"><el-icon><Delete/></el-icon></el-button>
+      </div>
+      <div class="fs-acard-body">
+        <div class="fs-acard-row">
+          <el-icon><Picture/></el-icon>
+          <span class="fs-scheme" :class="'fs-scheme-' + (it.meta.scheme||'')">{{ schemeLabel(it.meta.scheme) }}</span>
+          <span class="dim">· {{ (it.meta.backend || '?').toUpperCase() }}</span>
+        </div>
+        <div class="fs-acard-row">
+          <el-icon><ScaleToOriginal/></el-icon><span>{{ it.meta.w || '?' }}×{{ it.meta.h || '?' }}</span>
+          <span class="fs-ic2"><el-icon><Sunny/></el-icon>seed {{ it.meta.seed }}</span>
+        </div>
+        <div class="fs-acard-row" v-if="it.meta.lora">
+          <el-icon><Collection/></el-icon><span class="fs-lora">{{ it.meta.lora }}</span>
+          <span class="fs-ic2"><el-icon><Histogram/></el-icon>{{ it.meta.cfg }} cfg</span>
+        </div>
+        <div class="fs-acard-row">
+          <el-icon><Clock/></el-icon><span>{{ fmtAgo(it.mtime) }}</span>
+          <span class="fs-ic2"><el-icon><Operation/></el-icon>{{ it.meta.steps || '?' }}步/{{ it.meta.sampler || '?' }}</span>
+        </div>
+        <div class="fs-acard-prompt">
+          <div class="fs-acard-prompt-hd"><el-icon><Document/></el-icon><b>提示词</b></div>
+          <p :title="it.meta.prompt">{{ it.meta.prompt }}</p>
+        </div>
+      </div>
+      <div class="fs-acard-acts">
+        <el-button link size="small" @click="openZoom(it)" title="放大查看"><el-icon><ZoomIn/></el-icon><span>放大</span></el-button>
+        <el-button link size="small" :disabled="running" @click="reroll(it)" title="用同一组参数重掷（换新种子）"><el-icon><Refresh/></el-icon><span>重掷</span></el-button>
+        <el-button link size="small" tag="a" :href="hdUrl(it.file)" download :title="'下载：' + it.name"><el-icon><Download/></el-icon><span>下载</span></el-button>
+        <el-button link size="small" @click="goAssets" title="去「素材」页查看（归入 AI 生成素材库）"><el-icon><Picture/></el-icon><span>去素材库</span></el-button>
+      </div>
+    </div>
   </div>
 
   <el-dialog v-model="zoomOn" width="62%" top="5vh" destroy-on-close class="fs-player-dlg">
@@ -136,13 +162,14 @@ const AidrawView = {
 </div>
 `,
   setup() {
-    const info = reactive({ backends: [], default: 'agnes', outDir: '' });
+    const info = reactive({ backends: [], default: 'agnes', outDir: '', schemes: [] });
     const prompt = ref('');
+    const scheme = ref('realistic');
     const backend = ref('agnes');
     const sizeIdx = ref(0);
     const negative = ref('');
-    const steps = ref(20), cfg = ref(7);
-    const lora = ref('simple-lineart_v6.safetensors');
+    const steps = ref(25), cfg = ref(7.5);
+    const lora = ref('');
     const controlStrength = ref(0.65);
     const seed = ref(0), adv = ref(false);
     const refs = ref([]);
@@ -151,6 +178,7 @@ const AidrawView = {
     const zoom = ref(null), zoomOn = ref(false);
     const refFile = ref(null);
     const sizes = SIZES;
+    const running = computed(() => !!run.value);
 
     async function loadInfo() {
       let r = {};
@@ -158,6 +186,10 @@ const AidrawView = {
       info.backends = r.backends || [];
       info.default = r.default || 'agnes';
       info.outDir = r.out_dir || '';
+      info.schemes = r.schemes || [];
+      if (!info.schemes.some(s => s.id === scheme.value) && info.schemes.length) {
+        scheme.value = info.schemes[0].id;
+      }
       if (!info.backends.some(b => b.id === backend.value && b.ready)) {
         const ok = info.backends.find(b => b.ready);
         backend.value = ok ? ok.id : 'agnes';
@@ -168,6 +200,11 @@ const AidrawView = {
       let r = {};
       try { r = await api('/api/aidraw/outputs'); } catch (e) { r = {}; }
       items.value = r.items || [];
+    }
+
+    function schemeLabel(sid) {
+      const s = info.schemes.find(x => x.id === sid);
+      return s ? s.label : (sid || '未知');
     }
 
     function pickRef() { if (refFile.value) refFile.value.click(); }
@@ -197,14 +234,18 @@ const AidrawView = {
       if (!p) { toast('先写提示词', 'warning'); return; }
       if (!S.activeRoot) { toast('先在「素材库」页选一个库（用于记录任务进度）', 'warning'); return; }
       const sz = sizes[sizeIdx.value] || sizes[0];
+      // 高级参数：仅在「更多」展开时作为覆盖项发送；否则发 null，交给方案默认值
+      const advOn = adv.value;
       const body = {
-        backend: backend.value, prompt: p, negative: negative.value || '',
+        backend: backend.value, prompt: p, scheme: scheme.value,
         refs: refs.value.map(r => r.path),
         seed: Number(seed.value || 0), w: sz.w, h: sz.h,
-        lora: lora.value || '',
-        lora_scale: 0.8, control_strength: Number(controlStrength.value || 0),
-        steps: Number(steps.value || 20), cfg: Number(cfg.value || 7),
         root: S.activeRoot,
+        negative: advOn ? (negative.value || '') : null,
+        lora: advOn ? (lora.value || '') : null,
+        control_strength: advOn ? Number(controlStrength.value || 0) : null,
+        steps: advOn ? Number(steps.value || 25) : null,
+        cfg: advOn ? Number(cfg.value || 7) : null,
       };
       run.value = { pct: 0, msg: '已提交' };
       try {
@@ -231,8 +272,23 @@ const AidrawView = {
       }
     }
 
+    async function del(it) {
+      try {
+        await ElementPlus.ElMessageBox.confirm(
+          `将删除磁盘上的源文件（及同名参数留痕），<b>不可恢复</b>：<br><code>${esc(it.name)}</code>`,
+          '删除这张绘画', { dangerouslyUseHTMLString: true, type: 'warning',
+            confirmButtonText: '删除' });
+      } catch (e) { return; }
+      const r = await post('/api/aidraw/delete', { file: it.file });
+      if (!r || !r.ok) { toast('删除失败：' + ((r && r.err) || ''), 'error'); return; }
+      items.value = items.value.filter(x => x.file !== it.file);
+      toast('已删除：' + it.name, 'success');
+    }
+
     function openZoom(it) { zoom.value = it; zoomOn.value = true; }
     function goAssets() { S.tab = 'assets'; }
+    function esc(s) { return String(s || '').replace(/[&<>"]/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
     const offTick = BUS.on('aidraw:tick', (root, pct, msg) => {
       if (run.value) {
@@ -253,10 +309,10 @@ const AidrawView = {
     window.__FS.aidraw = { info, run, items };
 
     return {
-      info, prompt, backend, sizeIdx, negative, steps, cfg, lora,
-      controlStrength, seed, adv, refs, items, run, zoom, zoomOn,
-      refFile, sizes, submit, onEnter, pickRef, onRef, dropRef, reroll,
-      openZoom, goAssets, loadOutputs, hdUrl, fmtAgo: FS.fmtAgo,
+      info, prompt, scheme, backend, sizeIdx, negative, steps, cfg, lora,
+      controlStrength, seed, adv, refs, items, run, running, zoom, zoomOn,
+      refFile, sizes, schemeLabel, submit, onEnter, pickRef, onRef, dropRef,
+      reroll, del, openZoom, goAssets, loadOutputs, hdUrl, fmtAgo: FS.fmtAgo,
     };
   },
 };

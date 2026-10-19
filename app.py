@@ -594,6 +594,8 @@ def api_aidraw_info():
         return jsonify({"ok": True, "backends": ib.backends(),
                         "default": "agnes", "order": list(ib.BACKEND_ORDER),
                         "lora_default": ib.LORA_DEFAULT,
+                        "schemes": [{"id": k, "label": v["label"]}
+                                    for k, v in ib.SCHEMES.items()],
                         "out_dir": ib.paint_dir()})
     except Exception as e:
         return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"})
@@ -668,6 +670,9 @@ def api_aidraw_generate():
     backend = (d.get("backend") or "agnes").strip().lower()
     if backend not in ("agnes", "sd15", "auto"):
         return jsonify({"ok": False, "err": f"未知后端：{backend}"}), 400
+    scheme = (d.get("scheme") or "realistic").strip().lower()
+    if scheme not in ib.SCHEME_IDS:
+        return jsonify({"ok": False, "err": f"未知方案：{scheme}"}), 400
     prompt = (d.get("prompt") or "").strip()
     if not prompt:
         return jsonify({"ok": False, "err": "提示词不能为空"}), 400
@@ -684,21 +689,25 @@ def api_aidraw_generate():
         return jsonify({"ok": False, "err": "宽必须是 8 的倍数且在 256~1024"}), 400
     if h and (h % 8 or not (256 <= h <= 1024)):
         return jsonify({"ok": False, "err": "高必须是 8 的倍数且在 256~1024"}), 400
-    def _num(key, default, cast=float):
+    # 调参项：UI 没显式传（None）就交给方案给默认值；传了就用传的。
+    # 这样前端只发覆盖项，方案负责兜底，两个方案开箱即用。
+    def _num(key, cast=float):
         v = d.get(key)
-        return default if v is None else cast(v)
+        return None if v is None else cast(v)
 
     params = {"backend": backend, "prompt": prompt,
-              "negative": (d.get("negative") or "").strip(),
+              "negative": d.get("negative"),   # None → 方案负向词；"" → 显式清空
               "refs": refs, "seed": int(d.get("seed") or 0),
               "w": w, "h": h, "name": (d.get("name") or "").strip(),
-              "lora": ("" if d.get("lora") is None
-                       else str(d.get("lora")).strip()),
-              "lora_scale": _num("lora_scale", ib.DEFAULT_LORA_SCALE),
-              "control_strength": _num("control_strength",
-                                       ib.DEFAULT_CONTROL_STRENGTH),
-              "steps": _num("steps", 20, int),
-              "cfg": _num("cfg", 7.0)}
+              "scheme": scheme,
+              "lora": d.get("lora"),
+              "lora_scale": _num("lora_scale"),
+              "control_strength": _num("control_strength"),
+              "steps": _num("steps", int),
+              "cfg": _num("cfg"),
+              "sampler": d.get("sampler"),
+              "scheduler": d.get("scheduler"),
+              "ckpt": d.get("ckpt")}
     if not _AD_BUSY.acquire(blocking=False):
         return jsonify({"ok": False,
                         "err": "已经有一个绘画任务在跑（GPU 同时只能跑一个）"}), 409
@@ -765,7 +774,8 @@ def api_aidraw_reroll():
               "control_strength": (ib.DEFAULT_CONTROL_STRENGTH
                                    if meta_ctrl is None else float(meta_ctrl)),
               "steps": int(meta.get("steps") or 20),
-              "cfg": float(meta.get("cfg") or 7.0)}
+              "cfg": float(meta.get("cfg") or 7.0),
+              "scheme": meta.get("scheme") or "realistic"}
     if not params["prompt"]:
         return jsonify({"ok": False, "err": "sidecar 里没有提示词"}), 400
     if not _AD_BUSY.acquire(blocking=False):
@@ -782,6 +792,59 @@ def api_aidraw_reroll():
     return jsonify({"ok": True, "task_id": tid, "root": root,
                     "out_dir": ib.paint_dir(),
                     "eta_hint": "重掷（新种子，同参数）"})
+
+
+@app.post("/api/aidraw/delete")
+def api_aidraw_delete():
+    """删除一张绘画产物（连同同名 sidecar 参数留痕）。删源文件，不可恢复。"""
+    d = request.get_json(force=True) or {}
+    f = (d.get("file") or "").strip()
+    if not f:
+        return jsonify({"ok": False, "err": "缺少 file"}), 400
+    from core import img_backend as ib
+    f = os.path.abspath(f)
+    base = os.path.abspath(ib.paint_dir())
+    if not (f == base or f.startswith(base + os.sep)):
+        return jsonify({"ok": False,
+                        "err": "只能删除绘画目录内的文件"}), 403
+    if not os.path.isfile(f):
+        return jsonify({"ok": False, "err": "文件不存在：" + f}), 404
+    deleted = []
+    for cand in (f, os.path.splitext(f)[0] + ".json"):
+        if os.path.isfile(cand):
+            try:
+                os.remove(cand)
+                deleted.append(cand)
+            except OSError as e:
+                return jsonify({"ok": False, "err": f"删除失败：{e}"}), 500
+    return jsonify({"ok": True, "deleted": deleted})
+
+
+@app.post("/api/ai-gallery/delete")
+def api_ai_gallery_delete():
+    """删除一个 AI 生成素材（图片/视频，连同同名 sidecar）。删源文件，不可恢复。"""
+    d = request.get_json(force=True) or {}
+    f = (d.get("file") or "").strip()
+    if not f:
+        return jsonify({"ok": False, "err": "缺少 file"}), 400
+    from core import img_backend as ib
+    from core import handdraw as hd_mod
+    f = os.path.abspath(f)
+    base = os.path.abspath(os.path.join(hd_mod.BASE, hd_mod.OUT_DIR_NAME))
+    if not (f == base or f.startswith(base + os.sep)):
+        return jsonify({"ok": False,
+                        "err": "只能删除 AI 生成目录内的文件"}), 403
+    if not os.path.isfile(f):
+        return jsonify({"ok": False, "err": "文件不存在：" + f}), 404
+    deleted = []
+    for cand in (f, os.path.splitext(f)[0] + ".json"):
+        if os.path.isfile(cand):
+            try:
+                os.remove(cand)
+                deleted.append(cand)
+            except OSError as e:
+                return jsonify({"ok": False, "err": f"删除失败：{e}"}), 500
+    return jsonify({"ok": True, "deleted": deleted})
 
 
 # ---------------- 白板手绘视频 ----------------

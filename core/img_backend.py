@@ -58,11 +58,48 @@ DEFAULT_LORA_SCALE = 0.8
 DEFAULT_CONTROL_STRENGTH = 0.65
 CANVAS_COLOR = "#F5EBD7"                  # 暖米黄纸底（H3 垫边用）
 
+# ---------------- 两种本地出图方案（写实 / 卡通·插画） ----------------
+# 仅对 sd15 后端生效（agnes 忽略）。每个方案是一组默认参数：UI 只传覆盖项，
+# 其余回落方案默认。卡通方案目前骑在 base SD1.5 + 线稿 LoRA 上（本地已有），
+# 后续要更纯的插画风，把 cartoon.ckpt 换成插画底座（Anything/Counterfeit fp16）即可。
+SCHEMES = {
+    "realistic": {
+        "label": "写实",
+        "ckpt": CKPT_NAME,
+        "lora": "",                       # 写实底座不加风格 LoRA，靠提示词+负向词
+        "lora_scale": 0.0,
+        "control_strength": 0.6,
+        "steps": 25, "cfg": 7.5,
+        "sampler": "dpmpp_2m", "scheduler": "karras",
+        "negative": "deformed, extra fingers, mutated hands, blurry, lowres, "
+                    "bad anatomy, watermark, text, signature, jpeg artifacts",
+    },
+    "cartoon": {
+        "label": "卡通/插画",
+        "ckpt": CKPT_NAME,                 # 暂用 base SD1.5；换插画底座只需改这一行
+        "lora": LORA_DEFAULT,              # simple-lineart_v6
+        "lora_scale": 0.8,
+        "control_strength": 0.75,
+        "steps": 20, "cfg": 6.0,
+        "sampler": "euler", "scheduler": "normal",
+        "negative": "photo, realistic, 3d render, blurry, lowres, watermark, "
+                    "extra fingers, deformed, text",
+    },
+}
+SCHEME_IDS = tuple(SCHEMES.keys())
+
 _AGNES_RATIOS = ("1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9")
 
 
 def _log(msg: str):
     print(f"[frameseek-img] {msg}", file=sys.stderr)
+
+
+def _scheme_pick(scheme: str, key: str, fallback):
+    """方案默认值解析：方案里定义了就用方案值，否则回落全局默认。"""
+    if scheme and scheme in SCHEMES and key in SCHEMES[scheme]:
+        return SCHEMES[scheme][key]
+    return fallback
 
 
 def _which_ffmpeg() -> str:
@@ -139,7 +176,7 @@ def backends() -> list:
     items.append({
         "id": "sd15", "name": "SD1.5 + 线稿 LoRA + ControlNet（本地）",
         "ready": sd_ok,
-        "note": "2~5 秒/张 · 种子可复现 · canny 锁构图不漂 · 重掷主力",
+        "note": "两种方案：写实 / 卡通·插画 · 种子可复现 · canny 锁构图不漂",
         "eta": "约 5~20 秒（含模型加载）", "offline": True})
     return items
 
@@ -313,7 +350,9 @@ def _gen_sd15(prompt: str, negative: str = "", refs=None, seed: int = 0,
               w: int = 0, h: int = 0, out_dir: str = "", name: str = "",
               lora: str = LORA_DEFAULT, lora_scale: float = DEFAULT_LORA_SCALE,
               control_strength: float = DEFAULT_CONTROL_STRENGTH,
-              steps: int = 20, cfg: float = 7.0, on_tick=None,
+              steps: int = 20, cfg: float = 7.0,
+              sampler: str = "euler", scheduler: str = "normal",
+              ckpt: str = CKPT_NAME, on_tick=None,
               timeout: int = 900, **kw) -> dict:
     """本地 SD1.5 + LoRA + canny ControlNet（进程内直调 ComfyUI）。"""
     refs = [r for r in (refs or []) if r and os.path.isfile(r)]
@@ -330,7 +369,8 @@ def _gen_sd15(prompt: str, negative: str = "", refs=None, seed: int = 0,
            "--seed", str(seed or 0),
            "--width", str(w), "--height", str(h),
            "--steps", str(int(steps or 20)), "--cfg", str(float(cfg or 7.0)),
-           "--out", dst, "--ckpt", CKPT_NAME,
+           "--sampler", sampler or "euler", "--scheduler", scheduler or "normal",
+           "--out", dst, "--ckpt", ckpt or CKPT_NAME,
            "--comfy-root", COMFY_APP_ROOT]
     if lora:
         cmd += ["--lora", lora, "--lora-scale", str(float(lora_scale or 0.8))]
@@ -344,7 +384,7 @@ def _gen_sd15(prompt: str, negative: str = "", refs=None, seed: int = 0,
     return {"ok": True, "file": dst, "backend": "sd15",
             "seed": int(info.get("seed") or seed or 0),
             "w": aw or w, "h": ah or h, "elapsed": 0,
-            "note": f"SD1.5 · {w}×{h} · {steps} 步" +
+            "note": f"SD1.5 · {w}×{h} · {steps} 步 · {sampler}" +
                     (f" · LoRA {lora}" if lora else "") +
                     (" · canny 锁构图" if ctrl else "")}
 
@@ -353,14 +393,18 @@ _IMPLS = {"agnes": _gen_agnes, "sd15": _gen_sd15}
 
 
 # ---------------- 统一入口 ----------------
-def gen_image(backend: str = "auto", prompt: str = "", negative: str = "",
+def gen_image(backend: str = "auto", prompt: str = "", negative: str = None,
               refs=None, seed: int = 0, w: int = 0, h: int = 0,
-              out_dir: str = "", name: str = "", lora: str = LORA_DEFAULT,
-              lora_scale: float = DEFAULT_LORA_SCALE,
-              control_strength: float = DEFAULT_CONTROL_STRENGTH,
-              steps: int = 20, cfg: float = 7.0, on_tick=None,
-              timeout: int = 0) -> dict:
+              out_dir: str = "", name: str = "", lora: str = None,
+              lora_scale: float = None, control_strength: float = None,
+              steps: int = None, cfg: float = None,
+              sampler: str = None, scheduler: str = None, ckpt: str = None,
+              scheme: str = None, on_tick=None, timeout: int = 0) -> dict:
     """出图一条龙。backend: agnes / sd15 / auto（按优先级降级）。
+    scheme: realistic / cartoon（本地 SD1.5 的风格预设，仅对 sd15 生效）。
+
+    某个调参项显式传了非 None 值就优先；否则回落方案默认；都没就全局默认。
+    这样 UI 只需传覆盖项，方案负责给出合理默认值。
 
     refs: 参考图路径列表（sd15 用首张算 canny；agnes 最多传 3 张）。
     产物落 paint_dir()（或指定 out_dir），旁边写 sidecar JSON 留痕。
@@ -373,6 +417,22 @@ def gen_image(backend: str = "auto", prompt: str = "", negative: str = "",
         raise ValueError(f"未知后端：{backend}（可选 {', '.join(_IMPLS)} / auto）")
     out_dir = out_dir or paint_dir()
     os.makedirs(out_dir, exist_ok=True)
+
+    # 方案默认值（仅 sd15/auto 生效；agnes 忽略这部分）
+    scheme = (scheme or "realistic") if backend in ("sd15", "auto") else None
+    lora = lora if lora is not None else _scheme_pick(scheme, "lora", LORA_DEFAULT)
+    lora_scale = (lora_scale if lora_scale is not None
+                  else _scheme_pick(scheme, "lora_scale", DEFAULT_LORA_SCALE))
+    control_strength = (control_strength if control_strength is not None
+                        else _scheme_pick(scheme, "control_strength",
+                                         DEFAULT_CONTROL_STRENGTH))
+    steps = steps if steps is not None else _scheme_pick(scheme, "steps", 20)
+    cfg = cfg if cfg is not None else _scheme_pick(scheme, "cfg", 7.0)
+    negative = (negative if negative is not None
+                else _scheme_pick(scheme, "negative", ""))
+    sampler = sampler or _scheme_pick(scheme, "sampler", "euler")
+    scheduler = scheduler or _scheme_pick(scheme, "scheduler", "normal")
+    ckpt = ckpt or _scheme_pick(scheme, "ckpt", CKPT_NAME)
 
     chain = BACKEND_ORDER if backend == "auto" else (backend,)
     last_err = None
@@ -389,14 +449,18 @@ def gen_image(backend: str = "auto", prompt: str = "", negative: str = "",
                               seed=seed, w=w, h=h, out_dir=out_dir, name=name,
                               lora=lora, lora_scale=lora_scale,
                               control_strength=control_strength,
-                              steps=steps, cfg=cfg, on_tick=on_tick, **kw)
-            meta = {"backend": bid, "prompt": prompt, "negative": negative,
+                              steps=steps, cfg=cfg, sampler=sampler,
+                              scheduler=scheduler, ckpt=ckpt,
+                              on_tick=on_tick, **kw)
+            meta = {"backend": bid, "scheme": scheme or bid,
+                    "prompt": prompt, "negative": negative,
                     "seed": res.get("seed"), "w": res.get("w"), "h": res.get("h"),
                     "refs": [os.path.abspath(r) for r in (refs or [])],
                     "lora": lora if bid == "sd15" else "",
                     "lora_scale": lora_scale if bid == "sd15" else 0,
                     "control_strength": control_strength if bid == "sd15" else 0,
-                    "steps": steps, "cfg": cfg,
+                    "steps": steps, "cfg": cfg, "sampler": sampler,
+                    "scheduler": scheduler, "ckpt": ckpt,
                     "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                     "note": res.get("note", "")}
             _write_sidecar(res["file"], meta)

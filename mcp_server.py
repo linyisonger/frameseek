@@ -1172,6 +1172,12 @@ def frameseek_generate_image(
             "sd15=本地 SD1.5 + 线稿 LoRA + canny ControlNet（2~5 秒，种子可复现，"
             "参考图走 canny 锁构图不漂，**重掷就靠它**）"
             )] = "auto",
+        scheme: Annotated[str, Field(default="realistic", description=
+            "出图方案（只对 sd15 本地后端生效，agnes 忽略）。"
+            "realistic=写实（base SD1.5 + 强负向词，靠提示词出写实图）；"
+            "cartoon=卡通/插画（base SD1.5 + 线稿 LoRA + canny 锁构图，"
+            "更贴分镜/插画风）。某个高级参数（lora/负向词/采样器等）没显式给时，"
+            "按方案默认值兜底")] = "realistic",
         negative: Annotated[str, Field(default="", description=
             "反向提示词（要避开的东西），如“多余手指、模糊、水印”。"
             "只有 sd15 后端吃这个参数，agnes 会忽略")] = "",
@@ -1234,11 +1240,12 @@ def frameseek_generate_image(
 
     try:
         res = img_mod.gen_image(backend=b, prompt=prompt,
-                                negative=(negative or "").strip(),
+                                negative=(negative.strip() if negative else None),
                                 refs=ref_list, seed=int(seed or 0),
                                 w=w, h=h, out_dir="",
                                 name=(name or "").strip(), steps=int(steps),
-                                cfg=float(cfg), on_tick=tick)
+                                cfg=float(cfg), scheme=(scheme or "realistic"),
+                                on_tick=tick)
     except ValueError as e:
         return _err(str(e))
     except Exception as e:
@@ -1302,7 +1309,8 @@ def frameseek_reroll_image(
         control_strength=(img_mod.DEFAULT_CONTROL_STRENGTH
                           if meta.get("control_strength") is None
                           else float(meta["control_strength"])),
-        steps=int(meta.get("steps") or 20), cfg=float(meta.get("cfg") or 7.0))
+        steps=int(meta.get("steps") or 20), cfg=float(meta.get("cfg") or 7.0),
+        scheme=meta.get("scheme") or "realistic")
     try:
         res = img_mod.gen_image(**kwargs)
     except Exception as e:

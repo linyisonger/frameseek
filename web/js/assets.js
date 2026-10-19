@@ -15,7 +15,7 @@ const PAGE = 48;   // 滚动分页每页条数
      q    文件名 / 库名关键词
      dur  逗号分隔的时长档 s30,m30,m5_20,l20
      sort time | mtime | name | lib
-     vid  + root：精确锁定某一部影片（素材库「影片列表」点进来用） */
+     vid  + root：精确锁定某一部影片（带 vid 的分享链接直达时用） */
 const URL_DUR = ['s30', 'm30', 'm5_20', 'l20'];
 const URL_SORT = ['time', 'mtime', 'name', 'lib'];
 
@@ -96,7 +96,7 @@ const AssetsView = {
     </div>
   </div>
 
-  <!-- 从素材库「影片列表」点进来 / URL 带 vid 时的锁定提示条 -->
+  <!-- URL 带 vid 时的锁定提示条 -->
   <el-alert v-if="pin.vid" type="primary" :closable="false" show-icon class="fs-pinalert">
     <template #title>
       <span class="fs-pinbar">
@@ -197,6 +197,8 @@ const AssetsView = {
           <video v-else class="fs-vvid" :src="hdUrl(row.it.file)" preload="metadata" muted playsinline
                  @click="openVid(row.it)"></video>
           <span class="fs-vtype" :class="row.it.type">{{ row.it.type === 'image' ? '图' : '▷' }}</span>
+          <el-button class="fs-aicard-del" size="small" circle type="danger"
+            @click="delAi(row.it)" title="删除源文件（不可恢复）"><el-icon><Delete/></el-icon></el-button>
         </div>
         <div class="fs-vmeta">
           <b :title="row.it.name">{{ row.it.name }}</b>
@@ -297,6 +299,19 @@ const AssetsView = {
 
     function openPic(it) { pic.value = it; picOn.value = true; }
     function openVid(it) { vid.value = it; vidOn.value = true; }
+    async function delAi(it) {
+      try {
+        await ElementPlus.ElMessageBox.confirm(
+          `将删除磁盘上的源文件（及同名参数留痕），<b>不可恢复</b>：<br>`
+          + `<code>${esc(it.name)}</code>`,
+          '删除 AI 生成素材', { dangerouslyUseHTMLString: true, type: 'warning',
+            confirmButtonText: '删除' });
+      } catch (e) { return; }
+      const r = await post('/api/ai-gallery/delete', { file: it.file });
+      if (!r || !r.ok) { toast('删除失败：' + ((r && r.err) || ''), 'error'); return; }
+      await loadAi();
+      toast('已删除：' + it.name, 'success');
+    }
     async function loadAi() {
       try {
         const arr = await api('/api/ai-gallery');
@@ -308,7 +323,7 @@ const AssetsView = {
     const showFilter = ref(false);
     const libSel = reactive({});          // { libId: bool }
     const durSel = ref([]);               // 时长分档
-    // 精确锁定某一部影片（从素材库「影片列表」点进来 / URL 带 vid）。
+    // 精确锁定某一部影片（URL 带 vid 时）。
     // 比"按文件名过滤"可靠得多：多库里同名片子（01.mp4）也能只命中一部。
     // name 记一份是为了判断"用户是不是自己改了关键词"——改了就不该继续锁着。
     const pin = reactive({ vid: null, root: '', name: '' });
@@ -420,19 +435,6 @@ const AssetsView = {
     const offRefresh = BUS.on('assets:refresh', reload);
     onUnmounted(offRefresh);
 
-    // 处理"打开这部影片"：清掉旧筛选，勾上这部影片所在的库，
-    // 用 vid 精确锁定，回到第一页。库信息只作辅助（URL 带上更好读）。
-    function applyOpen({ vid, name, root, lib_id } = {}) {
-      clearFilters(false);
-      kw.value = name || '';
-      if (lib_id != null && lib_id !== '' && lib_id !== undefined) libSel[lib_id] = true;
-      if (vid != null && vid !== '') {
-        pin.vid = +vid; pin.root = root || ''; pin.name = name || '';
-      }
-      showFilter.value = true;                  // 让用户能看到已设的筛选
-      limit.value = PAGE;
-    }
-
     // 从 URL 参数还原筛选（首屏直达 / 前进后退 / 别人发来的链接都走这里）
     function applyFromUrl(q) {
       clearFilters(false);
@@ -469,28 +471,6 @@ const AssetsView = {
       syncing = false;
     }
 
-    // 素材库页里点了某部影片的「查看」→ 切回素材页，并按这部影片筛。
-    // 用 pushState 而不是 replace：这是一次明确的跳转，用户能「后退」回素材库。
-    const offOpen = BUS.on('assets:open-by-vid', (payload) => {
-      applyOpen(payload || {});
-      S.pendingOpen = null;          // 事件已消费，别让 onActivated 再重复 apply 一遍
-      S.tab = 'assets';
-      syncUrl();
-    });
-    onUnmounted(offOpen);
-
-    /* 待办跳转：libs.js 同时把 open 写到了 S.pendingOpen，即便 assets 组件
-       还是首次挂载（BUS.emit 没人接）也能消费到。首次 mount 或 keep-alive
-       切回来都轮询一次。 */
-    function consumePending() {
-      const p = S.pendingOpen;
-      if (!p) return;
-      S.pendingOpen = null;
-      applyOpen(p);
-    }
-    onMounted(consumePending);
-    onActivated(consumePending);
-
     /* URL → 筛选。App 的 onMounted 里 Route.init() 可能在 assets 组件还没
        创建时就广播过了（首屏直达链接就是这种情况），所以组件自己也要主动读一次
        location.hash，不能只靠 BUS。 */
@@ -499,7 +479,6 @@ const AssetsView = {
               || (kw.value || '').trim() || pin.vid);
     }
     function consumeUrl() {
-      if (S.pendingOpen) { consumePending(); syncUrl(); return; }  // 待办优先
       const q = Route.parse().q;
       if (Object.keys(q).length) { applyFromUrl(q); return; }
       // URL 是空的但页面还留着筛选（切去别的页签再切回来）→ 把状态补回 URL，
@@ -529,7 +508,7 @@ const AssetsView = {
       }
       syncUrl();
     });
-    // pin 变化也要拨分页游标（applyOpen 里已经拨过，这里兜底保险）
+    // pin 变化也要拨分页游标（applyFromUrl 里已经拨过，这里兜底保险）
     watch(() => pin.vid, () => { limit.value = PAGE; });
     // 侧栏徽标显示的是命中条数（不只是当前已切片的那部分）
     watch(merged, m => { S.viewCount = m.length; }, { immediate: true });
@@ -698,7 +677,11 @@ const AssetsView = {
     onUnmounted(() => { if (io) { io.disconnect(); io = null; } });
 
     return {
-      kw, sort, aiItems, openPic, openVid, pic, picOn, vid, vidOn, showFilter, libSel, durSel,
+      // S 必须回传：模板里的空态文案要读 S.all（库里到底有没有素材），
+      // 不回传时模板拿不到 S，Vue 抛 "Cannot read properties of undefined (reading 'all')"，
+      // 整个组件渲染中断 —— 表现是「筛到一条不剩时整页空白」而不是显示空态提示。
+      S,
+      kw, sort, aiItems, openPic, openVid, delAi, pic, picOn, vid, vidOn, showFilter, libSel, durSel,
       allDone, loadingMore, sentinel, pin,
       allLibs, libsAll, view, rowKey, summary, picking, dlg, reOpt, asrOpt, asrEta,
       resetFilters, unpin, copyLink, onCmd, doRetranscribe, doAsr,
