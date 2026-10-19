@@ -3,7 +3,7 @@
 'use strict';
 const { reactive, ref, computed, onMounted, onActivated, onUnmounted } = Vue;
 const FS = window.FS;
-const { S, BUS, api, post, toast, startPoll, hdUrl } = FS;
+const { S, BUS, api, post, toast, startPoll, projMedia } = FS;
 
 // 尺寸预设（宽高都必须是 8 的倍数，256~1024——SD1.5 在 8G 卡的安全区）
 const SIZES = [
@@ -116,7 +116,7 @@ const AidrawView = {
     </div>
     <div v-for="it in items" :key="it.file" class="fs-acard" :title="it.name">
       <div class="fs-acard-img">
-        <img :src="hdUrl(it.file)" loading="lazy" @click="openZoom(it)" :title="'点此放大：' + it.name"/>
+        <img :src="projMedia(it.file)" loading="lazy" @click="openZoom(it)" :title="'点此放大：' + it.name"/>
         <el-button class="fs-acard-del" size="small" circle type="danger" @click="del(it)"
           title="删除源文件（不可恢复）"><el-icon><Delete/></el-icon></el-button>
       </div>
@@ -146,14 +146,14 @@ const AidrawView = {
       <div class="fs-acard-acts">
         <el-button link size="small" @click="openZoom(it)" title="放大查看"><el-icon><ZoomIn/></el-icon><span>放大</span></el-button>
         <el-button link size="small" :disabled="running" @click="reroll(it)" title="用同一组参数重掷（换新种子）"><el-icon><Refresh/></el-icon><span>重掷</span></el-button>
-        <el-button link size="small" tag="a" :href="hdUrl(it.file)" download :title="'下载：' + it.name"><el-icon><Download/></el-icon><span>下载</span></el-button>
+        <el-button link size="small" tag="a" :href="projMedia(it.file)" download :title="'下载：' + it.name"><el-icon><Download/></el-icon><span>下载</span></el-button>
         <el-button link size="small" @click="goAssets" title="去「素材」页查看（归入 AI 生成素材库）"><el-icon><Picture/></el-icon><span>去素材库</span></el-button>
       </div>
     </div>
   </div>
 
   <el-dialog v-model="zoomOn" width="62%" top="5vh" destroy-on-close class="fs-player-dlg">
-    <img v-if="zoom" :src="hdUrl(zoom.file)" style="width:100%;display:block"/>
+    <img v-if="zoom" :src="projMedia(zoom.file)" style="width:100%;display:block"/>
     <template #footer>
       <span class="dim" style="margin-right:12px">{{ zoom && zoom.meta.prompt }}</span>
       <el-button @click="zoomOn = false">关闭</el-button>
@@ -312,7 +312,7 @@ const AidrawView = {
       info, prompt, scheme, backend, sizeIdx, negative, steps, cfg, lora,
       controlStrength, seed, adv, refs, items, run, running, zoom, zoomOn,
       refFile, sizes, schemeLabel, submit, onEnter, pickRef, onRef, dropRef,
-      reroll, del, openZoom, goAssets, loadOutputs, hdUrl, fmtAgo: FS.fmtAgo,
+      reroll, del, openZoom, goAssets, loadOutputs, projMedia, fmtAgo: FS.fmtAgo,
     };
   },
 };

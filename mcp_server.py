@@ -42,7 +42,6 @@ from mcp.server.mcpserver import MCPServer  # noqa: E402
 
 from core import config as C  # noqa: E402
 from core import gen as gen_mod  # noqa: E402
-from core import handdraw as hd_mod  # noqa: E402
 from core import img_backend as img_mod  # noqa: E402
 from core import indexer as IX  # noqa: E402
 from core import media  # noqa: E402
@@ -67,7 +66,7 @@ server = MCPServer(C.APP_NAME, title=C.APP_LABEL, instructions=(
     "frameseek_export_clip 导出片段。\n"
     "\n"
     "【异步任务】frameseek_scan / frameseek_retranscribe / frameseek_transcribe_asr / "
-    "frameseek_generate_video / frameseek_handdraw_render / frameseek_handdraw_mix "
+    "frameseek_generate_video "
     "都立即返回、不等结果，之后用 frameseek_task 轮询（间隔至少 5~10 秒，别连打）。\n"
     "\n"
     "【找视频但不知道台词】用 frameseek_find_videos 按文件名/关键字找片，"
@@ -92,13 +91,6 @@ server = MCPServer(C.APP_NAME, title=C.APP_LABEL, instructions=(
     "backend=auto（默认，agnes→h3 降级）。提示词 H3 用英文、Agnes 可写中文。"
     "发起前用 frameseek_gen_info 看哪个后端就绪。\n"
     "\n"
-    "【白板手绘（另一条线，本地 CPU 不占 GPU，可与上面并行）】"
-    "frameseek_handdraw_info → frameseek_handdraw_init 建工程 → "
-    "frameseek_handdraw_scenes 出分幕建议 → 逐幕 frameseek_handdraw_annotate 写区域标注"
-    "（这是硬前置，结构见资源 frameseek://schema/handdraw-annotation）→ "
-    "frameseek_handdraw_region_preview 核对 → frameseek_handdraw_render 渲染 → "
-    "frameseek_handdraw_voice 试听配音（联网，需 allow_network=true）→ "
-    "frameseek_handdraw_mix 合成。手绘是分步的，别指望一句话出片。\n"
     "\n"
     "【读资源而不是逐个调工具】资源列表见 resources/list，常用的有："
     "frameseek://libraries（全部库+统计）、frameseek://tasks/running（在跑的任务）、"
@@ -342,38 +334,6 @@ def _gen_info() -> Dict[str, Any]:
         return {"ok": False, "err": f"{type(e).__name__}: {e}"}
 
 
-# ---------------- 白板手绘：异步任务 ----------------
-def _hd_job(root: str, tid: int, op: str, fn):
-    """白板手绘任务：渲染/混流较慢，进度写 tasks 表，和扫描/生成同一套通道。"""
-    st = IX.open_store(root)
-
-    def tick(pct, msg):
-        try:
-            st.tick_task(tid, int(pct or 0), msg)
-        except Exception:
-            pass
-
-    def job():
-        try:
-            res = fn(tick)
-            st.finish_task(tid, "done",
-                           res.get("note") or f"完成：{op}")
-        except Exception as e:
-            print(f"[frameseek-mcp] handdraw {op} 失败: {type(e).__name__}: {e}",
-                  file=sys.stderr)
-            try:
-                st.finish_task(tid, "error", f"{type(e).__name__}: {e}")
-            except Exception:
-                pass
-    return job
-
-
-def _hd_info() -> Dict[str, Any]:
-    """白板手绘引擎现状。"""
-    try:
-        return {"ok": True, **hd_mod.engine_info()}
-    except Exception as e:
-        return {"ok": False, "err": f"{type(e).__name__}: {e}"}
 
 
 # ---------------- 工具：总览 ----------------
@@ -420,7 +380,7 @@ def frameseek_list_libraries() -> str:
 def frameseek_doctor() -> str:
     """一键体检：调用任何其它工具前，或工具报错看不懂时，先跑这个。
 
-    一次给全：Python/ffmpeg/OCR/ASR/生成引擎/手绘引擎的可用性，
+    一次给全：Python/ffmpeg/OCR/ASR/生成引擎的可用性，
     每个库的状态（目录在不在、索引了没、素材数/台词数/台词来源），
     还有正在跑的任务和它们的进度。
     `problems` 里非空就是真有问题，照着它给的建议处理即可。
@@ -439,7 +399,6 @@ def frameseek_doctor() -> str:
     ocr = ocr_mod.engine_info()
     asr = _asr_device()
     gen = _gen_info()
-    hd = _hd_info()
     if not ocr.get("ok"):
         problems.append("OCR 引擎不可用（纯 OCR 的素材不会有台词）：" +
                         str(ocr.get("err") or ocr.get("missing") or ""))
@@ -472,7 +431,7 @@ def frameseek_doctor() -> str:
                "videos": sum(l["videos"] for l in libs),
                "lines": sum(l["lines"] for l in libs),
                "duration": round(sum(l["duration"] for l in libs), 1)},
-        engines={"ocr": ocr, "asr": asr, "gen": gen, "handdraw": hd,
+        engines={"ocr": ocr, "asr": asr, "gen": gen, 
                  "ffmpeg": bool(_ffmpeg_ok())},
         running=running,
         note=("一切正常。典型用法：frameseek_search 找片 → frameseek_export_clip 导出"
@@ -1155,7 +1114,7 @@ def frameseek_img_info() -> str:
                default="agnes",
                out_dir=img_mod.paint_dir(),
                hint=("没有后端就绪时只能出视频（frameseek_generate_video）"
-                     "或手绘（frameseek_handdraw_*）"
+                     
                      if not ready else ""))
 
 
@@ -1458,293 +1417,6 @@ def frameseek_generate_video(
                         "backend=h3 本地子进程冷启动 + 12 步采样，"
                         "5 秒片段约 10 分钟、10 秒片约 40 分钟",
                note="用 frameseek_task 查进度")
-
-
-# ---------------- 工具：白板手绘视频 ----------------
-@server.tool()
-def frameseek_handdraw_info() -> str:
-    """白板手绘视频引擎现状：本地 CPU 逐笔渲染引擎是否就绪、缺哪些包、
-    默认音色、纸张底色、成片落哪个子目录。生成手绘视频前先看这个。
-    不占 GPU，可与 MiniMax H3 生成并行。"""
-    return json.dumps(_hd_info(), ensure_ascii=False)
-
-
-Project = Annotated[str, Field(description=
-    "工程目录名（frameseek_handdraw_init 返回的 project 值），"
-    "之后每一步都用它指认同一个工程")]
-SceneId = Annotated[str, Field(description="幕 id（frameseek_handdraw_scenes "
-                             "返回的 scene 编号，如 scene-01）")]
-
-
-@server.tool()
-def frameseek_handdraw_init(
-        script: Annotated[str, Field(default="", description=
-            "文字稿 .txt 的绝对路径。引擎按句拆成字幕并**预估**时间轴"
-            "（不是配音对齐结果，后面试听配音时才会定）")] = "",
-        srt: Annotated[str, Field(default="", description=
-            "已有 .srt 字幕的绝对路径，给了就保留原时间轴。"
-            "script / srt 至少给一个")] = "",
-        name: Annotated[str, Field(default="",
-                                    description="工程目录名，省略则用 title 或源文件名")] = "",
-        title: Annotated[str, Field(default="",
-                                    description="片名，写进 project.json")] = "",
-        root: Root = "") -> str:
-    """白板手绘第 1 步：用文稿（或已有 SRT）建一个手绘工程，返回工程目录名。
-
-    工程落在 <项目根>/AI生成/手绘/<name>/，之后所有 handdraw 工具都用
-    返回的 `project` 指认。同名工程已存在会报错（不覆盖）——换 name 或先删旧的。
-
-    返回后接 frameseek_handdraw_scenes 出分幕建议，再逐幕生成线稿+标注。
-    """
-    r = pick_root(root)
-    if not r or not os.path.isdir(r):
-        return _err("需要一个可用素材库来记录任务进度（工程本身在项目目录下）",
-                    "root 只是用来记任务进度，随便给一个已登记的库；"
-                    "或省略 root 走激活库")
-    try:
-        if not hd_mod.engine_ready():
-            raise ValueError("手绘引擎未就绪，缺：" +
-                             ", ".join(hd_mod.engine_info()["missing"]))
-        res = hd_mod.init_project(root=r, script=script, srt=srt,
-                                  title=title, name=name)
-    except ValueError as e:
-        return _err(str(e),
-                    "script 必须是 .txt、srt 必须是 .srt，且文件得存在；"
-                    "工程名重复就换 name")
-    except Exception as e:
-        return _err(f"{type(e).__name__}: {e}")
-    res["root"] = r
-    res["next"] = "出分幕建议：frameseek_handdraw_scenes"
-    return _ok(**res)
-
-
-@server.tool()
-def frameseek_handdraw_scenes(
-        project: Project,
-        target_sec: Annotated[int, Field(default=30, ge=10, le=120, description=
-            "每幕目标秒数（默认 30，建议 25~35）。纯按字幕条数均分，"
-            "定完可以自己再调")] = 30,
-        root: Root = "") -> str:
-    """白板手绘第 2 步：读工程字幕，给分幕建议（纯本地，不生图、不花钱）。
-
-    返回字幕条（index/startMs/endMs/text）和分幕建议
-    （sceneIndex/cueRange 覆盖的字幕号/suggested 时长），用来定分幕策略。
-    纯解析，下一步要自己准备每一幕的线稿图。
-    """
-    r = pick_root(root)
-    if not r or not os.path.isdir(r):
-        return _err("未指定素材库（仅用于记录任务进度，工程不在库里）",
-                                   hint="用 frameseek_list_libraries 取一个库 的 path 传进来，或省略 root 走激活库")
-    try:
-        res = hd_mod.suggest_scenes(root=r, project=project,
-                                    target_sec=int(target_sec))
-    except Exception as e:
-        return _err(f"{type(e).__name__}: {e}")
-    res["project"] = project
-    res["root"] = r
-    return _ok(**res)
-
-
-@server.tool()
-def frameseek_handdraw_annotate(
-        project: Project,
-        scene_id: SceneId,
-        image: Annotated[str, Field(description=
-            "这一幕的源线稿 png **绝对路径**：暖米黄纸底、无文字、留白充足，"
-            "且文件名与你要传的 annotation 内容对应")],
-        annotation: Annotated[str, Field(description=
-            "标注 JSON **字符串**（不是对象，要自己 JSON.stringify）。"
-            "完整 schema + 可直接改用的示例见资源 frameseek://schema/handdraw-annotation；"
-            "必填 canvas{width,height}=源图像素 与 elements[]，"
-            "每个 element 含 sequence / narrativeRole / region{x,y,width,height} / "
-            "reveal{startMs,durationMs,direction,protectedRegions} / handPath。"
-            "**sequence 与 reveal.startMs 必须按字幕叙事顺序，不是从左到右**")],
-        root: Root = "") -> str:
-    """白板手绘第 3 步：给某一幕写「区域标注」，**渲染的硬前置**（不写就没法渲）。
-
-    engine 会校验：canvas 必须等于源图像素宽高、region 必须在画布内、
-    sequence 顺序与 startMs 单调递增。不对会直接报错，什么都不会写。
-    image 与 annotation 自动拷进工程 scenes/ 并登记进 project.json；
-    同名 scene_id 再调会覆盖（方便重标）。
-
-    标注写完先用 frameseek_handdraw_region_preview 出编号检查图核对一遍，
-    确认「分区编号顺序 == 字幕叙事顺序」再渲染，否则时序会乱。
-    """
-    r = pick_root(root)
-    if not r or not os.path.isdir(r):
-        return _err("未指定素材库（仅用于记录任务进度，工程不在库里）",
-                                   hint="用 frameseek_list_libraries 取一个库 的 path 传进来，或省略 root 走激活库")
-    ann = None
-    try:
-        ann = json.loads(annotation) if isinstance(annotation, str) else annotation
-    except Exception as e:
-        return _err(f"annotation 不是合法 JSON：{e}",
-                    "它必须是**字符串化**的 JSON 对象。"
-                    "先读资源 frameseek://schema/handdraw-annotation 拿模板再填")
-    try:
-        res = hd_mod.write_annotation(root=r, project=project,
-                                      scene_id=scene_id, image=image,
-                                      annotation=ann)
-    except ValueError as e:
-        return _err(str(e),
-                    "对照资源 frameseek://schema/handdraw-annotation 检查："
-                    "canvas 宽高是否等于源图像素、region 是否越界、"
-                    "sceneId 是否填了、sequence/startMs 是否按叙事顺序递增")
-    except Exception as e:
-        return _err(f"{type(e).__name__}: {e}")
-    res["project"] = project
-    res["next"] = ("核对分区：frameseek_handdraw_region_preview → "
-                   "渲染：frameseek_handdraw_render")
-    return _ok(**res)
-
-
-@server.tool()
-def frameseek_handdraw_region_preview(project: Project, scene_id: SceneId,
-                                      root: Root = "") -> str:
-    """白板手绘第 4 步：出某幕的编号/方向检查图，核对分区与叙事顺序一致、
-    区域都在画布内。渲染前建议先跑一次（纯本地，很快）。"""
-    r = pick_root(root)
-    if not r or not os.path.isdir(r):
-        return _err("未指定素材库（仅用于记录任务进度，工程不在库里）",
-                                   hint="用 frameseek_list_libraries 取一个库 的 path 传进来，或省略 root 走激活库")
-    try:
-        res = hd_mod.region_preview(root=r, project=project, scene_id=scene_id)
-    except Exception as e:
-        return _err(f"{type(e).__name__}: {e}")
-    res["project"] = project
-    return _ok(**res)
-
-
-@server.tool()
-def frameseek_handdraw_render(
-        project: Project,
-        scene_id: SceneId,
-        preview_ms: Annotated[int, Field(default=0, ge=0, le=60000, description=
-            "只渲前几毫秒 = 快速试笔迹效果（调标注时用，省时间）；"
-            "0 = 渲完整一幕")] = 0,
-        root: Root = "") -> str:
-    """白板手绘第 5 步：渲染单幕手绘 mp4（本地 CPU 逐笔流式渲染，不占 GPU）。
-
-    **前置**：这一幕必须已经写过标注（frameseek_handdraw_annotate），否则渲不了。
-    调标注阶段建议 preview_ms=3000 快速试笔迹，定稿再渲完整。
-    异步：立即返回 task_id，用 frameseek_task 轮询（间隔 10 秒以上），
-    成片在工程 output/ 下。同一幕不能同时渲两个。
-    """
-    r = pick_root(root)
-    if not r or not os.path.isdir(r):
-        return _err("未指定素材库（仅用于记录任务进度，工程不在库里）",
-                                   hint="用 frameseek_list_libraries 取一个库 的 path 传进来，或省略 root 走激活库")
-    try:
-        hd_mod.project_json(r, project)   # 校验工程存在
-    except Exception as e:
-        return _err(str(e))
-    st = IX.open_store(r)
-    tid = st.new_task("handdraw", r, 100)
-    key = f"hd-render-{project}-{scene_id}"
-    params = {"project": project, "scene_id": scene_id,
-              "preview_ms": int(preview_ms or 0), "root": r}
-
-    def fn(tick):
-        tick(5, "渲染中")
-        res = hd_mod.render_scene(**params)
-        res["note"] = f"完成：{os.path.basename(res.get('output') or '')}"
-        return res
-
-    if not _bg(key, _hd_job(r, tid, "render", fn)):
-        st.finish_task(tid, "error", "该幕已有渲染任务在进行中")
-        return _err("这一幕已经在渲染了，先用 frameseek_task 看进度")
-    return _ok(started=True, task_id=tid, root=r, **params,
-               eta_hint="本地 CPU 逐笔渲染，单幕几十秒~几分钟",
-               note="用 frameseek_task 查进度")
-
-
-@server.tool()
-def frameseek_handdraw_voice(
-        text: Annotated[str, Field(description=
-            "试听文案，10~20 秒最合适，最好含数字和问句（最能听出色色的区别）")],
-        voices: Annotated[Optional[List[str]], Field(default=None, description=
-            "音色列表，如 ['zh-CN-XiaoxiaoNeural','zh-CN-YunxiNeural']；"
-            "省略用默认 zh-CN-XiaoxiaoNeural（晓晓）。给多个会各自输出一份试听文件")] = None,
-        allow_network: Annotated[bool, Field(default=False, description=
-            "**必须显式传 true**：这是 Edge TTS 在线服务，会把 text 发到微软服务器。"
-            "其余所有工具都是全本地的，只有这一个要联网")] = False,
-        project: Annotated[str, Field(default="",
-                                       description="工程名（可选）：给了就存进该工程，"
-                                                   "省得混流时找不到")] = "",
-        root: Root = "") -> str:
-    """白板手绘第 6 步：配音音色试听（Edge TTS，免账号、在线合成）。
-
-    这是**唯一联网**的工具——正式混流（第 7 步）内部也走它。
-    用户还没同意联网时不要调这个，先说明会把文案发到微软的在线服务。
-    """
-    if not allow_network:
-        return _err("配音是联网合成，需 allow_network=true 显式许可",
-                    "这一步会把试听文案发到微软 Edge TTS 在线服务。"
-                    "先跟用户确认愿意联网，再传 allow_network=true 重调")
-    r = pick_root(root) if (root or project) else None
-    try:
-        res = hd_mod.audition_voice(text=text, voices=voices,
-                                    allow_network=True, root=r or "",
-                                    project=project)
-    except Exception as e:
-        return _err(f"{type(e).__name__}: {e}")
-    return _ok(**res)
-
-
-@server.tool()
-def frameseek_handdraw_mix(
-        project: Project,
-        index: Annotated[str, Field(default="none",
-                                    description="已停用的兼容参数，保持 none")] = "none",
-        root: Root = "") -> str:
-    """白板手绘第 7 步：配音 + 伴奏混流，合成最终 mp4。**这是终态，出片在这里。**
-
-    需要工程时间轴已定（先试听配音再 mix）。
-    成片落工程 output/，同时另存一份到 <项目根>/AI生成/<工程名>.mp4。
-    不进素材库索引（index 参数已停用）。
-    异步：立即返回 task_id，用 frameseek_task 轮询（间隔 10 秒以上）。
-    """
-    r = pick_root(root)
-    if not r or not os.path.isdir(r):
-        return _err("未指定素材库（仅用于记录任务进度，工程不在库里）",
-                                   hint="用 frameseek_list_libraries 取一个库 的 path 传进来，或省略 root 走激活库")
-    try:
-        hd_mod.project_json(r, project)
-    except Exception as e:
-        return _err(str(e),
-                    "工程名不对。用 frameseek_handdraw_init 返回的 project 值")
-    st = IX.open_store(r)
-    tid = st.new_task("handdraw", r, 100)
-    key = f"hd-mix-{project}"
-    params = {"project": project, "index": index, "root": r}
-
-    def fn(tick):
-        tick(5, "合成中（配音+伴奏）")
-        res = hd_mod.mix(**params)
-        res["note"] = f"完成：{os.path.basename(res.get('file') or '')}"
-        return res
-
-    if not _bg(key, _hd_job(r, tid, "mix", fn)):
-        st.finish_task(tid, "error", "该工程已有混流任务在进行中")
-        return _err("这个工程已经在混流了，先用 frameseek_task 看进度")
-    return _ok(started=True, task_id=tid, root=r, **params,
-               eta_hint="Edge TTS 逐条配音 + 本地伴奏合成 + 编码",
-               note="用 frameseek_task 查进度")
-
-
-@server.tool()
-def frameseek_handdraw_qa(project: Project, root: Root = "") -> str:
-    """白板手绘第 8 步：质检——帧数 / 时长 / 音画长度一致性（纯读工程文件）。"""
-    r = pick_root(root)
-    if not r or not os.path.isdir(r):
-        return _err("未指定素材库（仅用于记录任务进度，工程不在库里）",
-                                   hint="用 frameseek_list_libraries 取一个库 的 path 传进来，或省略 root 走激活库")
-    try:
-        res = hd_mod.qa(root=r, project=project)
-    except Exception as e:
-        return _err(f"{type(e).__name__}: {e}")
-    res["project"] = project
-    return _ok(**res)
 
 
 # ---------------- 工具：校验 / 复查 ----------------
@@ -2171,94 +1843,6 @@ def _res_img_backends() -> str:
     })
 
 
-@server.resource("frameseek://schema/handdraw-annotation",
-                 name="白板手绘区域标注 schema",
-                 description="frameseek_handdraw_annotate 的 annotation 参数"
-                             "完整字段说明 + 可直接改用的示例。"
-                             "写标注前必须读这个。",
-                 mime_type="application/json")
-def _res_annotation_schema() -> str:
-    return _j({
-        "how_to_use": [
-            "1. 先用 frameseek_handdraw_scenes 拿字幕条和分幕建议",
-            "2. 为这一幕准备一张源线稿 png（暖米黄纸底、无文字、留白充足）",
-            "3. 读本 schema，照着下面的示例写 annotation JSON",
-            "4. **序列按字幕叙事顺序排**，不是按画面从左到右",
-            "5. canvas.width/height 必须等于源图的真实像素（可用 PIL 读）",
-            "6. 调完用 frameseek_handdraw_region_preview 核对，渲染前 preview_ms=3000 试笔迹",
-        ],
-        "top_level_fields": {
-            "sceneId": "必填，幕 id，与工具参数 scene_id 一致",
-            "canvas": "必填 {width,height} = 源图像素；引擎会校验 region 是否越界",
-            "storyBasis": "选填，一句话写清这一幕画的是什么（给人看的）",
-            "sceneDurationMs": "选填但建议给，这一幕的总时长（毫秒）",
-            "elements": "必填，数组，按 sequence 升序",
-        },
-        "element_fields": {
-            "id": "选填，元素标识，英文短名",
-            "label": "选填，中文名（检查图上会标这个）",
-            "sequence": "必填，1..N，**叙事顺序**。比如先铺垫再冲突，不能按画面左右排",
-            "narrativeRole": "必填，这一块的叙事作用，如 场景铺垫/动作冲突/反应结果/重点强调",
-            "subtitle": "选填，对应的字幕原文",
-            "type": "选填 structure / character / object / chart 等",
-            "region": "必填 {x,y,width,height}，左上角原点在画布左上角",
-            "reveal": "必填 {startMs,durationMs,direction,protectedRegions}",
-            "handPath": "选填 {start:[x,y],end:[x,y],easing}，笔迹起止点，"
-                        "默认沿 region 的竖直中线从上到下",
-        },
-        "reveal_fields": {
-            "startMs": "相对这一幕开头的毫秒，必须与 sequence 顺序一致地递增",
-            "durationMs": "这一块画完用多久（笔迹动画时长）",
-            "direction": "top_to_bottom / left_to_right / bottom_to_top / right_to_left",
-            "maskPaddingPx": "选填，笔迹边缘留白，默认 22",
-            "protectedRegions": "选填数组，别被笔迹覆盖的区域（已画好的内容）",
-        },
-        "example": {
-            "sceneId": "scene-01",
-            "canvas": {"width": 1672, "height": 941},
-            "storyBasis": "示例：三点式对比",
-            "sceneDurationMs": 8600,
-            "elements": [
-                {"id": "left", "label": "左侧场景", "sequence": 1,
-                 "narrativeRole": "场景铺垫", "subtitle": "这里是铺垫的台词。",
-                 "type": "structure",
-                 "region": {"x": 20, "y": 120, "width": 540, "height": 780},
-                 "reveal": {"direction": "top_to_bottom", "startMs": 300,
-                            "durationMs": 2600, "maskPaddingPx": 22,
-                            "protectedRegions": []},
-                 "handPath": {"start": [290, 130], "end": [290, 890],
-                              "easing": "easeInOut"}},
-                {"id": "center", "label": "中间主体", "sequence": 2,
-                 "narrativeRole": "动作冲突", "subtitle": "这里是冲突的台词。",
-                 "type": "character",
-                 "region": {"x": 560, "y": 100, "width": 560, "height": 800},
-                 "reveal": {"direction": "top_to_bottom", "startMs": 3000,
-                            "durationMs": 2600, "maskPaddingPx": 22,
-                            "protectedRegions": []},
-                 "handPath": {"start": [840, 110], "end": [840, 890],
-                              "easing": "easeInOut"}},
-                {"id": "right", "label": "右侧反应", "sequence": 3,
-                 "narrativeRole": "反应结果", "subtitle": "这里是结果的台词。",
-                 "type": "character",
-                 "region": {"x": 1120, "y": 140, "width": 532, "height": 760},
-                 "reveal": {"direction": "top_to_bottom", "startMs": 5700,
-                            "durationMs": 2400, "maskPaddingPx": 22,
-                            "protectedRegions": []},
-                 "handPath": {"start": [1380, 150], "end": [1380, 880],
-                              "easing": "easeInOut"}},
-            ],
-        },
-        "common_mistakes": [
-            "sequence 按画面从左到右排 → 笔迹时序和字幕对不上，播出来很怪",
-            "canvas 尺寸填错（用了缩放后的值）→ region 越界，直接被拒",
-            "startMs 忘了递增或与 sequence 冲突 → 渲染崩",
-            "region 之间重叠 → 后一个的笔迹会划穿前一个，该用 protectedRegions 挡",
-        ],
-        "full_doc": "更细的视觉规范见 skill srt-whiteboard-animation 的 "
-                    "references/annotation-format.md 与 visual-spec.md",
-    })
-
-
 @server.resource("frameseek://tool-catalog",
                  name="工具速查表",
                  description="按「我想干什么」组织的工具索引——"
@@ -2281,23 +1865,10 @@ def _res_catalog() -> str:
             "「这片没台词」": "frameseek_retranscribe（有字幕的）/ "
                            "frameseek_transcribe_asr（没字幕的）",
             "「生成 AI 视频」": "frameseek_gen_info → frameseek_generate_video（异步）",
-            "「做白板手绘视频」": "手绘管线 8 步，见下「白板手绘」",
         },
         "三条铁律": [
             "1. 多库场景 root 必须带：video_id / line_id 只在各自库内唯一，跨库撞号",
             "2. 异步工具立即返回不等待，之后用 frameseek_task 轮询，间隔 5~10 秒",
-            "3. 唯一联网的工具是 frameseek_handdraw_voice，必须显式 allow_network=true",
-        ],
-        "白板手绘管线": [
-            "1 frameseek_handdraw_info 看引擎",
-            "2 frameseek_handdraw_init 用文稿/字幕建工程",
-            "3 frameseek_handdraw_scenes 出分幕建议",
-            "4 准备每幕线稿 png",
-            "5 frameseek_handdraw_annotate 写区域标注（硬前置，先读资源 frameseek://schema/handdraw-annotation）",
-            "6 frameseek_handdraw_region_preview 核对分区与叙事顺序",
-            "7 frameseek_handdraw_render 逐幕渲染（异步，preview_ms 先试笔迹）",
-            "8 frameseek_handdraw_voice 试听配音（联网）→ frameseek_handdraw_mix 合成",
-            "9 frameseek_handdraw_qa 质检",
         ],
         "参数速记": {
             "root": "素材库绝对路径；从任何查询结果里原样复制",

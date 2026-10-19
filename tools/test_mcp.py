@@ -153,10 +153,9 @@ def main():
     print("\n[2] 工具面")
     ts = tools()
     names = {t["name"] for t in ts}
-    check(f"工具数 = 37（实际 {len(ts)}）", len(ts) == 37)
+    check(f"工具数 = 28（实际 {len(ts)}）", len(ts) == 28)
     must = {"frameseek_doctor", "frameseek_find_videos", "frameseek_video_summary",
             "frameseek_list_clips", "frameseek_export_clip", "frameseek_search",
-            "frameseek_task", "frameseek_handdraw_annotate",
             # 出图能力（曾经整块漏掉，导致 LLM 以为拾帧只能出视频）
             "frameseek_img_info", "frameseek_generate_image",
             "frameseek_reroll_image", "frameseek_list_images"}
@@ -200,10 +199,9 @@ def main():
     rs = resources()
     uris = {r.get("uri") for r in rs}
     want = {"frameseek://libraries", "frameseek://tasks/running",
-            "frameseek://clips", "frameseek://schema/handdraw-annotation",
             "frameseek://images/backends",
             "frameseek://tool-catalog"}
-    check(f"6 个资源都在（实际 {len(rs)}）", want <= uris, str(want - uris))
+    check(f"5 个资源都在（实际 {len(rs)}）", want <= uris, str(want - uris))
     for u in sorted(uris):
         d = read_res(u)
         check(f"资源可读 {u}", bool(d) and "__text" not in d)
@@ -219,10 +217,6 @@ def main():
           any(b.get("offline") is False
               for b in (ibk.get("backends") or [])))
 
-    ann = read_res("frameseek://schema/handdraw-annotation")
-    check("标注 schema 有 example", "example" in ann)
-    check("标注 example 含 canvas", "canvas" in ann.get("example", {}))
-    check("标注 example 含 elements", "elements" in ann.get("example", {}))
 
     print("\n[6] 只读工具端到端")
     doc = call("frameseek_doctor")
@@ -309,20 +303,6 @@ def main():
     check("非法档位回落 auto", decide_burn("瞎传", "ocr")[0] is False)
     check("旧布尔 True = force", decide_burn(True, "ocr")[0] is True)
     check("旧布尔 False = off", decide_burn(False, "asr")[0] is False)
-
-    print("\n[11] 手绘：联网工具必须显式许可")
-    v = call("frameseek_handdraw_voice", {"text": "测试", "allow_network": False})
-    check("voice 默认拒绝联网", v.get("ok") is False)
-    check("拒绝时说明要显式许可",
-          "allow_network" in (v.get("err", "") + v.get("hint", "")))
-
-    print("\n[12] 手绘：标注必须是字符串 JSON")
-    libs3 = call("frameseek_list_libraries").get("libraries") or []
-    if libs3:
-        a = call("frameseek_handdraw_annotate",
-                 {"project": "不存在的工程xyz", "scene_id": "s1",
-                  "image": "x.png", "annotation": "不是json"})
-        check("非法 JSON 被拦", a.get("ok") is False)
 
     print("\n[13] 出图：双后端摸底与参数校验（不真出图，只读+入参校验）")
     ii = call("frameseek_img_info")

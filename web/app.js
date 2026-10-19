@@ -1,6 +1,6 @@
 /* 拾帧 FrameSeek · 前端引导（只做装配与挂载，业务逻辑拆在 web/js/*.js）
    加载顺序（index.html）：vue / element-plus / zh-cn / icons →
-   js/state.js → js/{libs,search,assets,gen,handdraw,box,clips}.js → 本文件。 */
+   js/state.js → js/{libs,search,assets,gen,box,clips}.js → 本文件。 */
 (function () {
 'use strict';
 const { reactive, computed, ref, watch, onMounted, onUnmounted, onActivated, nextTick } = Vue;
@@ -12,7 +12,7 @@ const { S, LIVE, PHASE, Route, api, post, esc, toast, loadLibs, addClips,
 const App = {
   components: {
     LibsView: FS.LibsView, SearchView: FS.SearchView, AssetsView: FS.AssetsView,
-    GenView: FS.GenView, AidrawView: FS.AidrawView, HanddrawView: FS.HanddrawView,
+    GenView: FS.GenView, AidrawView: FS.AidrawView,
     BoxView: FS.BoxView, ClipsView: FS.ClipsView,
   },
   setup() {

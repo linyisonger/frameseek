@@ -208,34 +208,6 @@ try:
     check(bool(d and not d.get("ok") and d.get("err")),
           f"非法 index 被挡回: {d.get('err') if d else '?'}")
 
-    # ---- 白板手绘工具（info 实调 + 参数校验，不真渲染） ----
-    d = call("frameseek_handdraw_info")
-    check(bool(d and d.get("ok") and d.get("engine")), "frameseek_handdraw_info 返回 ok")
-    if d:
-        print(f"    手绘引擎: {d.get('engine')} ready={d.get('ready')} "
-              f"缺={d.get('missing') or '无'} 音色={d.get('default_voice')}")
-
-    d = call("frameseek_handdraw_init", {"script": "no_such_file.txt", "root": TESTLIB})
-    check(bool(d and not d.get("ok") and d.get("err")),
-          f"手绘 init 缺文件被挡回: {d.get('err') if d else '?'}")
-    d = call("frameseek_handdraw_init", {"script": "", "srt": "", "root": TESTLIB})
-    check(bool(d and not d.get("ok") and d.get("err")),
-          f"手绘 init 空输入被挡回: {d.get('err') if d else '?'}")
-    d = call("frameseek_handdraw_scenes", {"project": "不存在的工程", "root": TESTLIB})
-    check(bool(d and not d.get("ok") and d.get("err")),
-          f"手绘 scenes 工程不存在被挡回: {d.get('err') if d else '?'}")
-    d = call("frameseek_handdraw_render", {"project": "不存在的工程",
-                                           "scene_id": "scene-01", "root": TESTLIB})
-    check(bool(d and not d.get("ok") and d.get("err")),
-          f"手绘 render 工程不存在被挡回: {d.get('err') if d else '?'}")
-    d = call("frameseek_handdraw_voice", {"text": "试听"})
-    check(bool(d and not d.get("ok") and d.get("err")),
-          f"手绘 voice 无联网许可被挡回: {d.get('err') if d else '?'}")
-    d = call("frameseek_handdraw_annotate",
-             {"project": "不存在的工程", "scene_id": "s1", "image": "x.png",
-              "annotation": "{坏JSON", "root": TESTLIB})
-    check(bool(d and not d.get("ok") and d.get("err")),
-          f"手绘 annotate 坏 JSON 被挡回: {d.get('err') if d else '?'}")
 
     # ---- 异步工具 + 进度轮询 ----
     d = call("frameseek_scan", {"path": TESTLIB})

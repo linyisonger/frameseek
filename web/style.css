@@ -293,7 +293,7 @@ code {
 /* 页头：8 个页签统一同一套——标题块与右侧工具条**垂直居中**（原先 flex-start，
    assets 那种「工具条只有 26px 高、标题块 46px」的页会出现工具条贴顶、
    下方空一截的观感），并统一补一条极浅的下分隔线。
-   gen / aidraw / hd 三页原先各自在页头后塞了一个 el-divider 当分隔线，
+   gen / aidraw 两页原先各自在页头后塞了一个 el-divider 当分隔线，
    已删除，改由这里统一承担，避免「有的页有横线有的页没有」。 */
 .fs-page-hd {
   display: flex; align-items: center; justify-content: space-between;
@@ -398,7 +398,7 @@ code {
   /* EP 的基础规则是 `display:inline-flex; justify-content:flex-end`（为 label 在
      右侧的 label-position 服务）。本项目统一用 label-position="top"，
      这里覆盖了 display 却没覆盖 justify-content，于是所有 top 页签的 label
-     都被推到各自列的最右边：手绘页的「讲解内容」直接飘到 textarea 右上角，
+     都被推到各自列的最右边：AI 绘画页的控件 label 直接飘到右上角，
      检索页四个筛选 label 也全部贴右，看着像「没对齐」。
      显式改成 flex-start，label 与它的控件左边缘对齐。 */
   justify-content: flex-start;
@@ -745,7 +745,7 @@ code {
 }
 .fs-loadmore .el-icon { font-size: 15px; }
 
-/* ---------- AI 生成 / 手绘（对话） ---------- */
+/* ---------- AI 生成 / AI 绘画（对话） ---------- */
 .fs-page-gen, .fs-page-aidraw { display: flex; flex-direction: column; height: calc(100vh - 78px); }
 /* AI 绘画仿 AI 生成：生成后的图在中间气泡里居中 */
 .fs-page-aidraw .fs-bub { max-width: 88%; }
@@ -841,9 +841,6 @@ code {
   margin-top: 9px; padding: 12px 12px 2px; border-radius: 8px; background: var(--fs-fill-1);
 }
 
-/* 手绘：聊天区限高，别把 composer 顶出屏幕 */
-.fs-hdchat { max-height: 380px; }
-.fs-hd-simple .fs-hint { margin-top: 4px; }
 
 /* ---------- 方框复查 ---------- */
 .fs-page-box { display: flex; flex-direction: column; height: calc(100vh - 78px); }

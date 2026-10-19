@@ -3,7 +3,7 @@
 'use strict';
 const { reactive, computed, ref, watch, onMounted, onUnmounted, onActivated, nextTick } = Vue;
 const FS = window.FS;
-const { S, BUS, api, post, toast, play, mediaUrl, fmtDur, loadLibs, startPoll, esc, hdUrl } = FS;
+const { S, BUS, api, post, toast, play, mediaUrl, fmtDur, loadLibs, startPoll, esc, projMedia } = FS;
 const Route = FS.Route;
 
 const PAGE = 48;   // 滚动分页每页条数
@@ -193,8 +193,8 @@ const AssetsView = {
       <!-- AI 生成产物（图片 / 未进索引的视频）：简化卡片，点开看大图或播放 -->
       <div v-else class="fs-vcard fs-aicard" :title="row.it.name">
         <div class="fs-vthumb">
-          <img v-if="row.it.type === 'image'" class="fs-vimg" :src="hdUrl(row.it.file)" loading="lazy" @click="openPic(row.it)"/>
-          <video v-else class="fs-vvid" :src="hdUrl(row.it.file)" preload="metadata" muted playsinline
+          <img v-if="row.it.type === 'image'" class="fs-vimg" :src="projMedia(row.it.file)" loading="lazy" @click="openPic(row.it)"/>
+          <video v-else class="fs-vvid" :src="projMedia(row.it.file)" preload="metadata" muted playsinline
                  @click="openVid(row.it)"></video>
           <span class="fs-vtype" :class="row.it.type">{{ row.it.type === 'image' ? '图' : '▷' }}</span>
           <el-button class="fs-aicard-del" size="small" circle type="danger"
@@ -264,12 +264,12 @@ const AssetsView = {
 
   <!-- AI 生成素材：图片大图 / 视频播放 -->
   <el-dialog v-model="picOn" width="62%" top="5vh" destroy-on-close class="fs-player-dlg">
-    <img v-if="pic" :src="hdUrl(pic.file)" style="width:100%;display:block"/>
+    <img v-if="pic" :src="projMedia(pic.file)" style="width:100%;display:block"/>
     <template #footer><span class="dim">{{ pic && pic.name }}</span>
       <el-button @click="picOn = false">关闭</el-button></template>
   </el-dialog>
   <el-dialog v-model="vidOn" width="62%" top="5vh" destroy-on-close class="fs-player-dlg">
-    <video v-if="vid" :src="hdUrl(vid.file)" style="width:100%;display:block" controls autoplay></video>
+    <video v-if="vid" :src="projMedia(vid.file)" style="width:100%;display:block" controls autoplay></video>
     <template #footer><span class="dim">{{ vid && vid.name }}</span>
       <el-button @click="vidOn = false">关闭</el-button></template>
   </el-dialog>
@@ -719,7 +719,7 @@ const AssetsView = {
       }),
       prevCount: computed(() => (picking.value || {}).line_count || 0),
       pickName: computed(() => (picking.value || {}).name || ''),
-      fmtDur, fmtAgo: FS.fmtAgo, hdUrl,
+      fmtDur, fmtAgo: FS.fmtAgo, projMedia,
       // 二级目录下的片子，片名加目录前缀，否则满屏「01.mp4 / 02.mp4」分不清是哪部的
       dirOf(v) {
         const rel = v.rel || '';

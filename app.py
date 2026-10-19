@@ -143,7 +143,7 @@ def index():
         html = html.replace(f'{attr}="/{name}"', f'{attr}="/{name}?v={v}"')
     # 各功能模块脚本也带上 mtime，避免老标签页残留旧 js 导致功能错乱
     for name in ("state.js", "libs.js", "search.js", "assets.js", "gen.js",
-                 "handdraw.js", "box.js", "clips.js"):
+                 "box.js", "clips.js"):
         try:
             v = int(os.path.getmtime(os.path.join(WEB, "js", name)))
         except OSError:
@@ -828,9 +828,9 @@ def api_ai_gallery_delete():
     if not f:
         return jsonify({"ok": False, "err": "缺少 file"}), 400
     from core import img_backend as ib
-    from core import handdraw as hd_mod
+    from core import gen
     f = os.path.abspath(f)
-    base = os.path.abspath(os.path.join(hd_mod.BASE, hd_mod.OUT_DIR_NAME))
+    base = gen.output_dir()
     if not (f == base or f.startswith(base + os.sep)):
         return jsonify({"ok": False,
                         "err": "只能删除 AI 生成目录内的文件"}), 403
@@ -845,299 +845,6 @@ def api_ai_gallery_delete():
             except OSError as e:
                 return jsonify({"ok": False, "err": f"删除失败：{e}"}), 500
     return jsonify({"ok": True, "deleted": deleted})
-
-
-# ---------------- 白板手绘视频 ----------------
-_HD_BUSY = threading.Semaphore(1)   # 本地 CPU 渲染，同时只跑一个
-
-
-@app.get("/api/handdraw/info")
-def api_handdraw_info():
-    """手绘面板摸底：引擎是否就绪、缺哪些包、默认音色、纸张底色。"""
-    from core import handdraw as hd_mod
-    try:
-        return jsonify({"ok": True, **hd_mod.engine_info()})
-    except Exception as e:
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"})
-
-
-@app.post("/api/handdraw/upload")
-def api_handdraw_upload():
-    """线稿/文稿上传（multipart）。存进项目 uploads 目录，返回绝对路径。
-
-    传 .txt 当文稿、.srt 当字幕、.png 当源线稿。
-    2026-10-15 起不再存素材库，跟着生成产物一起放项目目录。
-    """
-    from core import handdraw as hd_mod
-    files = request.files.getlist("file")
-    if not files:
-        return jsonify({"ok": False, "err": "没有文件"}), 400
-    f = files[0]
-    fn = os.path.basename(f.filename or "")
-    ext = os.path.splitext(fn)[1].lower()
-    if ext not in (".txt", ".srt", ".png", ".jpg", ".jpeg", ".webp", ".bmp"):
-        return jsonify({"ok": False,
-                        "err": "只支持 txt(文稿) / srt(字幕) / png|jpg|webp(图)"}), 400
-    up = os.path.join(os.path.dirname(hd_mod.dest_path()), "_uploads")
-    os.makedirs(up, exist_ok=True)
-    p = os.path.join(up, f"hd_{int(time.time())}_{fn}")
-    f.save(p)
-    return jsonify({"ok": True, "path": p, "name": fn, "kind": ext.lstrip(".")})
-
-
-@app.post("/api/handdraw/init")
-def api_handdraw_init():
-    """第 1 步：用文稿或字幕建工程（同步，很快）。工程落 <项目根>/AI生成/手绘/。"""
-    from core import handdraw as hd_mod
-    d = request.get_json(force=True) or {}
-    root = os.path.abspath((d.get("root") or active_root() or "").strip()) \
-        if (d.get("root") or active_root()) else ""
-    try:
-        if not hd_mod.engine_ready():
-            raise ValueError("手绘引擎未就绪，缺：" +
-                             ", ".join(hd_mod.engine_info()["missing"]))
-        res = hd_mod.init_project(
-            root=root, script=(d.get("script") or "").strip(),
-            srt=(d.get("srt") or "").strip(),
-            title=(d.get("title") or "").strip(),
-            name=(d.get("name") or "").strip())
-    except ValueError as e:
-        return jsonify({"ok": False, "err": str(e)}), 400
-    except Exception as e:
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 500
-    res["root"] = root
-    return jsonify(res)
-
-
-@app.get("/api/handdraw/status")
-def api_handdraw_status():
-    """查工程状态：时间轴是否已批准、各幕时长、画面/字幕时长对比。"""
-    from core import handdraw as hd_mod
-    root = os.path.abspath((request.args.get("root") or active_root() or "").strip())
-    project = (request.args.get("project") or "").strip()
-    if not project:
-        return jsonify({"ok": False, "err": "缺 project"}), 400
-    try:
-        return jsonify(hd_mod.timeline_status(root, project))
-    except Exception as e:
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 400
-
-
-@app.post("/api/handdraw/scenes")
-def api_handdraw_scenes():
-    """第 2 步：分幕建议（纯本地解析字幕，不生图）。"""
-    from core import handdraw as hd_mod
-    d = request.get_json(force=True) or {}
-    root = os.path.abspath((d.get("root") or active_root() or "").strip())
-    try:
-        res = hd_mod.suggest_scenes(root=root, project=d.get("project") or "",
-                                    target_sec=int(d.get("target_sec") or 30))
-    except Exception as e:
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 400
-    res["root"] = root
-    return jsonify(res)
-
-
-@app.post("/api/handdraw/annotate")
-def api_handdraw_annotate():
-    """第 3 步：写某幕区域标注（同步，带前置校验）。"""
-    from core import handdraw as hd_mod
-    d = request.get_json(force=True) or {}
-    root = os.path.abspath((d.get("root") or active_root() or "").strip())
-    try:
-        res = hd_mod.write_annotation(
-            root=root, project=d.get("project") or "",
-            scene_id=d.get("scene_id") or "", image=d.get("image") or "",
-            annotation=d.get("annotation") or {},
-            source_start_ms=d.get("source_start_ms"))
-    except ValueError as e:
-        return jsonify({"ok": False, "err": str(e)}), 400
-    except Exception as e:
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 500
-    res["root"] = root
-    return jsonify(res)
-
-
-@app.post("/api/handdraw/preview")
-def api_handdraw_preview():
-    """第 4 步：编号检查图（同步，快）。"""
-    from core import handdraw as hd_mod
-    d = request.get_json(force=True) or {}
-    root = os.path.abspath((d.get("root") or active_root() or "").strip())
-    try:
-        res = hd_mod.region_preview(root=root, project=d.get("project") or "",
-                                    scene_id=d.get("scene_id") or "",
-                                    output=(d.get("output") or "").strip())
-    except Exception as e:
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 400
-    res["root"] = root
-    return jsonify(res)
-
-
-def _handdraw_job(root: str, tid: int, op: str, fn):
-    """手绘长任务（渲染/混流）：进度走 tasks 表 + 实时事件。"""
-    from core import handdraw as hd_mod
-    st = store_of(root)
-    lib = _lib_name_of(root)
-
-    def tick(pct, msg):
-        try:
-            st.tick_task(tid, int(pct or 0), msg)
-            events.ev_progress(root, lib, int(pct or 0), 100, phase="handdraw",
-                               message=msg, kind="handdraw")
-        except Exception:
-            pass
-
-    try:
-        res = fn(tick)
-        base = os.path.basename(res.get("output") or res.get("file") or "")
-        st.finish_task(tid, "done", f"完成：{base}")
-        events.ev_task_done(root, lib, {
-            "total": 1, "skipped": 0, "failed": [], "handdraw": True,
-            "file": res.get("output") or res.get("file"), "name": base,
-            "library_file": res.get("library_file")})
-    except Exception as e:
-        print(f"[handdraw {op} error]", e)
-        st.finish_task(tid, "error", f"{type(e).__name__}: {e}")
-        events.ev_task_done(root, lib, {
-            "total": 1, "skipped": 0, "failed": [], "handdraw": True,
-            "error": f"{type(e).__name__}: {e}"})
-    finally:
-        _HD_BUSY.release()
-
-
-@app.post("/api/handdraw/render")
-def api_handdraw_render():
-    """第 5 步：渲染单幕（异步，本地 CPU 逐笔渲染）。"""
-    from core import handdraw as hd_mod
-    d = request.get_json(force=True) or {}
-    root = os.path.abspath((d.get("root") or active_root() or "").strip())
-    project = (d.get("project") or "").strip()
-    scene_id = (d.get("scene_id") or "").strip()
-    preview_ms = int(d.get("preview_ms") or 0)
-    if not root or not os.path.isdir(root):
-        return jsonify({"ok": False, "err": "先选一个素材库"}), 400
-    try:
-        hd_mod.project_json(root, project)
-    except Exception as e:
-        return jsonify({"ok": False, "err": str(e)}), 400
-    if not _HD_BUSY.acquire(blocking=False):
-        return jsonify({"ok": False, "err": "已经有一个手绘任务在跑了"}), 409
-    try:
-        st = store_of(root)
-        tid = st.new_task("handdraw", root, 100)
-    except Exception as e:
-        _HD_BUSY.release()
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 500
-
-    def fn(tick):
-        tick(5, "渲染中（本地 CPU 逐笔）")
-        return hd_mod.render_scene(root=root, project=project,
-                                   scene_id=scene_id, preview_ms=preview_ms)
-
-    threading.Thread(target=_handdraw_job,
-                     args=(root, tid, "render", fn), daemon=True).start()
-    return jsonify({"ok": True, "task_id": tid, "root": root,
-                    "eta_hint": "本地 CPU 逐笔渲染，单幕十几秒~几分钟"})
-
-
-@app.post("/api/handdraw/mix")
-def api_handdraw_mix():
-    """第 7 步：配音+伴奏混流合成（异步，联网 TTS）。"""
-    from core import handdraw as hd_mod
-    d = request.get_json(force=True) or {}
-    root = os.path.abspath((d.get("root") or active_root() or "").strip())
-    project = (d.get("project") or "").strip()
-    index = (d.get("index") or "none").strip()   # 保留兼容，实际已停用
-    try:
-        hd_mod.project_json(root, project)
-    except Exception as e:
-        return jsonify({"ok": False, "err": str(e)}), 400
-    if not _HD_BUSY.acquire(blocking=False):
-        return jsonify({"ok": False, "err": "已经有一个手绘任务在跑了"}), 409
-    try:
-        st = store_of(root)
-        tid = st.new_task("handdraw", root, 100)
-    except Exception as e:
-        _HD_BUSY.release()
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 500
-
-    def fn(tick):
-        tick(5, "合成中（配音 + 伴奏）")
-        return hd_mod.mix(root=root, project=project, index=index)
-
-    threading.Thread(target=_handdraw_job,
-                     args=(root, tid, "mix", fn), daemon=True).start()
-    return jsonify({"ok": True, "task_id": tid, "root": root,
-                    "eta_hint": "Edge TTS 逐条配音 + 伴奏合成 + 编码"})
-
-
-@app.post("/api/handdraw/auto")
-def api_handdraw_auto():
-    """一键全自动：文稿 → 分幕 → 标注 → 批准 → 逐幕渲染 → 混流。省掉中间手动步骤。"""
-    from core import handdraw as hd_mod
-    d = request.get_json(force=True) or {}
-    root = os.path.abspath((d.get("root") or active_root() or "").strip())
-    text = (d.get("text") or "").strip()
-    if not root or not os.path.isdir(root):
-        return jsonify({"ok": False, "err": "先选一个素材库"}), 400
-    if not text:
-        return jsonify({"ok": False, "err": "先写要讲解的内容"}), 400
-    if not _HD_BUSY.acquire(blocking=False):
-        return jsonify({"ok": False, "err": "已经有一个手绘任务在跑了"}), 409
-    try:
-        st = store_of(root)
-        tid = st.new_task("handdraw", root, 100)
-    except Exception as e:
-        _HD_BUSY.release()
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 500
-
-    def fn(tick):
-        tick(3, "准备工程（文稿 → 分幕）")
-        return hd_mod.auto_project(
-            root=root, text=text, name=(d.get("name") or "").strip(),
-            title=(d.get("title") or "").strip(),
-            target_sec=int(d.get("target_sec") or 30), tick=tick)
-
-    threading.Thread(target=_handdraw_job,
-                     args=(root, tid, "auto", fn), daemon=True).start()
-    return jsonify({"ok": True, "task_id": tid, "root": root,
-                    "eta_hint": "建工程→分幕→渲染各幕→配音合成，整体几分钟"})
-
-
-@app.post("/api/handdraw/voice")
-def api_handdraw_voice():
-    """音色试听（联网合成，需 allow_network=true 显式许可）。"""
-    from core import handdraw as hd_mod
-    d = request.get_json(force=True) or {}
-    if not d.get("allow_network"):
-        return jsonify({"ok": False,
-                        "err": "配音是联网合成，需 allow_network=true 显式许可"}), 400
-    root = os.path.abspath((d.get("root") or active_root() or "").strip())
-    try:
-        res = hd_mod.audition_voice(
-            text=(d.get("text") or "").strip(),
-            voices=d.get("voices") or None, allow_network=True,
-            root=root if d.get("project") else "",
-            project=(d.get("project") or "").strip())
-    except Exception as e:
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 400
-    return jsonify({"ok": True, **res})
-
-
-@app.post("/api/handdraw/approve")
-def api_handdraw_approve():
-    """批准时间轴（不批准的话正式渲染会被引擎拦下）。"""
-    from core import handdraw as hd_mod
-    d = request.get_json(force=True) or {}
-    root = os.path.abspath((d.get("root") or active_root() or "").strip())
-    try:
-        return jsonify(hd_mod.approve_timeline(root, (d.get("project") or "").strip()))
-    except ValueError as e:
-        return jsonify({"ok": False, "err": str(e)}), 400
-    except Exception as e:
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 400
-
 
 # ---------------- 扫描 ----------------
 # 正在跑的索引器实例：root -> Indexer，给「停止」接口用来找到线程里的那个对象。
@@ -1550,13 +1257,12 @@ def api_videos():
 
 @app.get("/api/ai-gallery")
 def api_ai_gallery():
-    """扫描项目「AI生成」目录，返回图片 + 视频产物（gen 成片 / aidraw 绘画 / 手绘成片）。
+    """扫描项目「AI生成」目录，返回图片 + 视频产物（gen 成片 / aidraw 绘画）。
 
     这些产物不进素材库索引，单独给「素材」页的「AI生成素材库」视图用。
-    排除「手绘」工程目录（里面是线稿 / 分区检查图 / 渲染中间帧，不是最终成片）。
     """
-    from core import handdraw as hd_mod
-    ai_dir = os.path.join(hd_mod.BASE, hd_mod.OUT_DIR_NAME)
+    from core import gen
+    ai_dir = gen.output_dir()
     if not os.path.isdir(ai_dir):
         return jsonify([])
     # gif 不算成片：AI生成/.frameseek/gifs/ 下全是预览动图，混进素材库会刷屏
@@ -1564,8 +1270,7 @@ def api_ai_gallery():
     VID = {".mp4", ".webm", ".mov", ".mkv", ".avi"}
     # 这些目录里全是缓存 / 中间产物，不是给用户看的成片，一律跳过：
     #   .frameseek  = 封面图(covers)、动图(gifs)、台词截图(shots)等索引缓存
-    #   手绘        = 线稿、分区检查图、逐幕渲染帧
-    SKIP_DIRS = {".frameseek", "手绘", "工程", "projects", "temp", "tmp"}
+    SKIP_DIRS = {".frameseek", "工程", "projects", "temp", "tmp"}
     out = []
     for root, dirs, files in os.walk(ai_dir):
         rel_root = root.replace("\\", "/")
@@ -2119,21 +1824,22 @@ def api_media():
     return send_partial(p, mt)
 
 
-@app.get("/hd/media")
-def api_hd_media():
-    """手绘产物预览（检查图 / 逐幕 mp4 / 成片）。
 
-    2026-10-15 起这些文件落在**项目目录**下（<BASE>/AI生成/手绘/、<BASE>/AI生成/_uploads/），
-    不在素材库里，也不能走 /media（那里只允许 cache 目录内的相对路径，防穿越）。
-    这里限定「必须落在项目目录内」再放行。
+
+@app.get("/proj/media")
+def api_proj_media():
+    """项目目录内的图片 / 视频预览（AI 绘画成片、AI 生成素材等）。
+
+    这些产物落在项目目录（<项目根>/AI生成/...），不在素材库 cache 内，
+    不能走 /media（那只放行 cache 相对路径，防穿越）。这里限定「必须落在
+    项目根目录内」再放行。
     """
-    from core import handdraw as hd_mod
-    base = os.path.normcase(hd_mod.BASE)
+    from core import gen
+    base = os.path.normcase(gen.BASE)
     p = request.args.get("p", "")
     if not p:
         abort(404)
-    full = os.path.abspath(p if os.path.isabs(p)
-                           else os.path.join(hd_mod.BASE, p))
+    full = os.path.abspath(p if os.path.isabs(p) else os.path.join(gen.BASE, p))
     fn = os.path.normcase(full)
     if fn != base and not fn.startswith(base + os.sep):
         abort(403)          # 只允许读 FrameSeek 项目目录内的东西
@@ -2145,6 +1851,8 @@ def api_hd_media():
           ".wav": "audio/wav", ".srt": "text/plain; charset=utf-8"
           }.get(ext, "application/octet-stream")
     return send_partial(full, mt)
+
+
 
 
 @app.get("/stream/<int:vid>")

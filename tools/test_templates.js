@@ -93,7 +93,7 @@ const ok = (c, m) => { if (c) { pass++; process.stdout.write('  ✓ ' + m + '\n'
    按钮文字包 <span> 那次批量改写动过 aidraw/gen/clips，必须一起编译校验，
    否则模板写坏了要等到浏览器里才发现。 */
 const files = ['web/js/assets.js', 'web/js/libs.js', 'web/js/aidraw.js',
-               'web/js/gen.js', 'web/js/clips.js', 'web/js/handdraw.js',
+               'web/js/gen.js', 'web/js/clips.js',
                'web/js/box.js', 'web/js/search.js'];
 console.log('\n== 模板编译校验（真实 Vue 编译器）==');
 files.forEach(f => {

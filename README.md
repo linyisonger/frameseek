@@ -23,25 +23,24 @@ python app.py                        # http://127.0.0.1:8771
 | --- | --- |
 | `hub.db` / `*.db` / `.frameseek/` | 本地索引，含你自己素材库的绝对路径 |
 | `vendor/`（根级，约 259MB） | 本机 venv 里 anyio 半残才塞进去的依赖兜底，正常环境用 pip 装。注意 `web/vendor/` **入库**（Vue/Element Plus 本地依赖，约 1.7MB） |
-| `AI生成/`（含 `绘画/` 子目录与 `手绘/` 工程） `_hd_src/` `_out/` | 产物与日志 |
+| `AI生成/`（含 `绘画/` 子目录） | 产物与日志 |
 | `_testlib/`（96MB 视频） | 回归脚本的测试素材，自备；没有它 UI 回归跑不起来，主程序不受影响 |
 
 ### 前端架构（2026-10-15 重写 + 按功能拆模块）
 
-原单体 `web/app.js`（约 1600 行：全局状态 + 实时通道 + 7 个页面组件 + 主应用混在一起）
-已拆成「**共享状态层 + 7 个功能模块 + 薄引导文件**」。后续改某一个小功能点只动对应文件，
+原单体 `web/app.js`（约 1600 行：全局状态 + 实时通道 + 6 个页面组件 + 主应用混在一起）
+已拆成「**共享状态层 + 6 个功能模块 + 薄引导文件**」。后续改某一个小功能点只动对应文件，
 不用翻整篇大文件、不浪费 token。
 
 | 文件 | 职责 |
 | --- | --- |
-| `web/index.html` | 主框架（侧栏/页签/进度浮窗/播放器）；删除内联 x-template，底部按序加载 9 个脚本；`<keep-alive>` + kebab 标签切换 7 个视图 |
+| `web/index.html` | 主框架（侧栏/页签/进度浮窗/播放器）；删除内联 x-template，底部按序加载 8 个脚本；`<keep-alive>` + kebab 标签切换 6 个视图 |
 | `web/app.js` | **薄引导文件**：只定义 `App` 壳（任务列表过滤 `gen`、浮窗摘要、首屏加载），`createApp` + 注册图标 + `mount('#app')` |
 | `web/js/state.js` | 共享状态层：工具函数（`api/post/esc/hl/mediaUrl/...`）、`BUS`（订阅可取消）、`S`（reactive 全局态）、`LIVE`（WS→SSE→轮询）、`PHASE`、`onLive`、`loadLibs`、`play`、`clipLine/addClips`；挂到 `window.FS` 与 `window.__FS` |
 | `web/js/libs.js` | 模块 `libs`：素材库（登记/索引/上传/忽略名单 3 个 dialog），`FS.LibsView` |
 | `web/js/search.js` | 模块 `search`：台词检索（含 `boxMark` 方框凭证标记），`FS.SearchView` |
 | `web/js/assets.js` | 模块 `assets`：素材（筛选只留「素材库 + 时长」），`FS.AssetsView` |
 | `web/js/gen.js` | 模块 `gen`：AI 生成（对话气泡进度），`FS.GenView`；`window.__FS.gen` |
-| `web/js/handdraw.js` | 模块 `hd`：白板手绘（六步流程），`FS.HanddrawView`；`window.__FS.hd / hdApi` |
 | `web/js/box.js` | 模块 `box`：方框复查（两级选片 / `SEQ` 代次号 / 指标表 / 三路修复），`FS.BoxView`；`window.__FS.box` |
 | `web/js/clips.js` | 模块 `clips`：片段列表，`FS.ClipsView` |
 | `web/style.css` | Element Plus dark 变量覆盖 + 布局样式 |
@@ -49,15 +48,15 @@ python app.py                        # http://127.0.0.1:8771
 
 **解耦方式**：`window.FS` 作为共享命名空间——`state.js` 挂 `S/BUS/LIVE/api/post/...` 等全局依赖，
 各功能模块 `(function(){ const FS = window.FS; ... })()` 从 `FS` 取依赖、把组件挂回 `FS.XxxView`。
-`index.html` 底部按序加载：vue → element-plus → zh-cn → icons → `state.js` → 7 个模块 → `app.js`。
+`index.html` 底部按序加载：vue → element-plus → zh-cn → icons → `state.js` → 6 个模块 → `app.js`。
 后端 `app.py` 新增 `GET /js/<path:name>` 路由（目录穿越防护 + mime 映射），`index()` 给每个 js 模块
 带 `?v={mtime}` 版本号防旧标签缓存。
 
 模块 ↔ 组件：`libs` 素材库、`search` 台词检索、`assets` 素材（多维筛选）、
-`gen` AI 生成（对话窗）、`hd` 白板手绘（六步）、`box` 方框复查、`clips` 片段。
+`gen` AI 生成（对话窗）、`box` 方框复查、`clips` 片段。
 页签切换用 `<keep-alive>`——方框复查一部片的清单要 verify 几秒，切回来必须秒开。
 
-回归脚本通过 `window.__FS`（S / api / post / box / gen / hd）驱动页面状态，
+回归脚本通过 `window.__FS`（S / api / post / box / gen）驱动页面状态，
 UI 交互一律走真实 Element Plus 控件（点 checkbox、点 el-select 的 wrapper 弹 popper）。
 
 ---
@@ -143,7 +142,6 @@ Python 用本机 venv：`C:\Users\Administrator\.workbuddy\binaries\python\envs\
 | **素材**   | 跨库浏览全部视频（缩略图悬停播动图）。点卡片预览；右上角 **···** 可打开所在文件夹 / 从库中移除 / 删除素材及文件 |
 | **片段**   | 本次导出的 mp4 列表，可预览/下载/打开所在文件夹                                     |
 | **生成**   | 对话窗口：输入文案 → 本地 MiniMax H3 生成视频 → 落入项目「AI生成」目录（详见 §5.6）。**成片不进台词体系**：不读字幕、不 OCR、不语音识别 |
-| **手绘**   | 文稿 → 分幕 → 线稿 → 区域标注 → 逐笔渲染 → 配音合成（详见 §5.7）                |
 | **方框复查** | 逐句核对台词的画面方框圈得对不对；可重新 OCR / 语音识别 / 直接编辑台词（详见 §5.5）  |
 | **片段**   | 本次导出的 mp4 列表，可预览/下载/打开所在文件夹                                     |
 
@@ -964,77 +962,13 @@ Agnes 后端的坑：
 MCP 侧两个工具：`frameseek_gen_info`（引擎状态/参数范围）、
 `frameseek_generate_video`（提交生成，异步，用 `frameseek_task` 轮询）。
 
-## 5.7 白板手绘视频（文稿 → 逐笔手绘成片）
-
-跟 H3 生成是**两条独立的线**：H3 出的是写实画面（占 GPU、几分钟一条），
-手绘出的是暖米黄纸底的逐笔动画（**本地 CPU 渲染、零 API 钱、十几秒一幕**），
-两者成片都落进同一个素材库，之后一样能被搜索/导出。
-
-底层引擎是已安装的 `whiteboard-video-studio` skill 的 `studio.py` CLI
-（`~/.workbuddy/skills/whiteboard-video-studio/`），`core/handdraw.py` 把它包成
-FrameSeek 的一组工具，Web 侧对应「手绘」面板。
-
-### 六步管线
-
-| 步骤 | 做什么 | 工具（Web 按钮） |
-|---|---|---|
-| 1 建工程 | 文稿（.txt）或字幕（.srt）→ 工程目录 + 拆条字幕 | `frameseek_handdraw_init`（建工程） |
-| 2 分幕建议 | 读字幕，按 25~35 秒切幕，给每幕时长 | `frameseek_handdraw_scenes`（出分幕建议） |
-| 3 线稿 + 标注 | 每幕一张线稿图 + **区域标注 JSON**（谁先画、画多久） | `frameseek_handdraw_annotate`（写标注） |
-| 4 时间轴 | 画面总时长必须 ≥ 字幕总时长，批准后才能正式渲染 | `frameseek_handdraw_status` + `approve_timeline` |
-| 5 逐幕渲染 | 本地 CPU 逐笔流式渲染 mp4 | `frameseek_handdraw_render`（渲染这一幕） |
-| 6 配音合成 | Edge TTS 女声 + 本地伴奏混流，成片入库 | `frameseek_handdraw_mix`（配音合成成片） |
-
-另有 `frameseek_handdraw_info`（引擎状态）、`frameseek_handdraw_region_preview`
-（分区编号检查图）、`frameseek_handdraw_voice`（音色试听）、`frameseek_handdraw_qa`（质检）。
-渲染/混流较慢，走异步：立即返回 task_id，用 `frameseek_task` 轮询。
-
-### 为什么是分步的，不是「一句话出片」
-
-**区域标注**（annotation）是引擎的硬前置：它决定画面里哪块先画、每块画多久。
-写错了渲染直接崩或者时序错乱。这一步目前必须人（或 AI）来标——所以设计成
-「标一次、渲染一次、改标注不用重来工程」的形态：同名 `scene_id` 重新
-`annotate` 会覆盖标注，工程和已渲成片都保留。
-
-未来要做全自动，路径是用本机 Ollama 的 `qwen2.5vl` 看线稿图自动出标注
-（本机已有该模型，能看图），再串起生图（`handdraw-painter` + Agnes Image）。
-
-### 标注 JSON 的硬约束（引擎 check_project 的规则，已在 `write_annotation` 前置校验）
-
-- `sourceStartMs` 必须等于本幕之前的累计时长——多幕从 0 连续衔接；
-  省略时会按已登记幕自动累加推断。
-- `canvas` 必须**等于源图像素尺寸**（渲染器只对齐输出宽高，不缩放标注）。
-- `sequence` 唯一且与 `startMs` 顺序一致——一支笔不能并行作画。
-- 每个 `region` 必须在画布内；相邻区域 `startMs` 不能重叠；作画时长 ≥ 3 帧。
-- 最后至少留 500ms 完整画面（所有元素结束 ≤ `sceneDurationMs - 500`）。
-- **画面总时长（各幕 sceneDurationMs 之和）必须 ≥ 字幕总时长**，
-  否则引擎报「字幕超过总画面时长」。`_check_timeline()` 会提前算出差多少秒
-  并给建议；`timelineStatus` 不置 `approved` 时引擎只允许 `--preview-ms` 短预览，
-  防止渲出时序错乱的废片。
-
-### 踩过的坑
-
-1. **引擎不覆盖同名输出**：`studio.py` 的 `new_output` 遇到已存在的路径直接
-   `FileExistsError`。`handdraw.py` 统一走 `_unique_path()` 加序号
-   （`scene-01.mp4` / `scene-01_1.mp4`），重渲保留旧版可对比。
-2. **`studio.py` 的 stdout 有两种形态**：`check`/`init`/`mix` 输出 pretty JSON；
-   `render` 输出进度行 + 末行 `OUTPUT=<路径>`。`_run()` 两种都认，
-   否则渲染明明成功了却被当解析失败。
-3. **SRT 是 CRLF 行尾**：按行块判空的解析会漏掉时间戳，字幕总长算成 0。
-   `_cue_span_ms()` 改成正则直接扫时间行。
-4. **skill 的 `.venv` 不是硬门槛**：依赖（cv2/numpy/av/PIL）装在 WorkBuddy 的
-   主 venv 里时引擎照样能跑，`engine_info()` 只在依赖真缺时才报 not ready。
-5. **手绘产物不在 `.frameseek/cache` 里**，`/media` 端点会 403（它只允许
-   cache 目录内的相对路径，防目录穿越）。新增 `/hd/media`，限定「目标库目录内」
-   才放行，前端 `hdMedia()` 用它而不是 `mediaUrl()`。
-
 ## 6. MCP（给 AI 客户端用）
 
 > 实现流程图（架构分层 / 异步时序 / 实现决策与踩坑）：浏览器打开 [`mcp-flow.html`](mcp-flow.html)
 
 `mcp_server.py` 走 stdio，**不依赖 Web 服务是否在跑**：直接读 hub.db 和各库的  
-`.frameseek/index.db`，识别任务起 daemon 线程跑。共 **37** 个工具
-（26 检索/识别/导出/生成 + 9 手绘 + 会话辅助）：
+`.frameseek/index.db`，识别任务起 daemon 线程跑。共 **28** 个工具
+（检索/识别/导出/生成 + 会话辅助）：
 
 | 工具 | 作用 |
 | --- | --- |
@@ -1066,15 +1000,6 @@ FrameSeek 的一组工具，Web 侧对应「手绘」面板。
 | `frameseek_list_images`    | 列 `<项目根>/AI生成/绘画/` 的产物（新的在前，带生成时的全部参数） |
 | `frameseek_gen_info`       | 视频生成引擎状态（ready/missing、参数范围、模型文件是否齐全）            |
 | `frameseek_generate_video` | 提交视频生成（**异步**）。`backend` 选 `agnes`/`h3`/`auto`，默认 auto |
-| `frameseek_handdraw_info`      | 白板手绘引擎状态（ready/missing、默认音色、纸张底色）           |
-| `frameseek_handdraw_init`      | 文稿/字幕 → 手绘工程（分步管线第 1 步）                       |
-| `frameseek_handdraw_scenes`    | 读字幕出分幕建议（第 2 步）                                    |
-| `frameseek_handdraw_annotate`  | 写某幕区域标注（**渲染硬前置**，带前置校验）                   |
-| `frameseek_handdraw_region_preview` | 某幕分区编号检查图（渲染前核对用）                  |
-| `frameseek_handdraw_render`    | 渲染单幕逐笔 mp4（**异步**，本地 CPU）                        |
-| `frameseek_handdraw_voice`     | 音色试听（Edge TTS **联网**，需 `allow_network=True`）       |
-| `frameseek_handdraw_mix`       | 配音 + 伴奏混流合成（**异步**，成片可入库）                    |
-| `frameseek_handdraw_qa`        | 质检（帧数/时长/音画长度）                                    |
 
 异步类工具（scan / retranscribe / transcribe_asr）**立即返回**，之后用  
 `frameseek_task` 轮询，别反复调发起端。`frameseek_transcribe_asr` 的响应里带  
@@ -1125,14 +1050,13 @@ hint 里专门点明。
 **④ `export_clip` 补齐功能缺口**——`subtitle=true` 烧字幕（对齐 Web 端
 `/api/clip` 已有能力）、`line_ids` 批量导出、`pre/post` 加范围校验。
 
-**⑤ 资源层**（`resources/list` 可读，5 个）：
+**⑤ 资源层**（`resources/list` 可读，4 个）：
 
 | URI | 内容 |
 | --- | --- |
 | `frameseek://libraries` | 全部库快照 —— **root 参数的取值来源** |
 | `frameseek://tasks/running` | 在跑任务及进度 |
 | `frameseek://clips` | 已导出片段清单 |
-| `frameseek://schema/handdraw-annotation` | 区域标注 schema + 可改用示例 |
 | `frameseek://tool-catalog` | 按「我想干什么」组织的工具索引 |
 
 > `server.instructions` 也重写成按意图分段的决策指引（原来是一坨连续散文）。
@@ -1145,8 +1069,7 @@ hint 里专门点明。
 Web 端「导出字幕」下拉对应这三档；顺带把原来一个开关管两件事（导出烧录 + 预览字幕带）
 拆成了「导出字幕」和「字幕带」两个独立控件。自动跳过时前端弹提示说明原因。
 
-配套 skill：`.workbuddy/skills/frameseek/SKILL.md`（铁律 / 决策树 / 手绘 8 步 /
-踩坑清单）。工具面探针 `python tools/mcp_probe.py --tools`（看模型眼里的 schema），
+配套 skill：`.workbuddy/skills/frameseek/SKILL.md`（铁律 / 决策树 / 踩坑清单）。工具面探针 `python tools/mcp_probe.py --tools`（看模型眼里的 schema），
 回归测试 `python tools/test_mcp.py`（70 项，端到端跑真实 stdio 子进程）。
 
 UI 回归（都要 Web 服务已在 8771 起；都是无头 Chromium 真点页面）：
@@ -1159,7 +1082,6 @@ UI 回归（都要 Web 服务已在 8771 起；都是无头 Chromium 真点页�
 | `_scanstop_ui_check.py`  | 中途终止 + 续跑：切 3 个片段真跑索引 → 中途停止 → 断言已完成的保住台词、被中断的没半截台词、下次跳过已完成的接着跑（16 项） |
 | `_boxedit_ui_check.py` | 方框复查页：编辑台词 / 重新 OCR 识别 / 单句语音识别（32 项） |
 | `_filter_ui_check.py`   | 素材页多维筛选、内置 AI 库只读、重置（24 项） |
-| `_handdraw_ui_check.py` | 白板手绘六步流程 + 真跑一次渲染全链路（33 项） |
 | `_gen_ui_check.py`      | AI 生成面板表单与响应式（引擎未就绪时自动降级为禁用态断言） |
 | `_tips_ui_check.py`     | 每个功能按钮都带悬停说明、且不存在「说明」总览页（40 项） |
 | `_pw.py` | 公共启动辅助：本机 chromium 版本与 playwright 期望对不上时自动回退到已装版本 |
@@ -1182,8 +1104,6 @@ mcp_server.py       MCP stdio 服务
 core/hub.py         项目级库登记处（hub.db：libraries / settings / 跨库搜索）
 core/config.py      参数（端口、动图尺寸、ASR 模型、前后秒数…）
 core/gen.py         视频生成调度：**双后端**（agnes 云端 / h3 本地 / auto 降级）→ 校验参数 → spawn 子进程
-core/handdraw.py    白板手绘调度：包 whiteboard-video-studio 的 studio.py CLI
-                    （init/scenes/annotate/render/mix + 标注前置校验、时间轴体检）
 h3gen.py            MiniMax H3 直调引擎（ComfyUI 库方式，不起服务；便携版 python 跑）
 core/store.py       SQLite + FTS5 数据层（每个素材目录一个）
 core/media.py       ffprobe / md5 / 封面 / 动图 / 抽帧 / 切片
@@ -1191,7 +1111,7 @@ core/ocr.py         硬字幕 OCR：字幕位置标定 + 逐帧选框 + 文本�
 core/asr.py         外挂字幕 → 内嵌字幕 → OCR → whisper 转写
 core/verify.py      方框校验：凭证自检（快）+ 现场复核（重抽帧证伪）
 core/indexer.py     扫描入库流程
-web/                页面（index.html / app.js 引导 / js/state.js 状态层 + 7 个功能模块 / style.css / logo.svg）
+web/                页面（index.html / app.js 引导 / js/state.js 状态层 + 6 个功能模块 / style.css / logo.svg）
 ```
 
 `logo.svg` 是品牌图标（渐变圆角方 + 帧格播放键），三处共用：网站 favicon、

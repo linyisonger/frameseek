@@ -31,7 +31,7 @@ function hl(t, q) {
 }
 const mediaUrl = (p, root) =>
   `/media?p=${encodeURIComponent(p || '')}&root=${encodeURIComponent(root || '')}`;
-const hdUrl = f => `/hd/media?p=${encodeURIComponent(f || '')}`;
+const projMedia = f => `/proj/media?p=${encodeURIComponent(f || '')}`;
 
 function fmtDur(s) {
   s = s || 0;
@@ -92,9 +92,6 @@ const S = reactive({
   subMode: 'auto',
   subBand: false,          // 预览字幕带：播放时在画面底部显示当前台词，默认关闭
   tasks: {},
-  /* 资产页待办跳转：素材库发出"打开这部影片"事件时，若 assets 组件还没挂过，
-     就暂存到这里，assets.js 首次 onMounted/onActivated 时消费掉（消费完置 null） */
-  pendingOpen: null,
   dockOpen: false,      // 右下角浮窗默认收起（有任务也只露一条细条，要进度展开）
   player: { on: false, title: '', src: '', cur: null, sub: '' },
   theme: 'dark',         // 拾帧只支持深色模式，保留字段以兼容老 LS / 模板引用
@@ -138,7 +135,6 @@ function onLive(ev) {
     merged.lib = ev.lib || prev.lib || '';
     S.tasks[k] = merged;
     if (ev.kind === 'gen') BUS.emit('gen:tick', k, ev.done || 0, ev.message || '');
-    if (ev.kind === 'handdraw') BUS.emit('hd:tick', k, ev.done || 0, ev.message || '');
     if (ev.kind === 'aidraw') BUS.emit('aidraw:tick', k, ev.done || 0, ev.message || '');
     return;
   }
@@ -148,11 +144,7 @@ function onLive(ev) {
     delete S.tasks[k];       // 先删卡片，否则会一直显示 100% 不消失
     const s = ev.summary || {};
 
-    if (s.handdraw) {
-      BUS.emit('hd:done', s);
-      toast(s.error ? `手绘任务失败：${s.error}` : `手绘完成：${s.name || ''}`,
-            s.error ? 'error' : 'success');
-    } else if (s.aidraw) {
+    if (s.aidraw) {
       BUS.emit('aidraw:done', k, s);
       toast(s.error ? `绘画失败：${s.error}`
                     : `绘画完成：${s.name || ''}，已落入「AI生成/绘画」目录`,
@@ -320,7 +312,7 @@ function clipLine(line_id, root) {
      #assets?lib=1,2&q=片名&sort=mtime&dur=s30,m30&vid=123&root=D:\片库
    参数会被各页面消费（目前只有素材页），同时素材页的筛选变化也会反写回 URL
    （replace，不塞满历史），这样链接可以直接复制分享 / 浏览器前进后退可用。 */
-const TABS = ['libs', 'search', 'assets', 'gen', 'aidraw', 'hd', 'box', 'clips'];
+const TABS = ['libs', 'search', 'assets', 'gen', 'aidraw', 'box', 'clips'];
 
 const Route = {
   tabs: TABS,
@@ -390,12 +382,12 @@ const Route = {
 // 各功能模块从 window.FS 取自己要的东西，互不耦合。
 window.FS = {
   S, BUS, LIVE, PHASE, Route,
-  api, post, esc, hl, mediaUrl, hdUrl,
+  api, post, esc, hl, mediaUrl, projMedia,
   fmtDur, fmtAgo, fmtSec, toast, LS,
   connectLive, loadLibs, play, clipLine, addClips, startPoll,
 };
 
-// 给回归脚本留的口子（基础项；gen/hd/box 会在各自模块里追加）。
+// 给回归脚本留的口子（基础项；gen/box 会在各自模块里追加）。
 window.__FS = { S, api, post, play, toast, loadLibs, Route };
 
 })();
