@@ -1,4 +1,4 @@
-/* 拾帧 FrameSeek · AI 绘画模块（三后端生图：Agnes / SD1.5 / H3） */
+/* 拾帧 FrameSeek · AI 绘画模块（双后端生图：Agnes / SD1.5） */
 (function () {
 'use strict';
 const { reactive, ref, onMounted, onActivated, onUnmounted } = Vue;
@@ -18,7 +18,7 @@ const AidrawView = {
 <div class="fs-page fs-page-aidraw">
   <div class="fs-page-hd">
     <div><h1>AI 绘画</h1>
-      <p>三后端生图 · 产物落在项目「AI生成/绘画」目录 · 参数留痕可重掷</p></div>
+      <p>双后端生图 · 产物落在项目「AI生成/绘画」目录 · 参数留痕可重掷</p></div>
     <div class="fs-tools">
       <el-tag v-for="b in info.backends" :key="b.id" size="small"
         :type="b.ready ? (b.id === info.default ? 'success' : 'info') : 'danger'"
@@ -26,8 +26,6 @@ const AidrawView = {
       <el-button size="small" @click="loadOutputs" title="重新拉取产物列表"><el-icon><Refresh/></el-icon><span>刷新</span></el-button>
     </div>
   </div>
-
-  <el-divider />
 
   <!-- 对话区：生成后的图片在中间气泡里居中展示（仿 AI 生成） -->
   <div class="fs-chat" id="aidrawChat">
@@ -63,7 +61,7 @@ const AidrawView = {
         placeholder="描述你想要的画面…（Enter 提交，Shift+Enter 换行。中文也可，场景描述越具体越好）"
         @keydown.enter.exact.prevent="onEnter"/>
       <el-button id="btnAidraw" type="primary" :disabled="running || !prompt.trim()" @click="submit"
-        title="按提示词生成一张图。默认 Agnes（API 秒出），也可选本地 SD1.5 / H3"><el-icon><MagicStick/></el-icon><span>生成</span></el-button>
+        title="按提示词生成一张图。默认 Agnes（API 秒出），也可选本地 SD1.5"><el-icon><MagicStick/></el-icon><span>生成</span></el-button>
     </div>
     <div class="fs-composer-row">
       <el-select id="aidrawBackend" v-model="backend" size="small" class="w200" title="生图后端">
@@ -73,11 +71,11 @@ const AidrawView = {
           <span class="dim" style="float:right;margin-left:8px">{{ b.eta }}</span>
         </el-option>
       </el-select>
-      <el-select id="aidrawSize" v-model="sizeIdx" size="small" class="w140" title="尺寸（SD1.5 原生；Agnes/H3 按宽高比适配）">
+      <el-select id="aidrawSize" v-model="sizeIdx" size="small" class="w140" title="尺寸（SD1.5 原生；Agnes 按宽高比适配）">
         <el-option v-for="(s, i) in sizes" :key="i" :label="s.label" :value="i"/>
       </el-select>
       <el-button id="btnAidrawRef" size="small" @click="pickRef"
-        title="参考图：SD1.5 用首张算 canny 锁构图；Agnes 最多 3 张；H3 用首张锁风格"><el-icon><Picture/></el-icon><span>参考图</span></el-button>
+        title="参考图：SD1.5 用首张算 canny 锁构图；Agnes 最多 3 张"><el-icon><Picture/></el-icon><span>参考图</span></el-button>
       <input type="file" ref="refFile" accept="image/*" multiple hidden @change="onRef"/>
       <el-tag v-for="(r, i) in refs" :key="i" size="small" type="info" effect="plain" closable
         @close="dropRef(i)" :title="'移除参考图：' + r.name">{{ r.name }}</el-tag>
@@ -121,7 +119,7 @@ const AidrawView = {
         <el-col :xs="24" :sm="12" :md="8">
           <el-form-item label="随机种子">
             <el-input-number id="aidrawSeed" v-model="seed" size="small" :min="0" controls-position="right"
-              title="0 = 随机；固定同一个数字可复现同一张图（Agnes 无种子，仅 SD1.5/H3 有效）"/>
+              title="0 = 随机；固定同一个数字可复现同一张图（Agnes 无种子，仅 SD1.5 有效）"/>
           </el-form-item>
         </el-col>
       </el-row>

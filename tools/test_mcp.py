@@ -8,7 +8,7 @@
   - 只读工具端到端：doctor / libraries / search / find_videos / list_clips
   - 新增能力：export_clip 的 subtitle（auto/off/force 三档）与批量参数进了 schema
   - 烧字幕策略：OCR 源在 auto 档自动跳过（core/media.decide_burn 的 12 个分支）
-  - 出图能力：img_info 三后端摸底、入参校验、**真实出一张 sd15 图**、
+  - 出图能力：img_info 双后端摸底、入参校验、**真实出一张 sd15 图**、
     同 seed 可复现（md5 相同）、reroll 换种子出新图
   - 错误返回带 hint（LLM 撞得最多的场景：id 找不到 / 未指定库）
   - 查库类工具的错误一律带 root 相关提示
@@ -209,8 +209,8 @@ def main():
         check(f"资源可读 {u}", bool(d) and "__text" not in d)
 
     ibk = read_res("frameseek://images/backends")
-    check("生图资源给了三后端",
-          {"agnes", "sd15", "h3"} <= set(ibk.get("parameter_matrix") or {}))
+    check("生图资源给了双后端",
+          {"agnes", "sd15"} <= set(ibk.get("parameter_matrix") or {}))
     check("生图资源说明了哪些参数被忽略",
           any("忽略" in v for v in (ibk.get("parameter_matrix") or {}).values()))
     check("生图资源写了重掷流程",
@@ -324,11 +324,11 @@ def main():
                   "image": "x.png", "annotation": "不是json"})
         check("非法 JSON 被拦", a.get("ok") is False)
 
-    print("\n[13] 出图：三后端摸底与参数校验（不真出图，只读+入参校验）")
+    print("\n[13] 出图：双后端摸底与参数校验（不真出图，只读+入参校验）")
     ii = call("frameseek_img_info")
     check("img_info 正常", ii.get("ok") is True, str(ii)[:100])
     bs = {b["id"]: b for b in (ii.get("backends") or [])}
-    check("三后端齐备", set(bs) == {"agnes", "sd15", "h3"}, str(set(bs)))
+    check("双后端齐备", set(bs) == {"agnes", "sd15"}, str(set(bs)))
     check("每个后端都报了 ready/eta",
           all("ready" in b and "eta" in b for b in bs.values()))
     check("产物目录是 AI生成/绘画",
@@ -340,8 +340,8 @@ def main():
     for k in ("prompt", "backend", "negative", "refs", "width", "height",
               "ratio", "seed", "steps", "cfg", "name"):
         check(f"generate_image 有参数 {k}", k in gp)
-    check("generate_image 的 backend 说明了三后端",
-          all(x in gp["backend"]["description"] for x in ("agnes", "sd15", "h3")))
+    check("generate_image 的 backend 说明了双后端",
+          all(x in gp["backend"]["description"] for x in ("agnes", "sd15")))
     check("generate_image 的 refs 说明要绝对路径",
           "绝对路径" in gp["refs"]["description"])
 

@@ -1060,8 +1060,8 @@ FrameSeek 的一组工具，Web 侧对应「手绘」面板。
 | `frameseek_boxaudit`       | 方框复查清单（每条凭证指标 + 通过与否 + 原因）                     |
 | `frameseek_recog_line`     | 重新识别**这一句**（`mode=ocr` 看画面 / `mode=asr` 只听这句），只读不写库 |
 | `frameseek_edit_line`      | 改这条台词的文字/起止时间，`save_box=True` 同时写入画面方框         |
-| `frameseek_img_info`       | 生图三后端摸底：agnes（云端/联网）/ sd15（本地/种子可复现）/ h3（视频抽帧）各自 ready、耗时、是否离线 |
-| `frameseek_generate_image` | **出静态图 PNG**（三后端可插拔，默认 auto 按 agnes→sd15→h3 降级）。**同步返回**路径，带同名 sidecar 留痕参数 |
+| `frameseek_img_info`       | 生图双后端摸底：agnes（云端/联网）/ sd15（本地/种子可复现）各自 ready、耗时、是否离线 |
+| `frameseek_generate_image` | **出静态图 PNG**（双后端可插拔，默认 auto 按 agnes→sd15 降级）。**同步返回**路径，带同名 sidecar 留痕参数 |
 | `frameseek_reroll_image`   | 按某张图的 sidecar 参数原样复现、只换新种子（**重掷就靠这个**，sd15 下收敛） |
 | `frameseek_list_images`    | 列 `<项目根>/AI生成/绘画/` 的产物（新的在前，带生成时的全部参数） |
 | `frameseek_gen_info`       | 视频生成引擎状态（ready/missing、参数范围、模型文件是否齐全）            |

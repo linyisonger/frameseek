@@ -582,13 +582,13 @@ def api_generate():
                                 "12 步采样，5 秒约 10 分钟、10 秒约 40 分钟"})
 
 
-# ---------------- AI 绘画（三后端生图：Agnes / SD1.5 / H3） ----------------
+# ---------------- AI 绘画（双后端生图：Agnes / SD1.5） ----------------
 _AD_BUSY = threading.Semaphore(1)   # GPU 同时只能跑一个（与 _GEN_BUSY 同思路）
 
 
 @app.get("/api/aidraw/info")
 def api_aidraw_info():
-    """绘画面板摸底：三后端就绪状态、默认后端、产物目录。"""
+    """绘画面板摸底：双后端就绪状态、默认后端、产物目录。"""
     from core import img_backend as ib
     try:
         return jsonify({"ok": True, "backends": ib.backends(),
@@ -654,7 +654,7 @@ def _aidraw_job(root: str, tid: int, params: dict):
 
 @app.post("/api/aidraw/generate")
 def api_aidraw_generate():
-    """发起绘画生成（异步）。三后端可选，默认 Agnes；auto 按优先级降级。
+    """发起绘画生成（异步）。双后端可选，默认 Agnes；auto 按优先级降级。
 
     产物落 <项目根>/AI生成/绘画/，旁边带 sidecar JSON 留痕（重掷用）。
     root 只用于把任务进度记到某个库的 tasks 表，不影响产物落点。
@@ -666,7 +666,7 @@ def api_aidraw_generate():
                         "err": "先选一个素材库（用于记录任务进度）"}), 400
     from core import img_backend as ib
     backend = (d.get("backend") or "agnes").strip().lower()
-    if backend not in ("agnes", "sd15", "h3", "auto"):
+    if backend not in ("agnes", "sd15", "auto"):
         return jsonify({"ok": False, "err": f"未知后端：{backend}"}), 400
     prompt = (d.get("prompt") or "").strip()
     if not prompt:
@@ -711,7 +711,7 @@ def api_aidraw_generate():
     threading.Thread(target=_aidraw_job, args=(root, tid, params),
                      daemon=True).start()
     eta = {"agnes": "约 10~60 秒", "sd15": "约 5~20 秒",
-           "h3": "约 5~10 分钟", "auto": "视后端而定"}[backend]
+           "auto": "视后端而定"}[backend]
     return jsonify({"ok": True, "task_id": tid, "root": root,
                     "out_dir": ib.paint_dir(), "eta_hint": eta})
 
@@ -749,7 +749,10 @@ def api_aidraw_reroll():
     meta_lora = meta.get("lora")
     meta_scale = meta.get("lora_scale")
     meta_ctrl = meta.get("control_strength")
-    params = {"backend": meta.get("backend") or "agnes",
+    _rb = meta.get("backend") or "agnes"
+    if _rb not in ("agnes", "sd15"):   # 老 sidecar 若记了已下线的 h3，回落 auto
+        _rb = "auto"
+    params = {"backend": _rb,
               "prompt": meta.get("prompt") or "",
               "negative": meta.get("negative") or "",
               "refs": [r for r in (meta.get("refs") or [])

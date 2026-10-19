@@ -78,11 +78,11 @@ server = MCPServer(C.APP_NAME, title=C.APP_LABEL, instructions=(
     "（save_box=True 可同时写入画面方框）。frameseek_verify / frameseek_boxaudit 回答"
     "“这句在画面上真有框吗”，纯读库很快，纠错时优先怀疑 font_dev 超标的行。\n"
     "\n"
-    "【AI 生成·图】frameseek_generate_image 出**静态图**（PNG），三后端可插拔："
-    "agnes 云端秒级、sd15 本地种子可复现（重掷收敛，主力）、"
-    "h3 拿视频模型抽末帧兜底。默认 auto 按 agnes→sd15→h3 降级。"
-    "产物落项目目录 AI生成/绘画/，**同步返回**（agnes 10~60 秒 / sd15 5~20 秒 / "
-    "h3 要 5~10 分钟）。不满意用 frameseek_reroll_image 按留痕参数换种子重掷，"
+    "【AI 生成·图】frameseek_generate_image 出**静态图**（PNG），双后端可插拔："
+    "agnes 云端秒级、sd15 本地种子可复现（重掷收敛，主力）。"
+    "默认 auto 按 agnes→sd15 降级。"
+    "产物落项目目录 AI生成/绘画/，**同步返回**（agnes 10~60 秒 / sd15 5~20 秒）。"
+    "不满意用 frameseek_reroll_image 按留痕参数换种子重掷，"
     "别自己重新拼参数。发起前 frameseek_img_info 看哪个后端就绪。\n"
     "\n"
     "【AI 生成·视频】frameseek_generate_video 按提示词生成视频，成片落项目目录 "
@@ -1139,10 +1139,10 @@ def frameseek_transcribe_asr(
                note="用 frameseek_task 查进度")
 
 
-# ---------------- 工具：图片生成（三后端） ----------------
+# ---------------- 工具：图片生成（双后端） ----------------
 @server.tool()
 def frameseek_img_info() -> str:
-    """图片生成现状：三个生图后端各自就绪没有、大概多久、要不要联网，
+    """图片生成现状：两个生图后端各自就绪没有、大概多久、要不要联网，
     以及产物落哪个目录。发起生成前先看这个，别盲目指定后端。"""
     try:
         bs = img_mod.backends()
@@ -1163,22 +1163,21 @@ def frameseek_img_info() -> str:
 def frameseek_generate_image(
         prompt: Annotated[str, Field(description=
             "画面提示词。中文可以直接写（Agnes 是中文模型）；"
-            "走 sd15/h3 后端时英文效果更稳。"
+            "走 sd15 后端时英文效果更稳。"
             "主体、风格、构图、光线都写进去，别写镜头运动")],
         backend: Annotated[str, Field(default="auto", description=
-            "生图后端。auto（默认）按 agnes → sd15 → h3 依次降级，"
+            "生图后端。auto（默认）按 agnes → sd15 依次降级，"
             "前面的没就绪或失败就换下一个。"
             "agnes=Agnes Image 2.5 Flash（云端，秒级，1K/2K，最多 3 张参考图，需联网）；"
             "sd15=本地 SD1.5 + 线稿 LoRA + canny ControlNet（2~5 秒，种子可复现，"
-            "参考图走 canny 锁构图不漂，**重掷就靠它**）；"
-            "h3=本地 MiniMax H3 视频模型抽末帧（**8 分钟一张**，纯离线兜底，别主动选）"
+            "参考图走 canny 锁构图不漂，**重掷就靠它**）"
             )] = "auto",
         negative: Annotated[str, Field(default="", description=
             "反向提示词（要避开的东西），如“多余手指、模糊、水印”。"
-            "只有 sd15 后端吃这个参数，agnes/h3 会忽略")] = "",
+            "只有 sd15 后端吃这个参数，agnes 会忽略")] = "",
         refs: Annotated[Optional[List[str]], Field(default=None, description=
             "参考图绝对路径列表。agnes 最多 3 张（多图合成）；"
-            "sd15 用首张算 canny 控制图锁构图；h3 用首张锁风格。"
+            "sd15 用首张算 canny 控制图锁构图。"
             "省略=纯文生图。**必须是磁盘上真实存在的文件**")] = None,
         width: Annotated[int, Field(default=0, ge=0, le=1024, description=
             "出图宽度，8 的倍数、256~1024。0=按后端默认（sd15 用 512，"
@@ -1199,10 +1198,10 @@ def frameseek_generate_image(
             "产物文件名（不含扩展名），留空按提示词自动生成")] = "",
         root: Root = "") -> str:
     """生成一张图片（PNG），落 <项目根>/AI生成/绘画/，旁边带同名 sidecar JSON
-    留痕全部参数。三后端可插拔，见 frameseek_img_info。
+    留痕全部参数。双后端可插拔，见 frameseek_img_info。
 
-    同步执行并直接返回文件路径——agnes 通常 10~60 秒，sd15 5~20 秒，
-    h3 要 5~10 分钟。**GPU 同时只能跑一个**，别并发调。
+    同步执行并直接返回文件路径——agnes 通常 10~60 秒，sd15 5~20 秒。
+    **GPU 同时只能跑一个**，别并发调。
 
     想要「同一张图换个种子重掷」用 frameseek_reroll_image，
     它会照 sidecar 里的原参数复现，比自己重新拼参数靠谱。
@@ -1211,8 +1210,8 @@ def frameseek_generate_image(
     if not prompt:
         return _err("提示词不能为空")
     b = (backend or "auto").strip().lower()
-    if b not in ("agnes", "sd15", "h3", "auto"):
-        return _err(f"未知后端：{b}（可选 agnes / sd15 / h3 / auto）")
+    if b not in ("agnes", "sd15", "auto"):
+        return _err(f"未知后端：{b}（可选 agnes / sd15 / auto）")
     ref_list = [os.path.abspath(x) for x in (refs or []) if x]
     for x in ref_list:
         if not os.path.isfile(x):
@@ -1245,7 +1244,7 @@ def frameseek_generate_image(
     except Exception as e:
         return _err(f"{type(e).__name__}: {e}",
                     hint="看 %s 里的 stderr；agnes 后端要联网，"
-                         "sd15/h3 失败通常是 ComfyUI 目录或模型权重缺失" %
+                         "sd15 失败通常是 ComfyUI 目录或模型权重缺失" %
                          img_mod.__name__.rsplit(".", 1)[0])
     if not res or not res.get("file"):
         return _err("出图没有产物",
@@ -1287,8 +1286,11 @@ def frameseek_reroll_image(
         return _err(f"sidecar 读取失败：{e}")
     if not meta.get("prompt"):
         return _err("sidecar 里没有提示词")
+    _rb = meta.get("backend") or "agnes"
+    if _rb not in ("agnes", "sd15"):   # 老 sidecar 若记了已下线的 h3，回落 auto
+        _rb = "auto"
     kwargs = dict(
-        backend=meta.get("backend") or "agnes",
+        backend=_rb,
         prompt=meta.get("prompt") or "",
         negative=meta.get("negative") or "",
         refs=[x for x in (meta.get("refs") or []) if x and os.path.isfile(x)],
@@ -2119,7 +2121,7 @@ def _res_clips() -> str:
 
 @server.resource("frameseek://images/backends",
                  name="生图后端说明与当前就绪状态",
-                 description="三后端（agnes 云端 / sd15 本地可复现 / h3 视频抽帧）"
+                 description="双后端（agnes 云端 / sd15 本地可复现）"
                              "各自的能力、参数适用性、耗时，以及**此刻**哪些就绪。"
                              "选后端前读这个，别盲目指定。",
                  mime_type="application/json")
@@ -2141,9 +2143,6 @@ def _res_img_backends() -> str:
             "sd15": "吃全部参数；固定 seed 可复现同一张（重掷主力）；"
                     "refs 首张算 canny 控制图锁构图；方形模型，ratio 无效，"
                     "width/height 用 512。纯本地。",
-            "h3": "视频模型抽末帧当静态图；吃 prompt / refs 首张锁风格；"
-                  "忽略 negative、steps、cfg。**5~10 分钟一张**，纯离线兜底，"
-                  "别主动选。",
         },
         "how_to_reroll": [
             "1. frameseek_generate_image 出图，返回 file 绝对路径",
@@ -2157,7 +2156,7 @@ def _res_img_backends() -> str:
         "pitfalls": [
             "GPU 同时只能跑一个，别并发调",
             "refs 必须是磁盘绝对路径，不是 URL 也不是素材库相对路径",
-            "出图是**同步**的（ags 10~60 秒 / sd15 5~20 秒 / h3 5~10 分钟），"
+            "出图是**同步**的（ags 10~60 秒 / sd15 5~20 秒），"
             "不像视频生成那样异步轮询",
             "产物不入素材库索引，落 <项目根>/AI生成/绘画/",
         ],

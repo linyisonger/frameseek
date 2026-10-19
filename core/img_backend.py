@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
-"""统一生图后端层：Agnes / SD1.5 / H3 三后端可插拔（2026-10-16）。
+"""统一生图后端层：Agnes / SD1.5 双后端可插拔（2026-10-16）。
 
 对外只暴露两件事：
 - backends()：给面板摸底——每个后端就绪没有、快不快、离不离线；
 - gen_image()：一条龙出 PNG，落 <项目根>/AI生成/绘画/，旁边带同名
   sidecar JSON（参数留痕，供「重掷」复现同一组参数只换种子）。
 
-后端优先级：默认 auto = agnes → sd15 → h3 依次降级；也可在 UI 里
-显式选定某一个（用户要求三后端兼容且可选，Agnes 优先）。
+后端优先级：默认 auto = agnes → sd15 依次降级；也可在 UI 里
+显式选定某一个（Agnes 优先）。
 
     agnes   Agnes Image 2.5 Flash（API，秒级，1K/2K，最多 3 张参考图）
     sd15    本地 SD1.5 + 线稿 LoRA + canny ControlNet（进程内直调 ComfyUI，
             2~5 秒/张，种子可复现，构图不漂——重掷主力）
-    h3      本地 MiniMax H3（视频模型抽末帧，8 分钟/张，纯离线兜底）
 
 canny 控制图在**父进程**用 cv2 预处理好再传给 sdgen.py——ComfyUI 内嵌
 python 没装 cv2，而跑 app 的解释器（envs/default）有。
@@ -47,22 +46,18 @@ COMFY_APP_ROOT = (os.path.join(COMFY_ROOT, "ComfyUI")
                   if os.path.isdir(os.path.join(COMFY_ROOT, "ComfyUI"))
                   else COMFY_ROOT)
 SDGEN = os.path.join(BASE, "sdgen.py")
-H3GEN = os.path.join(BASE, "h3gen.py")
 SDGEN_LOG = os.path.join(BASE, "_out", "sdgen_last.log")
-H3_LOG = os.path.join(BASE, "_out", "h3gen_last.log")
 
 # SD1.5 模型文件名（与 models/ 下实际文件对应）
 CKPT_NAME = "v1-5-pruned-emaonly.safetensors"
 CONTROLNET_NAME = "diffusion_pytorch_model.fp16.safetensors"
 LORA_DEFAULT = "simple-lineart_v6.safetensors"
 
-BACKEND_ORDER = ("agnes", "sd15", "h3")   # auto 模式的降级链
+BACKEND_ORDER = ("agnes", "sd15")   # auto 模式的降级链
 DEFAULT_LORA_SCALE = 0.8
 DEFAULT_CONTROL_STRENGTH = 0.65
 CANVAS_COLOR = "#F5EBD7"                  # 暖米黄纸底（H3 垫边用）
 
-# H3 宽高比表（与 h3gen.py 一致）
-H3_ASPECTS = ("16:9", "9:16", "1:1", "4:3", "3:4", "2:3", "3:2", "21:9")
 _AGNES_RATIOS = ("1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9")
 
 
@@ -146,14 +141,6 @@ def backends() -> list:
         "ready": sd_ok,
         "note": "2~5 秒/张 · 种子可复现 · canny 锁构图不漂 · 重掷主力",
         "eta": "约 5~20 秒（含模型加载）", "offline": True})
-    # h3
-    h3_ok = (os.path.isfile(COMFY_PY) and os.path.isfile(H3GEN)
-             and os.path.isdir(COMFY_APP_ROOT))
-    items.append({
-        "id": "h3", "name": "MiniMax H3 抽帧（本地）",
-        "ready": h3_ok,
-        "note": "约 8 分钟/张 · 纯离线兜底 · 视频模型抽末帧",
-        "eta": "约 5~10 分钟", "offline": True})
     return items
 
 
@@ -362,55 +349,7 @@ def _gen_sd15(prompt: str, negative: str = "", refs=None, seed: int = 0,
                     (" · canny 锁构图" if ctrl else "")}
 
 
-def _gen_h3(prompt: str, negative: str = "", refs=None, seed: int = 0,
-            w: int = 0, h: int = 0, out_dir: str = "", name: str = "",
-            on_tick=None, timeout: int = 1500, **kw) -> dict:
-    """MiniMax H3 视频模型抽末帧当图（纯离线兜底，~8 分钟/张）。"""
-    from core import gen as _gen
-    refs = [r for r in (refs or []) if r and os.path.isfile(r)][:1]
-    stem = _safe_stem(name, "h3")
-    dst = os.path.join(out_dir, stem + ".png")
-    tmp_dir = os.path.join(BASE, "_out", "aidraw_tmp")
-    os.makedirs(tmp_dir, exist_ok=True)
-    tmp_mp4 = os.path.join(tmp_dir, stem + ".mp4")
-    aspect = _ratio_of(w, h)
-    if aspect not in H3_ASPECTS:
-        aspect = "16:9"
-    duration = 5.2                      # H3 最短档（17k+5 栅格下限）
-    frames, seconds = _gen.frames_for(duration)
-    cmd = [COMFY_PY, "-u", H3GEN,
-           "--prompt", prompt,
-           "--duration", str(duration),
-           "--aspect", aspect,
-           "--megapixels", "0.3",
-           "--steps", "12",
-           "--seed", str(seed or 0),
-           "--out", tmp_mp4,
-           "--ffmpeg", _which_ffmpeg(),
-           "--comfy-root", COMFY_APP_ROOT]
-    if refs:
-        cmd += ["--ref", refs[0]]
-    info = _run_protocol(cmd, H3_LOG, on_tick, timeout)
-    # 抽末帧（靠近结尾 0.15s 处，static 锁定后末帧干净可当线稿）
-    ff = _which_ffmpeg()
-    p = subprocess.run([ff, "-y", "-hide_banner", "-loglevel", "error",
-                        "-sseof", str(max(0.05, seconds - 0.15)),
-                        "-i", tmp_mp4, "-frames:v", "1", "-update", "1", dst],
-                       capture_output=True, text=True)
-    if p.returncode != 0 or not os.path.isfile(dst):
-        raise RuntimeError("抽末帧失败：" + (p.stderr or "")[-300:])
-    try:
-        os.remove(tmp_mp4)
-    except OSError:
-        pass
-    aw, ah = _img_size(dst)
-    return {"ok": True, "file": dst, "backend": "h3",
-            "seed": int(info.get("seed") or seed or 0),
-            "w": aw, "h": ah, "elapsed": 0,
-            "note": f"MiniMax H3 抽帧 · {aspect} · 5.2s 片段"}
-
-
-_IMPLS = {"agnes": _gen_agnes, "sd15": _gen_sd15, "h3": _gen_h3}
+_IMPLS = {"agnes": _gen_agnes, "sd15": _gen_sd15}
 
 
 # ---------------- 统一入口 ----------------
@@ -421,11 +360,10 @@ def gen_image(backend: str = "auto", prompt: str = "", negative: str = "",
               control_strength: float = DEFAULT_CONTROL_STRENGTH,
               steps: int = 20, cfg: float = 7.0, on_tick=None,
               timeout: int = 0) -> dict:
-    """出图一条龙。backend: agnes / sd15 / h3 / auto（按优先级降级）。
+    """出图一条龙。backend: agnes / sd15 / auto（按优先级降级）。
 
-    refs: 参考图路径列表（sd15 用首张算 canny；agnes 最多传 3 张；
-          h3 用首张锁风格）。产物落 paint_dir()（或指定 out_dir），
-          旁边写 sidecar JSON 留痕。
+    refs: 参考图路径列表（sd15 用首张算 canny；agnes 最多传 3 张）。
+    产物落 paint_dir()（或指定 out_dir），旁边写 sidecar JSON 留痕。
     """
     prompt = (prompt or "").strip()
     if not prompt:
