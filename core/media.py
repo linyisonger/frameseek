@@ -763,9 +763,64 @@ def list_tracks(path: str) -> dict:
     return {"audio": audio, "subtitle": subs}
 
 
+# mp4 容器塞得下的**文本**字幕编码。位图字幕（PGS/DVDSUB/DVB）mp4 不认，
+# `-c:s mov_text` 转不动会让整条 ffmpeg 失败，所以只挑这批带进产物。
+SUB_TEXT_CODECS = {"subrip", "ass", "ssa", "mov_text", "text", "webvtt",
+                   "sami", "realtext", "subviewer", "subviewer1", "pjs", "mpl2"}
+
+
+def keepable_subs(path: str) -> list:
+    """片源里能安全塞进 mp4 的字幕流（**绝对流索引**列表）。
+
+    不加这个过滤会出事：蓝光 remux 常见 PGS 位图字幕，mp4 根本装不下，
+    硬 map 过去 ffmpeg 直接失败、整个片段导不出来。所以只带文本字幕。
+    """
+    try:
+        subs = list_tracks(path)["subtitle"]
+    except Exception:
+        return []
+    return [s["index"] for s in subs
+            if (s.get("codec") or "").lower() in SUB_TEXT_CODECS]
+
+
+def first_video_stream(path: str):
+    """第一条**真**视频流的绝对索引；探不出来返回 None。
+
+    mp4 常带一条 mjpeg 封面流（disposition.attached_pic）而且往往排在最前面，
+    直接 `-map 0:v:0` 会选中它、导出一堆静帧。所以这里跳过 attached_pic。
+    """
+    try:
+        for s in ffprobe_json(path).get("streams", []):
+            if s.get("codec_type") != "video":
+                continue
+            if (s.get("disposition") or {}).get("attached_pic"):
+                continue
+            return int(s.get("index"))
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def auto_embedded_sub(path: str, line_src: str = ""):
+    """auto 档的内嵌字幕回退：片源自带字幕轨就烧第一条，别让原片字幕凭空消失。
+
+    · 台词来源是 ocr（说明画面本来就印着字幕）→ 返回 None，再烧会压出重影
+    · 片源没有任何字幕轨 → 返回 None，交给台词库那条路
+    返回的仍是 **ffprobe 绝对流索引**，可直接喂给 export_clip 的 sub_track。
+    """
+    if (line_src or "").strip().lower() == "ocr":
+        return None
+    try:
+        subs = list_tracks(path)["subtitle"]
+    except Exception:
+        return None
+    return subs[0]["index"] if subs else None
+
+
 def export_clip(video: str, start: float, end: float, out: str,
                 reencode: bool = True, srt: str = None,
-                audio_track: int = None, sub_track: int = None) -> bool:
+                audio_track: int = None, sub_track: int = None,
+                keep_subs: bool = True) -> bool:
     """导出片段。默认重编码（帧精确），fast 模式用 -c copy（秒级但只能按关键帧切）。
 
     字幕二选一（都给时以 sub_track 为准，前端是互斥下拉，正常不会同时给）：
@@ -775,23 +830,41 @@ def export_clip(video: str, start: float, end: float, out: str,
                     所以选内嵌轨一律走 si=，不先落 SRT。
     给了字幕就必然重编码（流拷贝没法叠加滤镜）。
 
-    audio_track = 片源音轨的绝对流索引；给了就显式 `-map 0:v:0 -map 0:<idx>`
-    只留那一条。不给则**完全保持老行为**（不加 -map，交给 ffmpeg 挑它认为最佳的
-    那条），这样单轨片和以前导出的结果一模一样，不会因为加了 map 反而丢音。
+    audio_track = 片源音轨的绝对流索引；给了就显式 `-map` 只留那一条。
+    不给且不需要带字幕时**完全不加 -map**，保持老行为（交给 ffmpeg 挑最佳音轨），
+    这样单轨片和以前导出的结果一模一样，不会因为加了 map 反而丢音。
+
+    keep_subs（默认 True）= 把片源的**文本字幕轨**一起带进产物（软字幕）。
+    之前不加任何 -map/-c:s，ffmpeg 对字幕的默认流选择根本不生效，原片字幕
+    导出后凭空消失；现在默认保住。已烧硬字幕（sub_track/srt）时不再重复带。
     """
     os.makedirs(os.path.dirname(out), exist_ok=True)
     dur = max(0.2, end - start)
     base = [C.FFMPEG, "-y", "-ss", f"{max(0.0, start):.3f}",
             "-t", f"{dur:.3f}", "-i", video]
-    tail = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart"]
 
-    maps = []
+    # ---- 轨道映射 ----
+    # 烧了硬字幕就别再带软字幕，否则播放时可能叠两遍
+    sub_idx = keepable_subs(video) if (keep_subs and sub_track is None) else []
+    v_first = (first_video_stream(video)
+               if (audio_track is not None or sub_idx) else None)
+    vmap = f"0:{v_first}" if v_first is not None else "0:v:0"
+    amap = None
     if audio_track is not None:
         try:
-            maps = ["-map", "0:v:0", "-map", f"0:{int(audio_track)}"]
+            amap = f"0:{int(audio_track)}"
         except (TypeError, ValueError):
-            maps = []
+            amap = None
+
+    # 不带字幕的映射：只有显式选了音轨才加（其余保持老行为不加 map）
+    maps_plain = ["-map", vmap, "-map", amap] if amap else []
+    # 带字幕的映射。⚠ 一旦命令行里出现**任何** -map，ffmpeg 的默认流选择就
+    # 整体关闭——只保留显式 map 的流。所以带字幕时必须把视频/音频也显式带上，
+    # 否则导出来只剩一条字幕流，画面声音全没。
+    maps_sub = []
+    if sub_idx:
+        maps_sub = (["-map", vmap, "-map", amap or "0:a:0?"]
+                    + [x for i in sub_idx for x in ("-map", f"0:{i}")])
 
     vf = None
     if sub_track is not None:
@@ -800,27 +873,38 @@ def export_clip(video: str, start: float, end: float, out: str,
             # sub_track 对外统一是 ffprobe 的**绝对流索引**（和 audio_track 一致，
             # 前端拿到的 list_tracks 也是这个值），但 subtitles 滤镜的 si= 要的是
             # 相对序号，所以这里按字幕流在片源里的先后位置换算一次。
-            sub_idx = [s["index"] for s in list_tracks(video)["subtitle"]]
-            if st_i in sub_idx:
-                vf = _sub_vf(video, si=sub_idx.index(st_i))
+            _si = [s["index"] for s in list_tracks(video)["subtitle"]]
+            if st_i in _si:
+                vf = _sub_vf(video, si=_si.index(st_i))
         except (TypeError, ValueError):
             vf = None
     elif srt and os.path.exists(srt):
         vf = _sub_vf(srt)
 
+    ENC = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+           "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart"]
+    ENC_S = ENC + ["-c:s", "mov_text"]
+
+    def _go(maps, extra, timeout=900):
+        run(base + maps + extra + [out], timeout=timeout)
+        return os.path.exists(out) and os.path.getsize(out) > 0
+
+    # 1) 烧硬字幕（必然重编码）
     if vf:
-        p = run(base + maps + ["-vf", vf] + tail + [out], timeout=900)
-        if os.path.exists(out) and os.path.getsize(out) > 0:
+        if _go(maps_sub or maps_plain, ["-vf", vf] + (ENC_S if maps_sub else ENC)):
             return True
-        # 烧字幕失败别静默丢结果：退回无字幕重编码
+        # 烧失败别静默丢结果：往下退回无字幕重编码
+    # 2) 秒切（流拷贝）
     elif not reencode:
-        # 秒切：整段流拷贝（有 -map 时只拷被选中的那几条）
-        p = run(base + maps + ["-c", "copy", "-avoid_negative_ts", "make_zero", out],
-                timeout=300)
-        if os.path.exists(out) and os.path.getsize(out) > 0:
+        if maps_sub and _go(maps_sub, ["-c:v", "copy", "-c:a", "copy", "-c:s", "mov_text",
+                                       "-avoid_negative_ts", "make_zero"], 300):
             return True
-    p = run(base + maps + tail + [out], timeout=900)
-    return os.path.exists(out) and os.path.getsize(out) > 0
+        if _go(maps_plain, ["-c", "copy", "-avoid_negative_ts", "make_zero"], 300):
+            return True
+    # 3) 常规 / 兜底重编码：先试带字幕，字幕转不动就去掉再来一次，别整个失败
+    if maps_sub and _go(maps_sub, ENC_S):
+        return True
+    return _go(maps_plain, ENC)
 
 
 def extract_audio(video: str, out_wav: str) -> bool:

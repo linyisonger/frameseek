@@ -1892,6 +1892,16 @@ def _as_int_or_none(v):
         return None
 
 
+def _is_auto_mode(mode) -> bool:
+    """「导出字幕」是不是 auto 档。只有 auto 才走「内嵌字幕回退」那条路：
+    force/off 是用户明确表了态，不该被自动逻辑改写。旧的布尔接口也算表态。"""
+    if mode is None or mode == "":
+        return True
+    if isinstance(mode, bool):
+        return False
+    return str(mode).strip().lower() in ("auto", "none", "null")
+
+
 @app.get("/api/video/tracks")
 def api_video_tracks():
     """探一个素材的**音轨 / 字幕轨清单**，给导出前「挑一条」用。
@@ -2068,6 +2078,9 @@ def api_clip():
 
     out = []
     sub_notes = []
+    # 同一批导出里同一个片源会被反复问「有没有内嵌字幕轨」，ffprobe 每次几十毫秒，
+    # 一次导出几十个片段时攒起来可观，按路径缓存一下。
+    _auto_sub_cache = {}
     for ln in items:
         v = st.get_video(ln["video_id"])
         if not v:
@@ -2079,16 +2092,30 @@ def api_clip():
                       for ch in f"{os.path.splitext(v['name'])[0][:24]}_{ln['start']:.2f}")
         rel = f"{C.CLIP_DIR}/{tag}_{int(time.time()) % 100000}.mp4"
         dst = os.path.join(IX.cache_dir(root), rel)
-        if sub_track is not None:
+        line_src = v.get("line_source") or ln.get("src") or ""
+        # 本次这条用哪条字幕轨。不能直接改写循环外的 sub_track——那样下一次
+        # 迭代会带着上一条的回退结果，多片段导出时第二片起全被污染。
+        sti = sub_track
+        if sti is not None:
             # 显式选了内嵌字幕轨：就烧它，不吃 auto「OCR 源跳过」那一档判断
             burn, note = True, ""
         else:
             # OCR 来源的画面本来就有字幕，auto 模式下不烧（core.media.decide_burn）
-            burn, note = media.decide_burn(sub_mode, v.get("line_source") or ln.get("src") or "")
+            burn, note = media.decide_burn(sub_mode, line_src)
+            # 内嵌字幕回退：片源自带字幕轨时烧它，别让原片字幕导出后凭空消失。
+            # 只在 auto 档生效（force/off 是用户明确表态，不被改写）；
+            # ocr 源由 auto_embedded_sub 自己挡掉（画面已有字幕，再烧会重影）。
+            if _is_auto_mode(sub_mode) and os.path.isfile(src):
+                if src not in _auto_sub_cache:
+                    _auto_sub_cache[src] = media.auto_embedded_sub(src, line_src)
+                _si = _auto_sub_cache[src]
+                if _si is not None:
+                    sti, burn = _si, True
+                    note = "已烧片源内嵌字幕轨（保留原片字幕）"
             if note and note not in sub_notes:
                 sub_notes.append(note)
         srt_path = None
-        if burn and sub_track is None:
+        if burn and sti is None:
             # 窗口内有台词才生成 SRT；时间从库内绝对秒平移成片段相对秒，
             # 超出片段末尾的部分裁掉（media.write_srt_at 干这事）
             dur = max(0.2, e - s)
@@ -2105,10 +2132,12 @@ def api_clip():
                 srt_path = media.write_srt_at(
                     os.path.splitext(dst)[0] + ".srt", sub_rows, dur=dur)
         if media.export_clip(src, s, e, dst, reencode=not fast, srt=srt_path,
-                             audio_track=audio_track, sub_track=sub_track):
+                             audio_track=audio_track, sub_track=sti):
             out.append({"rel": rel, "name": os.path.basename(dst), "video": v["name"],
                         "text": ln.get("text", ""), "start": s, "end": e, "root": root,
-                        "sub": bool(srt_path), "sub_skipped": bool(note and not srt_path),
+                        "sub": bool(srt_path or sti is not None),
+                        "sub_track": sti, "audio_track": audio_track,
+                        "sub_skipped": bool(note and not srt_path and sti is None),
                         "video_src": v.get("line_source") or ""})
     r = {"ok": True, "clips": out, "root": root, "sub_mode": str(sub_mode).lower(),
          "audio_track": audio_track, "sub_track": sub_track,

@@ -1523,6 +1523,17 @@ def frameseek_boxaudit(
     return json.dumps(rep, ensure_ascii=False)
 
 
+def _is_auto_mode(mode) -> bool:
+    """「导出字幕」是不是 auto 档。只有 auto 才走「内嵌字幕回退」那条路：
+    force/off 是调用方明确表了态，不该被自动逻辑改写。布尔旧接口也算表态。
+    （与 app.py 的同名函数保持一致，两边不互相 import：app 是 Flask 应用。）"""
+    if mode is None or mode == "":
+        return True
+    if isinstance(mode, bool):
+        return False
+    return str(mode).strip().lower() in ("auto", "none", "null")
+
+
 # ---------------- 工具：导出 ----------------
 @server.tool()
 def frameseek_list_clips(
@@ -1689,12 +1700,26 @@ def frameseek_export_clip(
                       for ch in f"{os.path.splitext(v['name'])[0][:24]}_{ln['start']:.2f}")
         dst = os.path.join(IX.cache_dir(r), f"{C.CLIP_DIR}/{tag}_{lid}.mp4")
 
+        line_src = v.get("line_source") or ln.get("src") or ""
+        # 本次这条用哪条字幕轨。不能改写外层 sub_track——批量导出时那会污染
+        # 后续每条（第二条起就带着第一条的回退结果）。
+        sti = sub_track
         srt_path = ""
-        burn, sub_note = media.decide_burn(
-            subtitle, v.get("line_source") or ln.get("src") or "")
-        if sub_note:
-            sub_notes.append(sub_note)
-        if burn:
+        if sti is not None:
+            burn, sub_note = True, ""
+        else:
+            burn, sub_note = media.decide_burn(subtitle, line_src)
+            # 内嵌字幕回退：片源自带字幕轨就烧它，别让原片字幕导出后凭空消失。
+            # 只在 auto 档生效；ocr 源由 auto_embedded_sub 自己挡掉（画面已有
+            # 字幕，再烧会重影）。
+            if _is_auto_mode(subtitle) and os.path.isfile(src):
+                _si = media.auto_embedded_sub(src, line_src)
+                if _si is not None:
+                    sti, burn = _si, True
+                    sub_note = "已烧片源内嵌字幕轨（保留原片字幕）"
+            if sub_note:
+                sub_notes.append(sub_note)
+        if burn and sti is None:
             # 窗口内的台词按片段相对时间写一份 SRT；没有重叠台词就不烧
             dur = max(0.2, e - s)
             rows = []
@@ -1712,12 +1737,14 @@ def frameseek_export_clip(
 
         if not media.export_clip(src, s, e, dst, reencode=not fast,
                                  srt=srt_path or None,
-                                 audio_track=audio_track, sub_track=sub_track):
+                                 audio_track=audio_track, sub_track=sti):
             return _err(f"导出失败（ffmpeg？）台词 {lid}",
                         "看 stderr 里 ffmpeg 的报错；常见是磁盘满或源文件损坏")
         clips.append({"line_id": lid, "path": dst, "video": v["name"],
                       "text": ln.get("text", ""), "start": round(s, 2),
-                      "end": round(e, 2), "subtitle_burned": bool(srt_path),
+                      "end": round(e, 2),
+                      "subtitle_burned": bool(srt_path or sti is not None),
+                      "sub_track": sti, "audio_track": audio_track,
                       "video_src": v.get("line_source") or "",
                       "srt": srt_path})
     out: Dict[str, Any] = {"count": len(clips), "clips": clips,
