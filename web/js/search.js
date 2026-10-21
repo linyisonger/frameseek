@@ -9,7 +9,7 @@ const SearchView = {
   template: `
 <div class="fs-page">
   <div class="fs-page-hd">
-    <div><h1>台词检索</h1><p>跨全部素材库搜台词，回车直接搜</p></div>
+    <div><h1>台词检索</h1><p>{{ libRoot ? '只搜「' + libName + '」这一个库' : '跨全部素材库搜台词' }}，回车直接搜；简繁体互通，打简体也能搜到繁体字幕</p></div>
   </div>
 
   <el-card shadow="never" class="fs-card">
@@ -19,26 +19,35 @@ const SearchView = {
         <template #prefix><el-icon><Search></Search></el-icon></template>
         <template #append>
           <el-button id="btnSearch" type="primary" :loading="searching" @click="doSearch"
-            title="跨全部已登记库搜台词，中文子串也行（回车等价）。搜到的每句都能一键导出前后各 N 秒">搜索</el-button>
+            :title="(libRoot ? '只搜「' + libName + '」' : '跨全部已登记库搜台词') + '，中文子串也行（回车等价）。搜到的每句都能一键导出前后各 N 秒'">搜索</el-button>
         </template>
       </el-input>
     </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
+      <span class="dim">素材库</span>
+      <el-select id="libpick" v-model="libRoot" size="small" style="min-width:230px"
+        title="默认跨全部已登记库搜；库多、或想限定在某部片所在的库里找，就在这里选一个">
+        <el-option label="全部素材库" value=""/>
+        <el-option v-for="l in libs" :key="l.path" :label="l.name || l.path" :value="l.path"/>
+      </el-select>
+      <span class="dim" v-if="libs.length" style="font-size:12px">共 {{ libs.length }} 个库</span>
+    </div>
     <el-form label-position="top" class="fs-form" @submit.prevent>
       <el-row :gutter="14">
-        <el-col :xs="24" :sm="12" :md="7" :lg="7">
+        <el-col :xs="24" :sm="12" :md="6" :lg="6">
           <el-form-item label="导出片段时长（秒）">
             <div class="fs-cfg-inline">
               前 <el-input-number id="pre" v-model="pre" :min="0" :max="60" size="small" controls-position="right"/> 后 <el-input-number id="post" v-model="post" :min="0" :max="60" size="small" controls-position="right"/>
             </div>
           </el-form-item>
         </el-col>
-        <el-col :xs="12" :sm="6" :md="5" :lg="4">
+        <el-col :xs="12" :sm="6" :md="6" :lg="6">
           <el-form-item label="剪辑模式">
             <el-switch id="fast" v-model="fast" size="small" active-text="秒切" inactive-text="精确"
               title="秒切＝直接拷贝原视频流（快，但只能落在关键帧上，切点可能差半秒）。不勾则重编码，切点帧精确，慢一些"/>
           </el-form-item>
         </el-col>
-        <el-col :xs="12" :sm="6" :md="5" :lg="4">
+        <el-col :xs="12" :sm="6" :md="6" :lg="6">
           <el-form-item label="导出字幕">
             <el-select id="submode" v-model="subMode" size="small"
               title="自动＝画面本来就带字幕的素材（台词来自 OCR 识别）跳过烧录，其余照旧烧；关闭＝一律不烧；强制＝一律烧（OCR 字幕有错字、纠完想重烧一份时用）">
@@ -79,7 +88,7 @@ const SearchView = {
           <el-tag v-if="r.lib" size="small" type="info">{{ r.lib }}</el-tag>
           <span v-html="boxMark(r)"></span>
         </div>
-        <div class="txt" v-html="hl(r.text)"></div>
+        <div class="txt" v-html="hlRow(r)"></div>
         <div class="from">{{ r.name }}</div>
       </div>
       <div class="ops">
@@ -145,14 +154,32 @@ const SearchView = {
       get: () => S.subBand, set: v => { S.subBand = !!v; },
     });
 
+    /* 素材库选择：默认空 = 跨全部库；选定后只搜那一个库 */
+    const libs = ref([]);
+    const libRoot = ref('');
+    const libName = computed(() => {
+      const l = libs.value.find(x => x.path === libRoot.value);
+      return l ? (l.name || l.path) : '';
+    });
+    onMounted(async () => {
+      try {
+        const r = await api('/api/libraries');
+        libs.value = (r && r.items) || [];
+      } catch (e) { /* 拿不到就退回跨库搜，不挡人 */ }
+    });
+
     async function doSearch() {
       const kw = (q.value || '').trim();
       if (!kw) { toast('先输入要搜的台词或片名', 'warning'); return; }
       searched.value = true;
       searching.value = true;
       try {
+        // 后端 scope=root 需要同时给 root；不给就是跨全部库
+        const scope = libRoot.value ? 'root' : 'all';
+        const root = libRoot.value
+          ? `&root=${encodeURIComponent(libRoot.value)}` : '';
         const r = await api(
-          `/api/search?q=${encodeURIComponent(kw)}&scope=all&limit=300`);
+          `/api/search?q=${encodeURIComponent(kw)}&scope=${scope}${root}&limit=300`);
         rows.value = r || [];
         // 后端按 limit 截断：恰好或超过 300 就提示可能没列全
         capped.value = (rows.value.length >= 300);
@@ -162,8 +189,12 @@ const SearchView = {
     }
     function onClear() { searched.value = false; rows.value = []; capped.value = false; }
 
+    /* 高亮要用「这条实际命中的简繁变体」：搜简体时繁体结果字面不同，
+       拿原关键词高亮会一点都标不出来，看着像没命中。 */
+    function hlRow(r) { return hl(r.text, r.mv || q.value); }
+
     const resultSummary = computed(() =>
-      `命中 ${rows.value.length} 句`);
+      `命中 ${rows.value.length} 句${libRoot.value ? '（' + libName.value + '）' : ''}`);
 
     /* 方框凭证标记：这条台词在画面上有没有一个真实的框撑着 */
     function boxMark(r) {
@@ -237,9 +268,9 @@ const SearchView = {
 
     return {
       q, rows, searched, searching, capped, resultSummary, pre, post: post_, fast,
-      subMode, subBand,
+      subMode, subBand, libs, libRoot, libName,
       dlgOpen, dlgAudio, dlgSubs, dlgAudioSel, dlgSubSel,
-      doSearch, onClear, boxMark, clipRow, confirmClip,
+      doSearch, onClear, boxMark, clipRow, confirmClip, hlRow,
       hl: t => hl(t, q.value),
       shotUrl: r => mediaUrl(r.shot || r.cover, r.root),
       playRow: r => play(r.video_id, r.start, r.name, r.root),

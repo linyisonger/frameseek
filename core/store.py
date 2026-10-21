@@ -11,6 +11,7 @@ import time
 from typing import List, Dict, Any, Optional
 
 from core import config as C
+from core import hanzi
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta(
@@ -419,12 +420,20 @@ class Store:
 
     # ---------------- search ----------------
     def search(self, q: str, limit: int = 200) -> List[Dict[str, Any]]:
-        """中文优先：>=3 字走 FTS5 trigram，<3 字或 FTS 无结果时退回 LIKE"""
+        """中文优先：>=3 字走 FTS5 trigram，<3 字或 FTS 无结果时退回 LIKE。
+
+        关键词会按简繁展开成多个变体再 OR 查询（core.hanzi）：库里存的是繁体
+        字幕、用户打简体（或反过来、或繁简混写）都要能互相搜到。没有简繁异体
+        的词不展开，避免白白多出查询分支。
+        """
         q = (q or "").strip()
         if not q:
             return []
+        vs = hanzi.expand(q) if hanzi.has_variant(q) else [q]
         rows: List[Dict[str, Any]] = []
         if len(q) >= 3:
+            # 变体是字符级 1:1 替换，长度跟 q 一致，所以按 q 判长度即可
+            expr = " OR ".join('"%s"' % v.replace('"', '""') for v in vs)
             try:
                 with self._conn() as conn:
                     rows = [dict(r) for r in conn.execute(
@@ -432,20 +441,29 @@ class Store:
                         "FROM lines_fts f JOIN lines l ON l.id=f.rowid "
                         "JOIN videos v ON v.id=l.video_id "
                         "WHERE lines_fts MATCH ? ORDER BY l.video_id, l.start LIMIT ?",
-                        ('"' + q.replace('"', '""') + '"', limit))]
+                        (expr, limit))]
             except Exception:
                 rows = []
         if not rows:
+            where = " OR ".join(["l.text LIKE ?"] * len(vs))
             with self._conn() as conn:
                 rows = [dict(r) for r in conn.execute(
                     "SELECT l.*, v.name, v.rel, v.duration, v.cover, v.gif "
                     "FROM lines l JOIN videos v ON v.id=l.video_id "
-                    "WHERE l.text LIKE ? ORDER BY l.video_id, l.start LIMIT ?",
-                    (f"%{q}%", limit))]
+                    f"WHERE {where} ORDER BY l.video_id, l.start LIMIT ?",
+                    (*[f"%{v}%" for v in vs], limit))]
         out = []
         for r in rows:
             r["start_str"] = fmt_ts(r["start"])
             r["end_str"] = fmt_ts(r.get("end") or r["start"])
+            # 这行命中的是哪个简繁变体：前端拿它做高亮，否则搜简体时繁体结果
+            # 会因为和关键词字面不同而高亮不上，看起来像没命中。
+            if len(vs) > 1:
+                txt = r.get("text") or ""
+                for v in vs:
+                    if v in txt:
+                        r["mv"] = v
+                        break
             # box 存的是 JSON 字符串，这里解成 dict 方便前端直接读几何字段
             b = r.get("box")
             if isinstance(b, str):
