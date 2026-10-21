@@ -788,7 +788,9 @@ def frameseek_video_info(
                         "注意只在本库内唯一，跨库会撞号")],
         root: Root = "") -> str:
     """单个素材的详情：时长/分辨率、台词条数与来源、方框凭证统计、
-    封面与动图路径（相对库根目录，配合 Web 服务 /media 或 /stream 访问）。"""
+    封面与动图路径（相对库根目录，配合 Web 服务 /media 或 /stream 访问），
+    以及**音轨 / 字幕轨清单**（tracks：导出时用来挑语言或内嵌字幕，
+    index 可直接喂给 frameseek_export_clip 的 audio_track / sub_track）。"""
     r = pick_root(root)
     if not r:
         return _err("未指定素材库",
@@ -801,6 +803,15 @@ def frameseek_video_info(
                     "video_id 只在本库内唯一，跨库会撞号（同一个 id 在不同库"
                     "是完全不相干的片子）。用 frameseek_find_videos 拿 root + id "
                     "成对使用最稳，或先 frameseek_list_videos 确认 id")
+    # 音轨 / 字幕轨清单：给「导出时挑一条」用。文件不在了就给空清单，
+    # 不让一个可选信息把整个详情工具带崩。
+    src = os.path.join(r, v.get("rel") or "")
+    tracks = {"audio": [], "subtitle": []}
+    if os.path.isfile(src):
+        try:
+            tracks = media.list_tracks(src)
+        except Exception:
+            pass
     s = st.box_stats(video_id)
     return _ok(root=r, video={
         "id": v["id"], "name": v["name"], "rel": v.get("rel"),
@@ -809,6 +820,7 @@ def frameseek_video_info(
         "md5": v.get("md5"), "status": v.get("status"),
         "line_count": v.get("line_count"), "line_source": v.get("line_source"),
         "err": v.get("err") or "",
+        "tracks": tracks,
         "boxed": s["boxed"], "no_box": s["total"] - s["boxed"],
         "cover": v.get("cover"), "gif": v.get("gif")})
 
@@ -1614,12 +1626,25 @@ def frameseek_export_clip(
             "off = 一律不烧；"
             "force = 一律烧（OCR 字幕有错字、纠完想重新烧一份时用这个）。"
             "只影响导出；烧字幕会强制重编码（忽略 fast），比秒切慢几倍")] = "auto",
+        audio_track: Annotated[Optional[int], Field(
+            default=None, description=
+            "指定用哪条**音轨**（ffprobe 的绝对流索引，从 frameseek_video_info "
+            "返回的 tracks.audio[].index 拿）。多音频轨的片子（国语/粤语/原声各一条）"
+            "用它选语言；不给 = 交给 ffmpeg 挑它认为最佳的那条，和以前一样")] = None,
+        sub_track: Annotated[Optional[int], Field(
+            default=None, description=
+            "指定烧哪条**内嵌字幕轨**（绝对流索引，从 tracks.subtitle[].index 拿）。"
+            "给了就以它为准，不再烧项目台词库里的台词；位图字幕（PGS/DVDSUB）"
+            "也能烧——所以选内嵌轨走的是滤镜直烧，不先抽 SRT。不给则维持原逻辑")] = None,
         root: Root = "") -> str:
     """导出台词前后各 N 秒的片段，返回 mp4 的绝对路径（可直接给播放器/剪辑软件）。
 
     line_id 从 frameseek_search / frameseek_get_lines 拿，**root 用结果里的 root**
     （多库时不能省：line_id 只在它自己的库内唯一，跨库会撞号）。
     成片落在 `<root>/.frameseek/clips/`，文件名带影片名和起始秒，便于人工辨认。
+
+    片源有多条音轨 / 内嵌字幕轨时，先用 frameseek_video_info 看 tracks，
+    再用 audio_track / sub_track 指定要哪一条。
     """
     r = pick_root(root)
     if not r or not os.path.isdir(r):
@@ -1686,7 +1711,8 @@ def frameseek_export_clip(
                     os.path.splitext(dst)[0] + ".srt", rows, dur=dur)
 
         if not media.export_clip(src, s, e, dst, reencode=not fast,
-                                 srt=srt_path or None):
+                                 srt=srt_path or None,
+                                 audio_track=audio_track, sub_track=sub_track):
             return _err(f"导出失败（ffmpeg？）台词 {lid}",
                         "看 stderr 里 ffmpeg 的报错；常见是磁盘满或源文件损坏")
         clips.append({"line_id": lid, "path": dst, "video": v["name"],

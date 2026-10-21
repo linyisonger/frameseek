@@ -642,15 +642,28 @@ def _rmtree_bg(path: str):
         pass
 
 
-def _sub_vf(srt: str) -> str:
+def _sub_vf(srt: str, si: int = None) -> str:
     r"""subtitles 滤镜参数。路径里 Windows 盘符的冒号在 filtergraph 里要转义成
     `\:`，且整个值套单引号，否则 "D:/x.srt" 的冒号会被当成选项分隔符
-    （实测报 "Unable to parse option value ... as image size"）"""
+    （实测报 "Unable to parse option value ... as image size"）
+
+    si 非空 = 烧**片源文件里**的内嵌字幕轨（filename 照旧传文件路径，只是这次
+    传的是视频本身）。走 si= 而不是先抽成 SRT，是因为位图字幕（PGS/DVDSUB）
+    ffmpeg 根本转不出文本流，但滤镜渲染照样能画出来。
+
+    ⚠ si 是「第几条**字幕流**」的**相对序号**（0 起），**不是 ffprobe 的绝对流
+    索引**。实测：mkv 里 0=视频 1=音频 2=字幕（唯一一条字幕），传 si=2 直接报
+    `Unable to locate subtitle stream`，传 si=0 才烧得上。多轨片里这两个值几乎
+    必然不同，换算由 export_clip 负责，别把绝对索引直接丢进来。
+    """
     style = (f"FontName={C.SUB_FONT},FontSize=28,"
              "PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
              "BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=28")
     p = srt.replace("\\", "/").replace(":", r"\:")
-    return f"subtitles=filename='{p}':force_style='{style}'"
+    out = f"subtitles=filename='{p}'"
+    if si is not None:
+        out += f":si={int(si)}"
+    return out + f":force_style='{style}'"
 
 
 # ---------------- 烧字幕策略：谁来决定要不要烧 ----------------
@@ -689,31 +702,124 @@ def decide_burn(mode, line_src: str = ""):
     return True, ""
 
 
+def _track_label(kind: str, r: dict) -> str:
+    """轨道的人话标签，例：`音轨 #2 · chi · 国语 · 2声道 · aac · 默认`"""
+    bits = [f"{kind} #{r['index']}"]
+    if r.get("lang"):
+        bits.append(r["lang"])
+    if r.get("title"):
+        bits.append(r["title"])
+    if kind == "音轨" and r.get("channels"):
+        bits.append(f"{r['channels']}声道")
+    if r.get("codec"):
+        bits.append(r["codec"])
+    tail = [x for x in ("默认" if r.get("default") else "",
+                        "强制" if r.get("forced") else "") if x]
+    if tail:
+        bits.append("/".join(tail))
+    return " · ".join(bits)
+
+
+def list_tracks(path: str) -> dict:
+    """探出片源的**音轨 / 字幕轨清单**，给「导出时挑一条」用。
+
+    index 是 ffprobe 的**绝对流索引**（不是 a:0 / s:0 那种相对序号）——
+    ffmpeg 的 `-map 0:<index>` 和 subtitles 滤镜的 `si=` 都直接吃这个值，
+    所以探一次就能同时喂给两边，不用再换算。
+
+    探测失败 / 片子没有对应轨道时返回空列表，调用方按「单轨」处理即可
+    （前端据此决定弹不弹选择框）。
+    """
+    info = ffprobe_json(path)
+    audio, subs = [], []
+    for s in info.get("streams", []):
+        ct = s.get("codec_type")
+        if ct not in ("audio", "subtitle"):
+            continue
+        try:
+            idx = int(s.get("index"))
+        except (TypeError, ValueError):
+            continue
+        tags = s.get("tags") or {}
+        dis = s.get("disposition") or {}
+        row = {
+            "index": idx,
+            "codec": str(s.get("codec_name") or ""),
+            "lang": str(tags.get("language") or "").strip(),
+            "title": str(tags.get("title") or "").strip(),
+            "default": bool(dis.get("default")),
+            "forced": bool(dis.get("forced")),
+        }
+        if ct == "audio":
+            try:
+                row["channels"] = int(s.get("channels") or 0)
+            except (TypeError, ValueError):
+                row["channels"] = 0
+            row["label"] = _track_label("音轨", row)
+            audio.append(row)
+        else:
+            row["label"] = _track_label("字幕轨", row)
+            subs.append(row)
+    return {"audio": audio, "subtitle": subs}
+
+
 def export_clip(video: str, start: float, end: float, out: str,
-                reencode: bool = True, srt: str = None) -> bool:
+                reencode: bool = True, srt: str = None,
+                audio_track: int = None, sub_track: int = None) -> bool:
     """导出片段。默认重编码（帧精确），fast 模式用 -c copy（秒级但只能按关键帧切）。
-    给了 srt 就强制走重编码，把字幕硬烧进画面（流拷贝没法叠加滤镜）"""
+
+    字幕二选一（都给时以 sub_track 为准，前端是互斥下拉，正常不会同时给）：
+      · srt       = 外挂 SRT 路径（项目台词库按片段窗口生成的那份），烧进画面
+      · sub_track = 片源内嵌字幕轨的**绝对流索引**，用 subtitles 滤镜的 si= 直接烧
+                    ——位图字幕（PGS/DVDSUB）抽不出文本流，但滤镜照样能渲染，
+                    所以选内嵌轨一律走 si=，不先落 SRT。
+    给了字幕就必然重编码（流拷贝没法叠加滤镜）。
+
+    audio_track = 片源音轨的绝对流索引；给了就显式 `-map 0:v:0 -map 0:<idx>`
+    只留那一条。不给则**完全保持老行为**（不加 -map，交给 ffmpeg 挑它认为最佳的
+    那条），这样单轨片和以前导出的结果一模一样，不会因为加了 map 反而丢音。
+    """
     os.makedirs(os.path.dirname(out), exist_ok=True)
     dur = max(0.2, end - start)
-    if srt and os.path.exists(srt):
-        p = run([C.FFMPEG, "-y", "-ss", f"{max(0.0,start):.3f}", "-t", f"{dur:.3f}",
-                 "-i", video, "-vf", _sub_vf(srt),
-                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-                 "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out],
-                timeout=900)
+    base = [C.FFMPEG, "-y", "-ss", f"{max(0.0, start):.3f}",
+            "-t", f"{dur:.3f}", "-i", video]
+    tail = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart"]
+
+    maps = []
+    if audio_track is not None:
+        try:
+            maps = ["-map", "0:v:0", "-map", f"0:{int(audio_track)}"]
+        except (TypeError, ValueError):
+            maps = []
+
+    vf = None
+    if sub_track is not None:
+        try:
+            st_i = int(sub_track)
+            # sub_track 对外统一是 ffprobe 的**绝对流索引**（和 audio_track 一致，
+            # 前端拿到的 list_tracks 也是这个值），但 subtitles 滤镜的 si= 要的是
+            # 相对序号，所以这里按字幕流在片源里的先后位置换算一次。
+            sub_idx = [s["index"] for s in list_tracks(video)["subtitle"]]
+            if st_i in sub_idx:
+                vf = _sub_vf(video, si=sub_idx.index(st_i))
+        except (TypeError, ValueError):
+            vf = None
+    elif srt and os.path.exists(srt):
+        vf = _sub_vf(srt)
+
+    if vf:
+        p = run(base + maps + ["-vf", vf] + tail + [out], timeout=900)
         if os.path.exists(out) and os.path.getsize(out) > 0:
             return True
         # 烧字幕失败别静默丢结果：退回无字幕重编码
-    if not reencode and not srt:
-        p = run([C.FFMPEG, "-y", "-ss", f"{max(0.0,start):.3f}", "-t", f"{dur:.3f}",
-                 "-i", video, "-c", "copy", "-avoid_negative_ts", "make_zero", out],
+    elif not reencode:
+        # 秒切：整段流拷贝（有 -map 时只拷被选中的那几条）
+        p = run(base + maps + ["-c", "copy", "-avoid_negative_ts", "make_zero", out],
                 timeout=300)
         if os.path.exists(out) and os.path.getsize(out) > 0:
             return True
-    p = run([C.FFMPEG, "-y", "-ss", f"{max(0.0,start):.3f}", "-t", f"{dur:.3f}", "-i", video,
-             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-             "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out],
-            timeout=900)
+    p = run(base + maps + tail + [out], timeout=900)
     return os.path.exists(out) and os.path.getsize(out) > 0
 
 

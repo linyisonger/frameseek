@@ -94,6 +94,33 @@ const SearchView = {
     <b>输入关键词，搜全部素材库里的每一句台词</b>
     <span>支持按台词内容或素材文件名搜；搜到的每句能一键导出前后各 N 秒的片段，直接拖进剪映。</span>
   </div>
+
+  <!-- 多轨片才弹：音轨≥2 或 有内嵌字幕轨。单轨片走老路径，一点就导 -->
+  <el-dialog v-model="dlgOpen" title="选择音轨 / 字幕轨" width="460px"
+             :close-on-click-modal="false">
+    <p class="dim" style="margin:0 0 12px">这个片子有多条轨道，导出前挑一下用哪条</p>
+    <el-form label-position="top" @submit.prevent>
+      <el-form-item label="音轨" v-if="dlgAudio.length">
+        <el-select v-model="dlgAudioSel" size="small" style="width:100%"
+          title="片源里每条音频轨，按语言/声道/标题区分。选中的那条会写进导出片段">
+          <el-option v-for="a in dlgAudio" :key="'a' + a.index" :label="a.label" :value="a.index"/>
+        </el-select>
+      </el-form-item>
+      <el-form-item label="字幕">
+        <el-select v-model="dlgSubSel" size="small" style="width:100%"
+          title="项目台词库＝烧本项目索引出来的台词（受上面「导出字幕」三档控制）；内嵌字幕轨＝直接烧片源自带的某条字幕；不烧＝导出的片段不带字幕">
+          <el-option label="项目台词库（按现有 自动/关闭/强制 判断）" value="db"/>
+          <el-option v-for="s in dlgSubs" :key="'s' + s.index"
+                     :label="'内嵌 ' + s.label" :value="String(s.index)"/>
+          <el-option label="不烧字幕" value="none"/>
+        </el-select>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button size="small" @click="dlgOpen = false">取消</el-button>
+      <el-button size="small" type="primary" @click="confirmClip">导出</el-button>
+    </template>
+  </el-dialog>
 </div>
 `,
   setup() {
@@ -167,14 +194,55 @@ const SearchView = {
       return mark;
     }
 
+    /* 多轨选择：只有后端判定 multi（音轨≥2 或有内嵌字幕轨）才弹框。
+       单轨片完全走老路径，一点就导，不多一步操作。 */
+    const dlgOpen = ref(false);
+    const dlgAudio = ref([]);
+    const dlgSubs = ref([]);
+    const dlgAudioSel = ref(null);
+    const dlgSubSel = ref('db');
+    let dlgRow = null;
+
+    async function clipRow(r) {
+      try {
+        const t = await api(`/api/video/tracks?root=${encodeURIComponent(r.root)}`
+          + `&video_id=${r.video_id}`);
+        if (t && t.ok && t.multi) {
+          dlgAudio.value = t.audio || [];
+          dlgSubs.value = t.subtitle || [];
+          const def = (t.audio || []).find(a => a.default);
+          dlgAudioSel.value = def ? def.index
+            : (((t.audio || [])[0] || {}).index ?? null);
+          dlgSubSel.value = 'db';
+          dlgRow = r;
+          dlgOpen.value = true;
+          return;
+        }
+      } catch (e) {
+        /* 探测失败不挡人：按老样子直接导 */
+      }
+      return clipLine(r.id, r.root);
+    }
+
+    function confirmClip() {
+      dlgOpen.value = false;
+      const r = dlgRow;
+      if (!r) return;
+      const opts = {};
+      if (dlgAudioSel.value != null) opts.audio_track = dlgAudioSel.value;
+      if (dlgSubSel.value === 'none') opts.subtitle = 'off';
+      else if (dlgSubSel.value !== 'db') opts.sub_track = Number(dlgSubSel.value);
+      return clipLine(r.id, r.root, opts);
+    }
+
     return {
       q, rows, searched, searching, capped, resultSummary, pre, post: post_, fast,
       subMode, subBand,
-      doSearch, onClear, boxMark,
+      dlgOpen, dlgAudio, dlgSubs, dlgAudioSel, dlgSubSel,
+      doSearch, onClear, boxMark, clipRow, confirmClip,
       hl: t => hl(t, q.value),
       shotUrl: r => mediaUrl(r.shot || r.cover, r.root),
       playRow: r => play(r.video_id, r.start, r.name, r.root),
-      clipRow: r => clipLine(r.id, r.root),
     };
   },
 };

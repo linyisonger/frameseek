@@ -1877,6 +1877,50 @@ def api_clip_file():
                         name=os.path.basename(p))
 
 
+# ---------------- 轨道探测（导出前挑音轨 / 字幕轨） ----------------
+def _as_int_or_none(v):
+    """把前端传来的轨道索引转成 int；None / 空串 / 'null' / 非法值一律当「没选」。
+
+    前端下拉的值是字符串，还得能表达「这一项没选」，所以统一在这里收敛，
+    免得每个调用点各写一遍 try/except。
+    """
+    if v is None or v == "" or v == "null":
+        return None
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return None
+
+
+@app.get("/api/video/tracks")
+def api_video_tracks():
+    """探一个素材的**音轨 / 字幕轨清单**，给导出前「挑一条」用。
+
+    按 video_id + root 定位（video_id 只在库内唯一）。轨道**现探不入库**：
+    ffprobe 只读容器头，几十毫秒；片源换轨 / 重新压制后下次探测自然就是新的，
+    缓存进库反而会脏。
+
+    multi=True = 「有得挑」：音轨 ≥2 条，或者存在内嵌字幕轨——后者意味着字幕
+    至少有两种来源可选（项目台词库 vs 内嵌轨），也值得让用户选一下。
+    """
+    root = os.path.abspath(request.args.get("root") or active_root())
+    if not root:
+        return jsonify({"ok": False, "err": "没指定素材库"}), 400
+    vid = _as_int_or_none(request.args.get("video_id"))
+    if vid is None:
+        return jsonify({"ok": False, "err": "缺 video_id"}), 400
+    v = store_of(root).get_video(vid)
+    if not v:
+        return jsonify({"ok": False, "err": "找不到素材"}), 404
+    src = os.path.abspath(resolve(root, v["rel"]))
+    if not os.path.isfile(src):
+        return jsonify({"ok": False, "err": "视频文件不在了：" + v["rel"]}), 404
+    t = media.list_tracks(src)
+    return jsonify({"ok": True, "video": v["name"],
+                    "audio": t["audio"], "subtitle": t["subtitle"],
+                    "multi": len(t["audio"]) > 1 or len(t["subtitle"]) > 0})
+
+
 # ---------------- 导出片段 ----------------
 def _srt_first_text(srt_path: str) -> str:
     """读外挂 SRT 的第一句台词（烧字幕时顺手写在那儿，用来回补卡片标题）"""
@@ -2007,6 +2051,10 @@ def api_clip():
     fast = bool(d.get("fast", True))
     # 烧字幕三档：auto（按来源自动）/ off / force。也接受旧版布尔。
     sub_mode = d.get("subtitle", "auto")
+    # 轨道选择：都是 ffprobe 的绝对流索引，由 /api/video/tracks 探出来给前端挑。
+    # 不给（None）= 保持原行为：音轨交给 ffmpeg 挑、字幕走台词库的三档判断。
+    audio_track = _as_int_or_none(d.get("audio_track"))
+    sub_track = _as_int_or_none(d.get("sub_track"))
     items = []
     for lid in (d.get("line_ids") or ([d["line_id"]] if d.get("line_id") else [])):
         ln = st.get_line(int(lid))
@@ -2031,12 +2079,16 @@ def api_clip():
                       for ch in f"{os.path.splitext(v['name'])[0][:24]}_{ln['start']:.2f}")
         rel = f"{C.CLIP_DIR}/{tag}_{int(time.time()) % 100000}.mp4"
         dst = os.path.join(IX.cache_dir(root), rel)
-        # OCR 来源的画面本来就有字幕，auto 模式下不烧（core.media.decide_burn）
-        burn, note = media.decide_burn(sub_mode, v.get("line_source") or ln.get("src") or "")
-        if note and note not in sub_notes:
-            sub_notes.append(note)
+        if sub_track is not None:
+            # 显式选了内嵌字幕轨：就烧它，不吃 auto「OCR 源跳过」那一档判断
+            burn, note = True, ""
+        else:
+            # OCR 来源的画面本来就有字幕，auto 模式下不烧（core.media.decide_burn）
+            burn, note = media.decide_burn(sub_mode, v.get("line_source") or ln.get("src") or "")
+            if note and note not in sub_notes:
+                sub_notes.append(note)
         srt_path = None
-        if burn:
+        if burn and sub_track is None:
             # 窗口内有台词才生成 SRT；时间从库内绝对秒平移成片段相对秒，
             # 超出片段末尾的部分裁掉（media.write_srt_at 干这事）
             dur = max(0.2, e - s)
@@ -2052,12 +2104,14 @@ def api_clip():
             if sub_rows:
                 srt_path = media.write_srt_at(
                     os.path.splitext(dst)[0] + ".srt", sub_rows, dur=dur)
-        if media.export_clip(src, s, e, dst, reencode=not fast, srt=srt_path):
+        if media.export_clip(src, s, e, dst, reencode=not fast, srt=srt_path,
+                             audio_track=audio_track, sub_track=sub_track):
             out.append({"rel": rel, "name": os.path.basename(dst), "video": v["name"],
                         "text": ln.get("text", ""), "start": s, "end": e, "root": root,
                         "sub": bool(srt_path), "sub_skipped": bool(note and not srt_path),
                         "video_src": v.get("line_source") or ""})
     r = {"ok": True, "clips": out, "root": root, "sub_mode": str(sub_mode).lower(),
+         "audio_track": audio_track, "sub_track": sub_track,
          "dir": os.path.join(IX.cache_dir(root), C.CLIP_DIR)}
     if sub_notes:
         r["sub_note"] = sub_notes[0]

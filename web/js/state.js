@@ -298,11 +298,19 @@ async function addClips(r) {
   // 自动跳过烧录时说明原因（比如 OCR 源画面本来就有字幕），否则用户会以为开关没生效
   if (r.sub_note) toast(r.sub_note, 'warning');
 }
-function clipLine(line_id, root) {
+/* opts 可选：{ audio_track, sub_track, subtitle }
+   —— 多轨片由检索页先探轨道、弹框让用户挑，挑完把选择带进来；
+      单轨片不传 opts，行为跟以前一模一样。 */
+function clipLine(line_id, root, opts) {
+  const body = { root, line_id, pre: S.pre, post: S.post, fast: S.fast,
+    subtitle: (opts && opts.subtitle) || S.subMode };
+  if (opts) {
+    if (opts.audio_track != null) body.audio_track = opts.audio_track;
+    if (opts.sub_track != null) body.sub_track = opts.sub_track;
+  }
   return api('/api/clip', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ root, line_id, pre: S.pre, post: S.post,
-      fast: S.fast, subtitle: S.subMode }),
+    body: JSON.stringify(body),
   }).then(addClips);
 }
 
