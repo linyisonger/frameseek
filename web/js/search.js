@@ -25,10 +25,14 @@ const SearchView = {
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
       <span class="dim">素材库</span>
-      <el-select id="libpick" v-model="libRoot" size="small" style="min-width:230px"
+      <!-- 宽度交给 CSS（.fs-libpick）：el-select 自带 width:100%，在 flex 行里
+           会被拉满整行；长目录名还会把下拉面板顶宽出屏幕，所以选项文字截断 +
+           title 显示全名，面板宽度跟输入框走。 -->
+      <el-select id="libpick" v-model="libRoot" size="small" class="fs-libpick"
+        popper-class="fs-libpick-pop" fit-input-width
         title="默认跨全部已登记库搜；库多、或想限定在某部片所在的库里找，就在这里选一个">
         <el-option label="全部素材库" value=""/>
-        <el-option v-for="l in libs" :key="l.path" :label="l.name || l.path" :value="l.path"/>
+        <el-option v-for="o in libOpts" :key="o.path" :label="o.name" :value="o.path" :title="o.full"/>
       </el-select>
       <span class="dim" v-if="libs.length" style="font-size:12px">共 {{ libs.length }} 个库</span>
     </div>
@@ -157,9 +161,20 @@ const SearchView = {
     /* 素材库选择：默认空 = 跨全部库；选定后只搜那一个库 */
     const libs = ref([]);
     const libRoot = ref('');
+    /* 下拉里只显示短名（没名字就取路径最后一段），长名截断；完整路径挂在
+       title 上，鼠标悬停能看全——否则一个深目录名能把选择框撑到屏幕外。 */
+    const libOpts = computed(() => libs.value.map(l => {
+      const p = l.path || '';
+      const nm = l.name || p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || p;
+      return {
+        path: p,
+        name: nm.length > 14 ? nm.slice(0, 13) + '…' : nm,
+        full: l.name ? `${l.name}  ·  ${p}` : p,
+      };
+    }));
     const libName = computed(() => {
-      const l = libs.value.find(x => x.path === libRoot.value);
-      return l ? (l.name || l.path) : '';
+      const o = libOpts.value.find(x => x.path === libRoot.value);
+      return o ? (o.name || o.path) : '';
     });
     onMounted(async () => {
       try {
@@ -268,7 +283,7 @@ const SearchView = {
 
     return {
       q, rows, searched, searching, capped, resultSummary, pre, post: post_, fast,
-      subMode, subBand, libs, libRoot, libName,
+      subMode, subBand, libs, libOpts, libRoot, libName,
       dlgOpen, dlgAudio, dlgSubs, dlgAudioSel, dlgSubSel,
       doSearch, onClear, boxMark, clipRow, confirmClip, hlRow,
       hl: t => hl(t, q.value),

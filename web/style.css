@@ -576,6 +576,12 @@ code {
 }
 .fs-cfg-inline { display: flex; align-items: center; gap: var(--fs-gap-sm); flex-wrap: wrap; }
 .fs-cfg-inline .el-input-number { width: 84px; }
+/* 素材库下拉：el-select 自带 width:100%，放进 flex 行会被拉满整行。固定
+   170px 刚好放下短库名；下拉面板跟输入框同宽（fit-input-width），长名在选项
+   里省略、完整路径走 title。 */
+.fs-libpick { flex: 0 0 auto; width: 170px; }
+.fs-libpick-pop { max-width: 240px; }
+.fs-libpick-pop .el-select-dropdown__item { overflow: hidden; text-overflow: ellipsis; }
 
 .fs-results { display: flex; flex-direction: column; gap: var(--fs-gap-sm); }
 .fs-result-summary {
