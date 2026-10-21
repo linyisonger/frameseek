@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """拾帧 FrameSeek - 全局配置"""
+import os
 
 APP_NAME = "frameseek"
 APP_LABEL = "拾帧 FrameSeek"
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 选中文件夹后，在该文件夹下生成的隐藏目录名
 CACHE_DIR = ".frameseek"

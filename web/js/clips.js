@@ -22,25 +22,25 @@ const ClipsView = {
   </div>
 
   <el-card shadow="never" class="fs-card">
-    <el-form label-position="top" class="fs-form" @submit.prevent>
-      <el-row :gutter="14">
-        <el-col :xs="24" :sm="12" :md="9">
+    <el-form label-position="top" class="fs-form fs-filterform" @submit.prevent>
+      <el-row :gutter="12">
+        <el-col :xs="24" :sm="12" :md="6">
           <el-form-item label="关键词">
-            <el-input v-model="kw" clearable placeholder="台词 / 文件名 / 影片名">
+            <el-input v-model="kw" class="w220" clearable placeholder="台词 / 文件名 / 影片名">
               <template #prefix><el-icon><search/></el-icon></template>
             </el-input>
           </el-form-item>
         </el-col>
-        <el-col :xs="12" :sm="6" :md="5">
+        <el-col :xs="12" :sm="6" :md="4">
           <el-form-item label="素材库">
-            <el-select v-model="lib" clearable placeholder="全部库" style="width:100%">
+            <el-select v-model="lib" class="w160" clearable placeholder="全部库">
               <el-option v-for="L in libs" :key="L" :label="L" :value="L"/>
             </el-select>
           </el-form-item>
         </el-col>
-        <el-col :xs="12" :sm="6" :md="5">
+        <el-col :xs="12" :sm="6" :md="4">
           <el-form-item label="排序">
-            <el-select v-model="sort" style="width:100%">
+            <el-select v-model="sort" class="w160">
               <el-option label="最近导出" value="time"/>
               <el-option label="按影片名" value="video"/>
               <el-option label="按体积" value="size"/>
@@ -49,14 +49,12 @@ const ClipsView = {
           </el-form-item>
         </el-col>
         <!-- 统计说明列：与上方三个筛选控件底边对齐（原来用空格 label 占位会对不齐） -->
-        <el-col :xs="24" :md="5" class="fs-col-note">
+        <el-col :xs="24" :md="10" class="fs-col-note">
           <div class="fs-colnote">{{ view.length }} 个 · {{ totalSize }} · {{ libCount }} 个库</div>
         </el-col>
       </el-row>
     </el-form>
   </el-card>
-
-  <el-divider />
 
   <el-row v-if="view.length" :gutter="14" class="fs-clips">
     <el-col v-for="c in view" :key="c.key" :xs="24" :sm="12" :md="8" :xl="6">
@@ -68,6 +66,8 @@ const ClipsView = {
           <el-tag size="small" type="info" v-if="c.lib">{{ c.lib }}</el-tag>
           <el-tag size="small" v-if="c.duration">{{ fmtSec(c.duration) }}</el-tag>
           <el-tag size="small" type="success" v-if="c.sub">字幕</el-tag>
+          <el-tag size="small" type="warning" v-if="c.sub_skipped"
+            title="这条素材画面本来就有字幕（OCR 源），自动模式跳过了烧录；要烧请在检索页把「导出字幕」改成「强制」再导一次">未烧字幕</el-tag>
           <span class="dim">{{ fmtSize(c.size) }} · {{ fmtAgo(c.mtime) }}</span>
         </div>
         <div class="chipops">
@@ -81,7 +81,14 @@ const ClipsView = {
       </el-card>
     </el-col>
   </el-row>
-  <el-empty v-else-if="!loading" description="还没有导出片段。在「台词检索」里搜到台词后点「导出片段」"/>
+  <div v-else-if="loading" class="fs-bxloading dim">
+    <el-icon class="is-loading"><Loading/></el-icon><span>正在加载片段…</span>
+  </div>
+  <div v-else class="fs-empty-tip">
+    <el-icon class="fs-empty-ic"><Scissor/></el-icon>
+    <b>还没有导出片段</b>
+    <span>在「台词检索」里搜到台词后点「导出片段」，片段会出现在这里</span>
+  </div>
 </div>
 `,
   setup() {

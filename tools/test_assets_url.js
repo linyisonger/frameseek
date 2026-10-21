@@ -1,4 +1,4 @@
-/* 素材页 URL 筛选端到端验证
+﻿/* 素材页 URL 筛选端到端验证
    用真实 Vue 响应式系统（reactive/ref/computed/watch）+ 真实 assets.js/libs.js
    组件逻辑，只把「生命周期钩子」换成可控的收集器（生产版 Vue 不暴露 setupState，
    挂载渲染又依赖未注册的 Element Plus 组件，两条路都不通）。
@@ -41,11 +41,9 @@ const _win = {
   fetch: async (u) => {
     const s = String(u);
     if (s.includes('/api/videos')) return { ok: true, status: 200, json: async () => VIDEOS };
-    if (s.includes('/api/ai-gallery')) return { ok: true, status: 200, json: async () => [] };
     if (s.includes('/api/state')) return { ok: true, status: 200, json: async () => ({
       libraries: [{ id: 3, name: '电影', videos: 65, lines: 1, duration: 1,
                     exists: true, indexed: true, path: 'E:\\视频\\电影' }],
-      builtin_libs: [{ id: 0, name: 'AI 生成', videos: 0 }],
       active: '', hub_db: 'hub.db', ocr: { ok: true }, total: { videos: 0, lines: 0 } }) };
     return { ok: true, status: 200, json: async () => ({}) };
   },
@@ -154,27 +152,23 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); }
     return out;
   }
 
-  /* ---- A. 素材库 goAsset 写 URL ---- */
-  console.log('\n== A. 素材库点「查看」→ 写 URL ==');
+  /* ---- A. 素材库点「查看素材」→ 写 URL（只带 lib，不做单部锁定） ---- */
+  console.log('\n== A. 素材库点「查看素材」→ 写 URL ==');
   _hash.v = ''; _hist.length = 0; S.tab = 'libs';
   const ls = mountSetup(LibsView);
   await flush();
-  ls.goAsset({ id: target.id, name: target.name, root: target.root,
-               rel: target.rel, lib_id: target.lib_id, lines: 100 });
+  ls.viewAssets({ id: target.lib_id, name: '电影', path: 'E:\\视频\\电影' });
   await flush();
 
   ok(_hash.v.startsWith('#assets?'), '  地址栏 = ' + _hash.v);
   ok(_hist[0] && _hist[0][0] === 'push', '  用 pushState（能「后退」回素材库）');
   ok(S.tab === 'assets', '  S.tab 切到素材');
   const q = Route.parse().q;
-  ok(+q.vid === +target.id, '  vid=' + q.vid);
-  ok(q.root === target.root, '  root 正确');
   ok(q.lib === String(target.lib_id), '  lib=' + q.lib);
-  ok(q.q === target.name, '  q=' + q.q);
+  ok(!q.vid && !q.q, '  不带 vid / q（只看整个库，不锁定单部影片）');
 
   /* ---- B. 素材页按 URL 还原 ---- */
   console.log('\n== B. 素材页按 URL 还原筛选（首屏直达）==');
-  S.pendingOpen = null;                        // 走纯 URL 路径，不走事件
   _hash.v = '#assets?lib=' + target.lib_id + '&q=' + encodeURIComponent(target.name)
           + '&vid=' + target.id + '&root=' + encodeURIComponent(target.root);
   S.tab = 'assets';
@@ -225,9 +219,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); }
   await flush();
   ok(a.pin.vid === null, '  pin 已解除（否则用户输的字会被白名单挡掉）');
   const v2 = a.view.value;
-  const hit = v2.some(r => r.kind === 'video' && /亮剑/.test((r.v.name || '') + (r.v.rel || '')));
+  const hit = v2.some(r => r.v && /亮剑/.test((r.v.name || '') + (r.v.rel || '')));
   ok(hit, '  「亮剑」搜得到，命中 ' + v2.length + ' 条');
-  const allLib14 = v2.every(r => r.kind !== 'video' || +r.v.lib_id === 14);
+  const allLib14 = v2.every(r => !r.v || +r.v.lib_id === 14);
   ok(allLib14, '  命中的确实都是 14 号库的片子');
 
   // 反证：锁定状态下改关键词，merged 应该仍只出 1 条（pin 白名单生效）
@@ -257,7 +251,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓ ' + m); }
   ok(a.durSel.value.length === 1 && a.durSel.value[0] === 'l20', '  dur=l20 已选');
   ok(a.pin.vid === null, '  无 vid → 不锁定');
 
-  const only14 = a.view.value.filter(r => r.kind === 'video');
+  const only14 = a.view.value.filter(r => r.v);
   ok(only14.length > 0 && only14.every(r => +r.v.lib_id === 14),
      '  结果只剩 14 号库：' + only14.length + ' 条');
   ok(a.showFilter.value === true, '  筛选面板自动展开');

@@ -41,3 +41,6 @@ tools/.lib3.json
 
 # 临时目录
 _t/
+
+# 生成的字表（tools/scratch/_build_hanzi.py 的临时产物）
+tools/scratch/_hanzi_table.txt

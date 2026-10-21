@@ -1,4 +1,4 @@
-/* 按钮间距 / 对齐回归检查
+﻿/* 按钮间距 / 对齐回归检查
    验证两件事：
    1) EP 的 `.el-button + .el-button{margin-left:12px}` 已被本项目样式归零，
       按钮间距只由 flex gap 决定，不再出现 gap + margin 叠加。
@@ -107,7 +107,7 @@ console.log('\n== 2. 按钮组间距只由 gap 决定 ==');
 // 所有承载多个按钮的容器，都得有 gap
 const GAP_CONTAINERS = [
   '.fs-tools', '.fs-libft', '.fs-bxbar', '.fs-rrow .ops', '.bxacts',
-  '.fs-dock-hd', '.fs-bub .bub-acts', '.chipops', '.fs-form-actions .el-form-item__content',
+  '.fs-dock-hd', '.chipops', '.fs-form-actions .el-form-item__content',
 ];
 let allGap = true;
 for (const sel of GAP_CONTAINERS) {
@@ -170,8 +170,12 @@ console.log('  定义:', defined.join(', '));
 console.log('  使用:', used.join(', '));
 ok(defined.length === used.length && defined.every(d => used.includes(d)),
    '定义的令牌全部被使用，无冗余');
-// 令牌值必须是 4 的倍数（刻度纪律）：从 :root 块里取 --fs-gap-* 的定义
-const rootBlock = (css.match(/:root\s*\{([\s\S]*?)\}/) || [, ''])[1];
+// 令牌值必须是 4 的倍数（刻度纪律）：从 :root 块里取 --fs-gap-* 的定义。
+// 选择器是 `:root, html.dark`（必须带上 html.dark 才压得住 EP 暗色主题，
+// 见 style.css 顶部注释），所以这里不能只匹配 `:root {`：
+// [^{}\n]* 吃掉选择器列表里剩下的部分，且不许跨行、不许跨花括号，
+// 免得匹配到注释里提到的 `:root` 文本。
+const rootBlock = (css.match(/:root[^{}\n]*\{([\s\S]*?)\}/) || [, ''])[1];
 const vals = [...rootBlock.matchAll(/--fs-gap-[a-z]+:\s*(\d+)px/g)].map(m => +m[1]);
 console.log('  刻度值:', vals.join(', ') || '(未取到)');
 ok(vals.length === defined.length,

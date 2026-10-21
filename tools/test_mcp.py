@@ -3,19 +3,16 @@
 
 用法： python tools/test_mcp.py
 覆盖：
-  - 服务能起来、tools/list 有 37 个工具、每个工具参数都有 description
-  - resources/list 有 6 个资源，且都能读出来
+  - 服务能起来、tools/list 有 22 个工具、每个工具参数都有 description
+  - resources/list 有 4 个资源，且都能读出来
   - 只读工具端到端：doctor / libraries / search / find_videos / list_clips
   - 新增能力：export_clip 的 subtitle（auto/off/force 三档）与批量参数进了 schema
   - 烧字幕策略：OCR 源在 auto 档自动跳过（core/media.decide_burn 的 12 个分支）
-  - 出图能力：img_info 双后端摸底、入参校验、**真实出一张 sd15 图**、
-    同 seed 可复现（md5 相同）、reroll 换种子出新图
   - 错误返回带 hint（LLM 撞得最多的场景：id 找不到 / 未指定库）
   - 查库类工具的错误一律带 root 相关提示
 
-只读为主，不跑异步任务（不产生副作用）。两处会真的写文件，跑完自动清理：
-export_clip 的片段（测试库 clips 目录，同名覆盖）、
-出图测试的 _mcp_test*.png/.json（AI生成/绘画/，同名覆盖）。
+只读为主，不跑异步任务（不产生副作用）。唯一会写文件的是 export_clip
+（测试库 clips 目录，同名覆盖）。
 """
 import json
 import os
@@ -153,15 +150,10 @@ def main():
     print("\n[2] 工具面")
     ts = tools()
     names = {t["name"] for t in ts}
-    check(f"工具数 = 28（实际 {len(ts)}）", len(ts) == 28)
+    check(f"工具数 = 22（实际 {len(ts)}）", len(ts) == 22)
     must = {"frameseek_doctor", "frameseek_find_videos", "frameseek_video_summary",
-            "frameseek_list_clips", "frameseek_export_clip", "frameseek_search",
-            # 出图能力（曾经整块漏掉，导致 LLM 以为拾帧只能出视频）
-            "frameseek_img_info", "frameseek_generate_image",
-            "frameseek_reroll_image", "frameseek_list_images"}
+            "frameseek_list_clips", "frameseek_export_clip", "frameseek_search"}
     check("新增/核心工具都在", must <= names, str(must - names))
-    check("instructions 提到出图", "frameseek_generate_image" in ins
-          and "静态图" in ins)
 
     print("\n[3] 参数级 description（LLM 选参型的唯一依据）")
     missing = []
@@ -199,23 +191,12 @@ def main():
     rs = resources()
     uris = {r.get("uri") for r in rs}
     want = {"frameseek://libraries", "frameseek://tasks/running",
-            "frameseek://images/backends",
-            "frameseek://tool-catalog"}
-    check(f"5 个资源都在（实际 {len(rs)}）", want <= uris, str(want - uris))
+            "frameseek://clips", "frameseek://tool-catalog"}
+    check(f"4 个资源都在（实际 {len(rs)}）", want <= uris, str(want - uris))
     for u in sorted(uris):
         d = read_res(u)
         check(f"资源可读 {u}", bool(d) and "__text" not in d)
 
-    ibk = read_res("frameseek://images/backends")
-    check("生图资源给了双后端",
-          {"agnes", "sd15"} <= set(ibk.get("parameter_matrix") or {}))
-    check("生图资源说明了哪些参数被忽略",
-          any("忽略" in v for v in (ibk.get("parameter_matrix") or {}).values()))
-    check("生图资源写了重掷流程",
-          len(ibk.get("how_to_reroll") or []) >= 3)
-    check("生图资源标了联网后端",
-          any(b.get("offline") is False
-              for b in (ibk.get("backends") or [])))
 
 
     print("\n[6] 只读工具端到端")
@@ -303,100 +284,6 @@ def main():
     check("非法档位回落 auto", decide_burn("瞎传", "ocr")[0] is False)
     check("旧布尔 True = force", decide_burn(True, "ocr")[0] is True)
     check("旧布尔 False = off", decide_burn(False, "asr")[0] is False)
-
-    print("\n[13] 出图：双后端摸底与参数校验（不真出图，只读+入参校验）")
-    ii = call("frameseek_img_info")
-    check("img_info 正常", ii.get("ok") is True, str(ii)[:100])
-    bs = {b["id"]: b for b in (ii.get("backends") or [])}
-    check("双后端齐备", set(bs) == {"agnes", "sd15"}, str(set(bs)))
-    check("每个后端都报了 ready/eta",
-          all("ready" in b and "eta" in b for b in bs.values()))
-    check("产物目录是 AI生成/绘画",
-          str(ii.get("out_dir", "")).replace("\\", "/").endswith("AI生成/绘画"),
-          str(ii.get("out_dir")))
-
-    gi = next(t for t in ts if t["name"] == "frameseek_generate_image")
-    gp = (gi.get("inputSchema") or {}).get("properties") or {}
-    for k in ("prompt", "backend", "negative", "refs", "width", "height",
-              "ratio", "seed", "steps", "cfg", "name"):
-        check(f"generate_image 有参数 {k}", k in gp)
-    check("generate_image 的 backend 说明了双后端",
-          all(x in gp["backend"]["description"] for x in ("agnes", "sd15")))
-    check("generate_image 的 refs 说明要绝对路径",
-          "绝对路径" in gp["refs"]["description"])
-
-    # 入参校验（这些在起进程前就拦掉，不花 GPU 时间）
-    e1 = call("frameseek_generate_image", {"prompt": ""})
-    check("空提示词被拦", e1.get("ok") is False)
-    e2 = call("frameseek_generate_image", {"prompt": "x", "backend": "nope"})
-    check("未知后端被拦", e2.get("ok") is False)
-    check("未知后端报出可选值", "agnes" in (e2.get("err", "") + e2.get("hint", "")))
-    e3 = call("frameseek_generate_image",
-              {"prompt": "x", "width": 500, "height": 512})
-    check("非 8 倍数宽度被拦", e3.get("ok") is False)
-    e4 = call("frameseek_generate_image",
-              {"prompt": "x", "refs": ["Z:/绝对不存在.png"]})
-    check("不存在的参考图被拦", e4.get("ok") is False)
-    e5 = call("frameseek_reroll_image", {"file": "Z:/不存在.png"})
-    check("重掷文件不存在被拦", e5.get("ok") is False)
-    check("重掷报错提示用 list_images", "list_images" in e5.get("hint", ""))
-
-    # 产物列表是纯读，安全
-    li = call("frameseek_list_images", {"limit": 5})
-    check("list_images 正常", li.get("ok") is True)
-    check("list_images 返回目录", "dir" in li)
-    check("list_images 最多给 limit 条",
-          len(li.get("images") or []) <= 5,
-          str(len(li.get("images") or [])))
-
-    print("\n[14] 出图：真实出一张（sd15，本地不联网）")
-    if bs.get("sd15", {}).get("ready"):
-        t0 = time.time()
-        gen = call("frameseek_generate_image",
-                   {"prompt": "minimalist ink wash mountain, sumi-e style",
-                    "backend": "sd15", "width": 256, "height": 256,
-                    "seed": 12345, "steps": 8, "name": "_mcp_test"})
-        check("真实出图成功", gen.get("ok") is True, str(gen)[:140])
-        if gen.get("ok"):
-            f = gen.get("file") or ""
-            check("产物文件真实存在", bool(f) and os.path.isfile(f), f)
-            check("PNG 尺寸正确",
-                  (gen.get("w"), gen.get("h")) == (256, 256),
-                  f"{gen.get('w')}x{gen.get('h')}")
-            check("留痕 sidecar 存在",
-                  os.path.isfile(os.path.splitext(f)[0] + ".json"))
-            check("返回里带进度轨迹", bool(gen.get("progress")))
-            check("提示了重掷入口", "reroll_image" in gen.get("reroll_hint", ""))
-            # 种子可复现：同 seed 再出一次应得到同一张
-            gen2 = call("frameseek_generate_image",
-                        {"prompt": "minimalist ink wash mountain, sumi-e style",
-                         "backend": "sd15", "width": 256, "height": 256,
-                         "seed": 12345, "steps": 8, "name": "_mcp_test2"})
-            if gen2.get("ok"):
-                import hashlib
-                h1 = hashlib.md5(open(f, "rb").read()).hexdigest()
-                h2 = hashlib.md5(open(gen2["file"], "rb").read()).hexdigest()
-                check("同 seed 出同一张（可复现）", h1 == h2,
-                      f"{h1[:8]} vs {h2[:8]}")
-            # 重掷
-            rr = call("frameseek_reroll_image", {"file": f})
-            check("重掷成功", rr.get("ok") is True, str(rr)[:140])
-            if rr.get("ok"):
-                check("重掷产新文件", rr.get("file") != f)
-                check("重掷记了来源", rr.get("rerolled_from") == f)
-        print(f"     （真实出图耗时 {time.time() - t0:.0f} 秒）")
-    else:
-        check("sd15 未就绪（跳过真实出图）", True,
-              "本机没装 SD1.5 权重")
-
-    # 清理测试产物
-    for pat in ("_mcp_test.png", "_mcp_test.json",
-                "_mcp_test2.png", "_mcp_test2.json"):
-        try:
-            pd = call("frameseek_list_images", {"limit": 200}).get("dir") or ""
-            os.remove(os.path.join(pd, pat))
-        except OSError:
-            pass
 
     print("\n" + "=" * 56)
     print(f"通过 {len(PASS)}　失败 {len(FAIL)}")

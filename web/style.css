@@ -48,6 +48,10 @@
   --el-color-primary-light-9: #1E2A4A;
   --el-color-primary-dark-2: #2C5BCC;
 
+  /* 控件圆角：和卡片圆角（8）拉开一档，但全站输入框/下拉/按钮统一 6 */
+  --el-border-radius-base: 6px;
+  --el-border-radius-small: 6px;
+
   --el-color-success: #2ec27e;
   --el-color-success-light-9: #1F2E25;
   --el-color-warning: #FFB84D;
@@ -84,9 +88,6 @@
   --fs-aside-text-strong: #FFFFFF;
   --fs-aside-text-dim: rgba(232, 234, 240, .48);
   --fs-aside-border: rgba(255, 255, 255, .08);
-  --fs-aside-active-bg: #1670FF;      /* 选中态实色蓝 */
-  --fs-topbar-bg: #2A2B33;            /* 顶栏底色：比卡深、比页浅 */
-  --fs-topbar-shadow: 0 1px 0 rgba(0, 0, 0, .35);
 
   --fs-shadow-card: 0 1px 4px rgba(0, 0, 0, .35);
   --fs-shadow-card-hover: 0 6px 20px rgba(0, 0, 0, .55);
@@ -132,6 +133,8 @@ code {
 .note { color: var(--el-text-color-secondary); font-size: 12px; }
 .w100 { width: 100px; } .w120 { width: 120px; } .w140 { width: 140px; }
 .w160 { width: 160px; } .w200 { width: 200px; } .w260 { width: 260px; }
+/* 筛选控件的统一宽度刻度：96 / 160 / 180 / 220 / 260，不再各页各写一个数 */
+.w96 { width: 96px; } .w180 { width: 180px; } .w220 { width: 220px; }
 
 /* ---------- 主框架 ---------- */
 
@@ -188,12 +191,20 @@ code {
   color: var(--fs-aside-text-strong) !important; }
 .fs-menu .el-menu-item:hover .el-icon { color: var(--fs-aside-text-strong); }
 .fs-menu .el-menu-item.is-active {
-  background: var(--fs-aside-active-bg) !important;
+  /* 选中态：品牌色浅染 + 左侧 3px 实色条。比整块实心蓝轻，层次也更清楚
+     （实心蓝块会把图标/副标题一起压成一片，扫视时找不到重点）。 */
+  background: linear-gradient(90deg, rgba(64, 128, 255, .20), rgba(64, 128, 255, .06)) !important;
   color: #fff !important;
   font-weight: 500;
-  box-shadow: 0 4px 12px rgba(22, 112, 255, .35);
+  box-shadow: none;
+  position: relative;
 }
-.fs-menu .el-menu-item.is-active .el-icon { color: #fff; }
+.fs-menu .el-menu-item.is-active::before {
+  content: ''; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 3px;
+  border-radius: 0 3px 3px 0; background: var(--el-color-primary);
+  box-shadow: 0 0 10px rgba(64, 128, 255, .6);
+}
+.fs-menu .el-menu-item.is-active .el-icon { color: var(--el-color-primary-light-3); }
 .fs-navtxt { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
 .fs-navtxt b { font-size: 14px; font-weight: 500; font-style: normal; }
 .fs-navtxt em { font-size: 11px; color: var(--fs-aside-text-dim); font-style: normal;
@@ -286,15 +297,15 @@ code {
 /* 顶栏已移除：保留令牌（被侧栏 still 使用），样式本身不需要了。
    fs-main 占满视口，无顶栏高度减除。 */
 .fs-main { padding: 18px 22px 60px; overflow-y: auto; height: 100vh;
-  background: var(--el-bg-color-page); }
+  background:
+    radial-gradient(1100px 520px at 75% -8%, rgba(64, 128, 255, .07), transparent 62%),
+    var(--el-bg-color-page); }
 
 /* ---------- 页面通用 ---------- */
 .fs-page { max-width: 1560px; margin: 0 auto; }
-/* 页头：8 个页签统一同一套——标题块与右侧工具条**垂直居中**（原先 flex-start，
+/* 页头：所有页签统一同一套——标题块与右侧工具条**垂直居中**（原先 flex-start，
    assets 那种「工具条只有 26px 高、标题块 46px」的页会出现工具条贴顶、
-   下方空一截的观感），并统一补一条极浅的下分隔线。
-   gen / aidraw 两页原先各自在页头后塞了一个 el-divider 当分隔线，
-   已删除，改由这里统一承担，避免「有的页有横线有的页没有」。 */
+   下方空一截的观感），并统一补一条极浅的下分隔线。 */
 .fs-page-hd {
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--fs-gap-lg); flex-wrap: wrap;
@@ -311,7 +322,9 @@ code {
 }
 .fs-page-hd > div p { margin: 0; font-size: 13px; color: var(--el-text-color-secondary); }
 .fs-tools { display: flex; align-items: center; gap: var(--fs-gap-sm); flex-wrap: wrap; }
-.fs-tools .mini { width: 180px; }
+/* 单行筛选表单：控件行下面不要再叠 el-form-item 的 18px 底距，
+   否则卡片底部会比顶部厚一截，和 assets/box 的工具条节奏对不上 */
+.fs-filterform .el-form-item { margin-bottom: 0; }
 /* 页头既然改成 align-items:center，这里不再需要额外顶偏移 */
 .fs-page-hd .fs-tools { padding-top: 0; }
 
@@ -418,6 +431,7 @@ code {
 .fs-colnote {
   font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.6;
   padding-bottom: 6px;                 /* 与 el-input / el-switch 的视觉底边对齐 */
+  text-align: right;
 }
 
 /* el-divider：主题化细线，作为章节分隔 */
@@ -575,13 +589,31 @@ code {
   border: none; border-radius: 0 6px 6px 0; height: 100%; margin: -1px;
 }
 .fs-cfg-inline { display: flex; align-items: center; gap: var(--fs-gap-sm); flex-wrap: wrap; }
-.fs-cfg-inline .el-input-number { width: 84px; }
+.fs-cfg-inline .el-input-number { width: 96px; }
 /* 素材库下拉：el-select 自带 width:100%，放进 flex 行会被拉满整行。固定
    170px 刚好放下短库名；下拉面板跟输入框同宽（fit-input-width），长名在选项
    里省略、完整路径走 title。 */
-.fs-libpick { flex: 0 0 auto; width: 170px; }
+.fs-libpick { flex: 0 0 auto; width: 160px; }
 .fs-libpick-pop { max-width: 240px; }
 .fs-libpick-pop .el-select-dropdown__item { overflow: hidden; text-overflow: ellipsis; }
+/* 检索页筛选行：库 / 时长 / 模式 / 字幕 / 字幕带同一行，label 在控件上方 */
+.fs-filterrow {
+  display: flex; align-items: flex-end; gap: var(--fs-gap-lg);
+  flex-wrap: wrap; margin-top: 14px;
+}
+.fs-field { display: flex; flex-direction: column; gap: var(--fs-gap-xs); min-width: 0; }
+/* 开关没有输入框的 32px 内胆：补成同高，四个 label 才会齐平 */
+.fs-field .el-switch { height: 32px; display: inline-flex; align-items: center; }
+.fs-field > label {
+  display: flex; align-items: baseline; gap: var(--fs-gap-xs);
+  font-size: 12px; line-height: 20px; color: var(--el-text-color-secondary);
+}
+.fs-labnote { font-size: 11px; font-weight: 400; color: var(--el-text-color-placeholder); }
+/* 搜索框下面的说明：放在控件行下方右对齐，不再和字段 label 抢同一行 */
+.fs-searchhint {
+  margin: 4px 2px 0; font-size: 12px;
+  color: var(--el-text-color-secondary); text-align: right;
+}
 
 .fs-results { display: flex; flex-direction: column; gap: var(--fs-gap-sm); }
 .fs-result-summary {
@@ -633,7 +665,14 @@ code {
   color: var(--el-text-color-secondary); text-align: center;
 }
 .fs-empty-tip b { font-size: 15px; color: var(--el-text-color-primary); }
-.fs-empty-tip span { max-width: 520px; font-size: 12.5px; }
+.fs-empty-tip span { max-width: 520px; font-size: 12.5px; line-height: 1.7; }
+.fs-empty-ic { font-size: 30px; color: var(--el-text-color-placeholder); margin-bottom: 2px; }
+/* 面板内的小号空态（方框复查左右栏）：不再套虚线框，避免和外层边框叠两层 */
+.fs-empty-tip.compact {
+  min-height: 0; margin: 8px; padding: 28px 14px;
+  border: none; background: transparent; gap: var(--fs-gap-sm);
+}
+.fs-empty-tip.compact .fs-empty-ic { font-size: 24px; }
 
 /* ---------- 素材 ---------- */
 .fs-filtercard .fs-frow {
@@ -664,8 +703,6 @@ code {
   display: grid; gap: var(--fs-gap-lg);
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
 }
-/* AI 生成产物的缩略图底色 */
-.fs-aicard .fs-vthumb { background: #1a1a1a; }
 .fs-vcard { position: relative; cursor: pointer; overflow: hidden; }
 .fs-vthumb { position: relative; aspect-ratio: 16/9; overflow: hidden;
   border-radius: var(--fs-radius-card) var(--fs-radius-card) 0 0; background: #000; }
@@ -720,9 +757,6 @@ code {
 .fs-vmore .el-icon { font-size: 16px; }
 .fs-vmore:hover { background: rgba(255, 255, 255, .26) !important; transform: scale(1.08); box-shadow: 0 4px 12px rgba(0, 0, 0, .35); }
 .fs-vmeta { padding: 11px 13px 13px; }
-.fs-vimg, .fs-vvid { width: 100%; height: 100%; object-fit: cover; display: block; cursor: pointer; background: #000; }
-.fs-vtype { position: absolute; left: 8px; top: 8px; z-index: 2; background: rgba(0, 0, 0, .62);
-  color: #fff; font-size: 11px; line-height: 1; padding: 3px 7px; border-radius: 5px; pointer-events: none; }
 .fs-vmeta b {
   display: block; font-size: 14px; line-height: 1.35; font-weight: 600;
   color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -740,8 +774,6 @@ code {
 .fs-dot.err { background: var(--el-color-danger); }
 .fs-vlib { color: var(--el-text-color-primary); font-weight: 500; }
 .fs-vline { color: var(--el-text-color-secondary); }
-/* AI 生成产物的隔离标记：不做字幕识别，单独一档紫色（契约不可删，_ai_isolate_ui_check 守着） */
-.fs-vai { color: #a78bfa; font-weight: 500; }
 
 /* 滚动分页：底部加载提示，整行跨列 */
 .fs-loadmore {
@@ -750,103 +782,6 @@ code {
   display: flex; align-items: center; justify-content: center; gap: var(--fs-gap-xs);
 }
 .fs-loadmore .el-icon { font-size: 15px; }
-
-/* ---------- AI 生成 / AI 绘画（对话） ---------- */
-.fs-page-gen, .fs-page-aidraw { display: flex; flex-direction: column; height: calc(100vh - 78px); }
-/* AI 绘画仿 AI 生成：生成后的图在中间气泡里居中 */
-.fs-page-aidraw .fs-bub { max-width: 88%; }
-
-/* AI 绘画：画廊卡片（图标标注属性 + 提示词显式标注） */
-.fs-aidraw-run { margin: 6px 4px 0; }
-.fs-aidraw-grid {
-  flex: 1; overflow-y: auto; padding: 10px 4px 16px;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 14px; align-content: start;
-}
-.fs-aidraw-empty { grid-column: 1 / -1; text-align: center; padding: 40px 20px; font-size: 13px; line-height: 1.9; }
-.fs-acard {
-  background: var(--el-bg-color); border: 1px solid var(--el-border-color);
-  border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
-  transition: box-shadow .15s, transform .15s;
-}
-.fs-acard:hover { box-shadow: 0 4px 16px rgba(0,0,0,.18); transform: translateY(-2px); }
-.fs-acard-img { position: relative; aspect-ratio: 1 / 1; background: #000; }
-.fs-acard-img img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; display: block; }
-.fs-acard-del {
-  position: absolute; top: 6px; right: 6px; opacity: 0; transition: opacity .15s;
-  background: rgba(0,0,0,.45); border: none;
-}
-.fs-acard:hover .fs-acard-del { opacity: 1; }
-.fs-acard-body { padding: 8px 10px 4px; font-size: 12px; color: var(--el-text-color-regular); }
-.fs-acard-row { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; line-height: 1.4; }
-.fs-acard-row .el-icon { color: var(--el-color-primary); flex: none; }
-.fs-acard-row .fs-ic2 { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; color: var(--el-text-color-secondary); }
-.fs-acard-row .fs-ic2 .el-icon { color: var(--el-text-color-secondary); }
-.fs-scheme { font-weight: 600; }
-.fs-scheme-realistic { color: #409eff; }
-.fs-scheme-cartoon { color: #e6a23c; }
-.fs-scheme-agnes { color: #67c23a; }
-.fs-lora { color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
-.fs-acard-prompt { margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--el-border-color-lighter); }
-.fs-acard-prompt-hd { display: flex; align-items: center; gap: 4px; color: var(--el-color-primary); font-size: 12px; }
-.fs-acard-prompt p {
-  margin: 3px 0 0; font-size: 12px; line-height: 1.5; color: var(--el-text-color-secondary);
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-}
-.fs-acard-acts { display: flex; justify-content: space-around; padding: 6px 4px 8px; border-top: 1px solid var(--el-border-color-lighter); }
-.fs-acard-acts .el-button { font-size: 12px; }
-/* AI 生成素材卡片（素材页）删除按钮 */
-.fs-aicard-del { position: absolute; top: 6px; right: 6px; opacity: 0; transition: opacity .15s; background: rgba(0,0,0,.45); border: none; }
-.fs-aicard:hover .fs-aicard-del { opacity: 1; }
-.fs-bub .bub-pic {
-  width: 100%; max-width: 520px; border-radius: var(--fs-radius-chip); display: block;
-  margin: 2px auto 4px; background: #000; cursor: zoom-in;
-}
-/* 图片气泡：图片本身居中（max-width 520px），但同一个气泡里的元信息 /
-   提示词 / 操作按钮是按气泡整宽左对齐的，于是它们比图片往左多出最多 96px，
-   视觉上像「图片和说明各站一边」。把这三行也锁到图片同宽并居中，
-   图片与说明共用同一条左右边。:has() 只挑「直接含图片」的气泡，
-   AI 生成页的纯文字气泡不受影响。 */
-.fs-bub:has(> .bub-pic) > :is(.bub-meta, .bub-pic-prompt, .bub-acts) {
-  max-width: 520px; margin-left: auto; margin-right: auto;
-}
-.fs-bub .bub-pic-prompt { font-size: 12px; color: var(--el-text-color-secondary); margin-top: 4px; line-height: 1.5; }
-.fs-chat {
-  flex: 1; overflow-y: auto; padding: 8px 4px 14px;
-  display: flex; flex-direction: column; gap: var(--fs-gap-sm); min-height: 180px;
-}
-.fs-chat-empty {
-  margin: auto; text-align: center; color: var(--el-text-color-secondary);
-  font-size: 13px; line-height: 1.9; padding: 40px 20px;
-}
-.fs-bub {
-  max-width: 78%; padding: 10px 13px; border-radius: 12px;
-  background: var(--el-bg-color); border: 1px solid var(--el-border-color);
-}
-.fs-bub.me {
-  align-self: flex-end;
-  background: var(--fs-brand-soft); border-color: rgba(77, 157, 255, .4);
-}
-.fs-bub .bub-txt { white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
-.fs-bub .bub-meta { font-size: 11px; color: var(--el-text-color-secondary); margin-top: 5px; }
-.fs-bub .bub-err { color: var(--el-color-danger); white-space: pre-wrap; }
-.fs-bub .bub-video { width: 100%; max-width: 460px; border-radius: 8px; display: block; background: #000; }
-.fs-bub .bub-acts { margin-top: 6px; display: flex; gap: var(--fs-gap-sm); }
-.fs-bub .bub-media img, .fs-bub .bub-media video {
-  max-width: 100%; max-height: 320px; border-radius: 8px; margin-top: 6px; display: block;
-}
-
-.fs-composer { border-top: 1px solid var(--el-border-color); padding-top: 12px; }
-.fs-composer-main { display: flex; gap: var(--fs-gap-sm); align-items: flex-end; }
-.fs-composer-main .el-textarea { flex: 1; }
-.fs-composer-main .el-button { height: 54px; }
-.fs-composer-row {
-  display: flex; align-items: center; gap: var(--fs-gap-sm); flex-wrap: wrap; margin-top: 9px;
-}
-.fs-composer-adv {
-  margin-top: 9px; padding: 12px 12px 2px; border-radius: 8px; background: var(--fs-fill-1);
-}
-
 
 /* ---------- 方框复查 ---------- */
 .fs-page-box { display: flex; flex-direction: column; height: calc(100vh - 78px); }
@@ -886,6 +821,12 @@ code {
 }
 .fs-bxrow:hover { background: rgba(255, 255, 255, .05); }
 .fs-bxrow.on { background: var(--fs-brand-soft); }
+/* 首次拉片单/抽帧时别再显示「还没有已索引的素材」——那是在撒谎 */
+.fs-bxloading {
+  display: flex; align-items: center; justify-content: center; gap: var(--fs-gap-sm);
+  padding: 28px 12px; font-size: 12.5px;
+}
+.fs-bxloading .el-icon { font-size: 16px; }
 .bxts { font-size: 11.5px; color: var(--el-text-color-secondary); font-family: Consolas, monospace; }
 .bxts .dim2 { display: block; }
 .bxtx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1041,9 +982,15 @@ code {
   .fs-bxlist { max-height: 260px; }
 }
 @media (max-width: 820px) {
-  .fs-aside { width: 68px !important; }
+  /* 只改 width 不够：基础规则把 flex-basis 也钉在 220px，flex 行里真正生效的是
+     flex-basis，侧栏会照样占 220。两个一起改才会真的收成图标栏。 */
+  .fs-aside { width: 68px !important; flex: 0 0 68px !important; }
   .fs-lt, .fs-foot, .fs-navtxt, .fs-badge { display: none; }
   .fs-menu .el-menu-item { justify-content: center; margin: 2px 6px; padding: 10px !important; }
   .fs-main { padding: 14px 12px 60px; }
-  .fs-bub { max-width: 94%; }
+  /* 窄屏下固定宽度会顶出表单列，筛选控件改成吃满所在列 */
+  .fs-filterform .w96, .fs-filterform .w160, .fs-filterform .w180,
+  .fs-filterform .w220, .fs-filterform .el-select { width: 100% !important; }
+  /* 检索页一行筛选在 375 下：两个数字框缩到 84，前/后才不会各自换行 */
+  .fs-filterrow .w96 { width: 84px; }
 }

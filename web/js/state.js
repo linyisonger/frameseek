@@ -31,7 +31,6 @@ function hl(t, q) {
 }
 const mediaUrl = (p, root) =>
   `/media?p=${encodeURIComponent(p || '')}&root=${encodeURIComponent(root || '')}`;
-const projMedia = f => `/proj/media?p=${encodeURIComponent(f || '')}`;
 
 function fmtDur(s) {
   s = s || 0;
@@ -73,7 +72,6 @@ const BUS = {
 const S = reactive({
   tab: 'libs',
   libs: [],            // 登记的素材库
-  builtinLibs: [],     // 内置只读库（AI 生成）
   activeRoot: '',
   hubDb: '',
   totals: { videos: 0, lines: 0, duration: 0 },
@@ -134,8 +132,6 @@ function onLive(ev) {
     if (!ev.phase && !ev.frames_total && prev.phase) merged.phase = '';
     merged.lib = ev.lib || prev.lib || '';
     S.tasks[k] = merged;
-    if (ev.kind === 'gen') BUS.emit('gen:tick', k, ev.done || 0, ev.message || '');
-    if (ev.kind === 'aidraw') BUS.emit('aidraw:tick', k, ev.done || 0, ev.message || '');
     return;
   }
 
@@ -144,17 +140,7 @@ function onLive(ev) {
     delete S.tasks[k];       // 先删卡片，否则会一直显示 100% 不消失
     const s = ev.summary || {};
 
-    if (s.aidraw) {
-      BUS.emit('aidraw:done', k, s);
-      toast(s.error ? `绘画失败：${s.error}`
-                    : `绘画完成：${s.name || ''}，已落入「AI生成/绘画」目录`,
-            s.error ? 'error' : 'success');
-    } else if (s.gen) {
-      BUS.emit('gen:done', k, s);
-      toast(s.error ? `视频生成失败：${s.error}`
-                    : `生成完成：${s.name || ''}（${s.seconds || '?'}s），已落入「AI生成」目录`,
-            s.error ? 'error' : 'success');
-    } else if (s.stopped) {
+    if (s.stopped) {
       // 用户按了「停止」。已完成的部分都留在库里了，下次索引会跳过它们接着跑。
       toast(s.single
         ? `已停止「${s.name || ''}」的识别，下次会重跑这一条`
@@ -210,8 +196,6 @@ function startFallbackPoll() {
     const next = {};
     (ts || []).forEach(t => {
       next[t.root || t.lib] = Object.assign({}, t, { lib: t.lib });
-      if (t.kind === 'gen') BUS.emit('gen:tick', t.root, t.done || 0, t.message || '');
-      if (t.kind === 'aidraw') BUS.emit('aidraw:tick', t.root, t.done || 0, t.message || '');
     });
     S.tasks = next;
     if (!ts || !ts.length) {
@@ -226,7 +210,6 @@ const startPoll = () => connectLive();
 async function loadLibs() {
   const s = await api('/api/state');
   S.libs = s.libraries || [];
-  S.builtinLibs = s.builtin_libs || [];
   S.activeRoot = s.active || '';
   S.ocr = s.ocr || { ok: true, err: '' };
   S.hubDb = s.hub_db || '';
@@ -320,7 +303,7 @@ function clipLine(line_id, root, opts) {
      #assets?lib=1,2&q=片名&sort=mtime&dur=s30,m30&vid=123&root=D:\片库
    参数会被各页面消费（目前只有素材页），同时素材页的筛选变化也会反写回 URL
    （replace，不塞满历史），这样链接可以直接复制分享 / 浏览器前进后退可用。 */
-const TABS = ['libs', 'search', 'assets', 'gen', 'aidraw', 'box', 'clips'];
+const TABS = ['libs', 'search', 'assets', 'box', 'clips'];
 
 const Route = {
   tabs: TABS,
@@ -351,6 +334,11 @@ const Route = {
   /* 解析当前 hash → 同步 tab 状态 → 广播。各页面在这里读 q。 */
   dispatch(hard) {
     const r = Route.parse();
+    // 下线模块 / 旧书签：不在 TABS 里的页签统一回素材库，并把 hash 改回去
+    if (r.tab && Route.tabs.indexOf(r.tab) < 0) {
+      r.tab = 'libs';
+      try { history.replaceState(null, '', '#libs'); } catch (e) { /* 忽略 */ }
+    }
     Route.q = r.q;
     if (Route.tabs.indexOf(r.tab) >= 0 && r.tab !== S.tab) S.tab = r.tab;
     BUS.emit('route:change', { tab: r.tab, q: r.q, hard: !!hard });
@@ -390,12 +378,12 @@ const Route = {
 // 各功能模块从 window.FS 取自己要的东西，互不耦合。
 window.FS = {
   S, BUS, LIVE, PHASE, Route,
-  api, post, esc, hl, mediaUrl, projMedia,
+  api, post, esc, hl, mediaUrl,
   fmtDur, fmtAgo, fmtSec, toast, LS,
   connectLive, loadLibs, play, clipLine, addClips, startPoll,
 };
 
-// 给回归脚本留的口子（基础项；gen/box 会在各自模块里追加）。
+// 给回归脚本留的口子（基础项；box 会在自己模块里追加）。
 window.__FS = { S, api, post, play, toast, loadLibs, Route };
 
 })();

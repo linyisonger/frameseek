@@ -3,7 +3,7 @@
 'use strict';
 const { reactive, computed, ref, watch, onMounted, onUnmounted, onActivated, nextTick } = Vue;
 const FS = window.FS;
-const { S, BUS, api, post, toast, play, mediaUrl, fmtDur, loadLibs, startPoll, esc, projMedia } = FS;
+const { S, BUS, api, post, toast, play, mediaUrl, fmtDur, loadLibs, startPoll, esc } = FS;
 const Route = FS.Route;
 
 const PAGE = 48;   // 滚动分页每页条数
@@ -11,7 +11,7 @@ const PAGE = 48;   // 滚动分页每页条数
 /* URL 参数 ⇄ 筛选条件 的唯一转换口。别的文件只管调 Route.set('assets', 参数)，
    这里负责把参数翻译成 kw/libSel/durSel/sort，反过来也从当前筛选拼回参数。
    参数集（全部可选，缺省即不筛）：
-     lib  逗号分隔的库 id，可多选（0 = AI 生成）
+     lib  逗号分隔的库 id，可多选
      q    文件名 / 库名关键词
      dur  逗号分隔的时长档 s30,m30,m5_20,l20
      sort time | mtime | name | lib
@@ -78,19 +78,19 @@ const AssetsView = {
     <div><h1>素材 <span class="dim">({{ viewCount }})</span></h1>
       <p>点卡片预览，右上角 ··· 可重新识别 / 导入字幕 / 移除 / 删文件</p></div>
     <div class="fs-tools">
-      <el-input id="vfilter" v-model="kw" size="small" class="mini" placeholder="过滤文件名或库名…" clearable
-        title="按文件名或库名过滤，边打边生效（同时作用于 AI 生成图片）"/>
-      <el-select id="vSort" v-model="sort" size="small" class="w140" title="排序方式">
+      <el-input id="vfilter" v-model="kw" class="w220" placeholder="过滤文件名或库名…" clearable
+        title="按文件名或库名过滤，边打边生效"/>
+      <el-select id="vSort" v-model="sort" class="w160" title="排序方式">
         <el-option label="最新录入" value="time"/>
         <el-option label="文件时间" value="mtime"/>
         <el-option label="按名称" value="name"/>
         <el-option label="按库" value="lib"/>
       </el-select>
-      <el-button id="vMoreBtn" size="small" @click="showFilter = !showFilter"
+      <el-button id="vMoreBtn" @click="showFilter = !showFilter"
         title="多维筛选：素材库可多选、按时长分档">
         {{ showFilter ? '筛选 ▴' : '筛选 ▾' }}</el-button>
-      <el-button id="vResetBtn" size="small" @click="resetFilters" title="清空所有筛选条件，回到完整列表">重置</el-button>
-      <el-button id="vCopyBtn" size="small" @click="copyLink"
+      <el-button id="vResetBtn" @click="resetFilters" title="清空所有筛选条件，回到完整列表">重置</el-button>
+      <el-button id="vCopyBtn" @click="copyLink"
         title="把当前这套筛选（素材库 / 关键词 / 时长档 / 锁定影片）复制成链接，发给别人或存书签，打开就是同一屏结果">
         <el-icon><Link/></el-icon><span>复制筛选链接</span></el-button>
     </div>
@@ -115,7 +115,7 @@ const AssetsView = {
         <div class="fs-fchips" id="fLibs">
           <el-checkbox v-model="libsAll" label="全部" size="small"/>
           <el-checkbox v-for="l in allLibs" :key="l.id" v-model="libSel[l.id]" size="small"
-                       :title="l.path">{{ l.name }}<template v-if="l.builtin"> 🔒</template><b class="dim">{{ l.videos }}</b></el-checkbox>
+                       :title="l.path">{{ l.name }}<b class="dim">{{ l.videos }}</b></el-checkbox>
         </div>
       </el-form-item>
       <el-form-item label="时长分档">
@@ -134,11 +134,11 @@ const AssetsView = {
     </el-form>
   </el-card>
 
-  <!-- 统一网格：已索引视频 + AI 生成产物（图片/未索引视频）混排，不再单独开分区 -->
+  <!-- 已索引视频网格 -->
   <div class="fs-videos" id="videos">
     <template v-for="row in view" :key="rowKey(row)">
-      <!-- 已索引视频（含内置 AI 生成视频）：完整卡片 + ··· 菜单 -->
-      <div v-if="row.kind === 'video'" class="fs-vcard" :title="row.v.name">
+      <!-- 已索引视频：完整卡片 + ··· 菜单 -->
+      <div class="fs-vcard" :title="row.v.name">
         <div class="fs-vthumb">
           <img :src="coverUrl(row.v)" loading="lazy"
                @mouseenter="hoverGif($event, row.v, true)" @mouseleave="hoverGif($event, row.v, false)"
@@ -152,22 +152,19 @@ const AssetsView = {
         </div>
         <el-dropdown trigger="click" placement="bottom-end" @command="cmd => onCmd(cmd, row.v)">
           <el-button class="fs-vmore" size="small" text
-            :title="row.v.builtin ? '更多操作：打开文件夹 / 从库里移除 / 删除文件（AI 生成产物不做字幕识别）'
-                             : '更多操作：重新识别台词 / 导入字幕 / 打开文件夹 / 移除或删除'">
+            title="更多操作：重新识别台词 / 导入字幕 / 打开文件夹 / 移除或删除">
             <el-icon><MoreFilled></MoreFilled></el-icon>
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="preview" title="在右侧播放器里预览这部片子">预览</el-dropdown-item>
               <el-dropdown-item command="dir" title="在资源管理器里打开这个视频所在的文件夹">打开所在文件夹</el-dropdown-item>
-              <template v-if="!row.v.builtin">
-                <el-dropdown-item command="reimport"
-                  title="用记事本改完视频同名的 .srt 后点这个：直接刷新数据库和截图，不用重跑 OCR">重新导入同名 SRT</el-dropdown-item>
-                <el-dropdown-item command="retranscribe"
-                  title="重跑一次画面 OCR，重新识别硬字幕台词。已有的同名 .srt 会被覆盖">重新识别台词</el-dropdown-item>
-                <el-dropdown-item command="asr"
-                  title="改用语音识别（听声音）出台词，适合没有画面字幕、只有人声的片子，耗时比 OCR 长">语音识别台词</el-dropdown-item>
-              </template>
+              <el-dropdown-item command="reimport"
+                title="用记事本改完视频同名的 .srt 后点这个：直接刷新数据库和截图，不用重跑 OCR">重新导入同名 SRT</el-dropdown-item>
+              <el-dropdown-item command="retranscribe"
+                title="重跑一次画面 OCR，重新识别硬字幕台词。已有的同名 .srt 会被覆盖">重新识别台词</el-dropdown-item>
+              <el-dropdown-item command="asr"
+                title="改用语音识别（听声音）出台词，适合没有画面字幕、只有人声的片子，耗时比 OCR 长">语音识别台词</el-dropdown-item>
               <el-dropdown-item command="remove" title="只把这个视频从索引里移除，磁盘文件保留">从库中移除</el-dropdown-item>
               <el-dropdown-item command="purge" divided
                 title="连磁盘文件一起删除，不可恢复（要连点两次确认）">删除素材及文件</el-dropdown-item>
@@ -179,10 +176,9 @@ const AssetsView = {
             <span class="fs-vdir" v-if="dirOf(row.v)">{{ dirOf(row.v) }}/</span>{{ row.v.name }}
           </b>
           <div class="fs-vsub">
-            <i class="fs-dot" :class="{ ai: row.v.builtin, err: row.v.err, ok: !row.v.builtin && row.v.line_count }"></i>
+            <i class="fs-dot" :class="{ err: row.v.err, ok: row.v.line_count }"></i>
             <span class="fs-vlib">{{ row.v.lib }}</span>
-            <span class="fs-vai" v-if="row.v.builtin">· AI 生成</span>
-            <span class="fs-vline" v-else-if="row.v.line_count">· {{ row.v.line_count.toLocaleString() }} 条台词</span>
+            <span class="fs-vline" v-if="row.v.line_count">· {{ row.v.line_count.toLocaleString() }} 条台词</span>
             <span class="fs-vline" v-else-if="row.v.err">· 识别失败</span>
             <span class="fs-vline" v-else-if="row.v.line_source === 'pending'">· 待识别</span>
             <span class="fs-vline" v-else>· 无台词</span>
@@ -190,30 +186,12 @@ const AssetsView = {
         </div>
       </div>
 
-      <!-- AI 生成产物（图片 / 未进索引的视频）：简化卡片，点开看大图或播放 -->
-      <div v-else class="fs-vcard fs-aicard" :title="row.it.name">
-        <div class="fs-vthumb">
-          <img v-if="row.it.type === 'image'" class="fs-vimg" :src="projMedia(row.it.file)" loading="lazy" @click="openPic(row.it)"/>
-          <video v-else class="fs-vvid" :src="projMedia(row.it.file)" preload="metadata" muted playsinline
-                 @click="openVid(row.it)"></video>
-          <span class="fs-vtype" :class="row.it.type">{{ row.it.type === 'image' ? '图' : '▷' }}</span>
-          <el-button class="fs-aicard-del" size="small" circle type="danger"
-            @click="delAi(row.it)" title="删除源文件（不可恢复）"><el-icon><Delete/></el-icon></el-button>
-        </div>
-        <div class="fs-vmeta">
-          <b :title="row.it.name">{{ row.it.name }}</b>
-          <div class="fs-vsub">
-            <span class="fs-vlib">AI 生成</span>
-            <span class="fs-vline">{{ fmtAgo(row.it.mtime) }}</span>
-            <span class="fs-vline" v-if="row.it.rel && row.it.rel !== row.it.name">· {{ row.it.rel }}</span>
-          </div>
-        </div>
-      </div>
     </template>
 
-    <div v-if="!view.length" class="dim pad">
-      {{ S.all.length ? '没有符合条件的素材，试试调整筛选或清空关键词'
-                      : '还没有素材，先去「素材库」登记并索引' }}
+    <div v-if="!view.length" class="fs-empty-tip">
+      <el-icon class="fs-empty-ic"><Film/></el-icon>
+      <b>{{ S.all.length ? '没有符合条件的素材' : '还没有素材' }}</b>
+      <span>{{ S.all.length ? '试试调整筛选或清空关键词' : '先去「素材库」登记并索引' }}</span>
     </div>
 
     <!-- 滚动分页：接近底部自动加载下一页 -->
@@ -262,25 +240,12 @@ const AssetsView = {
     </template>
   </el-dialog>
 
-  <!-- AI 生成素材：图片大图 / 视频播放 -->
-  <el-dialog v-model="picOn" width="62%" top="5vh" destroy-on-close class="fs-player-dlg">
-    <img v-if="pic" :src="projMedia(pic.file)" style="width:100%;display:block"/>
-    <template #footer><span class="dim">{{ pic && pic.name }}</span>
-      <el-button @click="picOn = false">关闭</el-button></template>
-  </el-dialog>
-  <el-dialog v-model="vidOn" width="62%" top="5vh" destroy-on-close class="fs-player-dlg">
-    <video v-if="vid" :src="projMedia(vid.file)" style="width:100%;display:block" controls autoplay></video>
-    <template #footer><span class="dim">{{ vid && vid.name }}</span>
-      <el-button @click="vidOn = false">关闭</el-button></template>
-  </el-dialog>
 </div>
 `,
   setup() {
     const kw = ref('');
     const sort = ref('time');                // 排序：time=最新录入(created_at) / mtime=文件修改时间 / name / lib
-    const aiItems = ref([]);                 // AI 生成产物（图片 + 未在索引里的视频），统一并入主网格
-    // 纯前端分页：一次拉全量，在客户端合并 + 筛选 + 排序后再按 limit 切片。
-    // 只有这样才能让 AI 产物按时间真正插进视频流，而不是永远吊在最后面。
+    // 纯前端分页：一次拉全量，在客户端筛选 + 排序后再按 limit 切片。
     const limit = ref(PAGE);
     const loadingMore = ref(false);
     const sentinel = ref(null);
@@ -297,29 +262,6 @@ const AssetsView = {
       return r.top < vh + 300;
     }
 
-    function openPic(it) { pic.value = it; picOn.value = true; }
-    function openVid(it) { vid.value = it; vidOn.value = true; }
-    async function delAi(it) {
-      try {
-        await ElementPlus.ElMessageBox.confirm(
-          `将删除磁盘上的源文件（及同名参数留痕），<b>不可恢复</b>：<br>`
-          + `<code>${esc(it.name)}</code>`,
-          '删除 AI 生成素材', { dangerouslyUseHTMLString: true, type: 'warning',
-            confirmButtonText: '删除' });
-      } catch (e) { return; }
-      const r = await post('/api/ai-gallery/delete', { file: it.file });
-      if (!r || !r.ok) { toast('删除失败：' + ((r && r.err) || ''), 'error'); return; }
-      await loadAi();
-      toast('已删除：' + it.name, 'success');
-    }
-    async function loadAi() {
-      try {
-        const arr = await api('/api/ai-gallery');
-        aiItems.value = Array.isArray(arr) ? arr : [];
-      } catch (e) { aiItems.value = []; }
-    }
-    const pic = ref(null), picOn = ref(false);
-    const vid = ref(null), vidOn = ref(false);
     const showFilter = ref(false);
     const libSel = reactive({});          // { libId: bool }
     const durSel = ref([]);               // 时长分档
@@ -328,7 +270,7 @@ const AssetsView = {
     // name 记一份是为了判断"用户是不是自己改了关键词"——改了就不该继续锁着。
     const pin = reactive({ vid: null, root: '', name: '' });
 
-    const allLibs = computed(() => (S.libs || []).concat(S.builtinLibs || []));
+    const allLibs = computed(() => S.libs || []);
 
     // 「全部」勾上 = 不设库条件；勾其它项时自动取消「全部」
     const libsAll = computed({
@@ -339,7 +281,7 @@ const AssetsView = {
     const libSet = computed(() => new Set(
       Object.keys(libSel).filter(k => libSel[k]).map(Number)));
 
-    // 全量合并：已索引视频（含内置 AI 视频）+ AI 生成产物（图片 / 未索引视频）
+    // 全量合并：只有已索引视频
     const merged = computed(() => {
       const f = (kw.value || '').trim().toLowerCase();
       const libs = libSet.value, dur = new Set(durSel.value);
@@ -349,24 +291,8 @@ const AssetsView = {
         if (!rowHit(r, { pin, libs, dur, kw: f })) continue;
         // 排序基准：created_at = 入库（录入）时间；mtime = 文件在磁盘上的修改时间。
         // 两个差很多——文件可能是几年前的老片，但昨天才录进库，所以默认按录入时间排。
-        out.push({ kind: 'video', v: r,
+        out.push({ v: r,
                    t: +(r.created_at || r.mtime || 0), m: +(r.mtime || r.created_at || 0) });
-      }
-      // AI 生成产物：仅当「全部」或勾选「AI 生成」(id 0) 时显示；有时长筛选时不显示（产物无时长）
-      // 锁定单部影片时当然也不显示——用户要看的就是那一部。
-      const aiVisible = !pinId && !dur.size && (libs.size === 0 || libs.has(0));
-      if (aiVisible) {
-        // 已作为内置视频进网格的 AI 成片，按路径去重，避免重复
-        const builtinPaths = new Set(
-          S.all.filter(r => r.builtin)
-              .map(r => (r.root + '/' + (r.rel || '')).replace(/\\/g, '/').toLowerCase()));
-        for (const it of aiItems.value) {
-          if (f && !((it.name || '') + ' ' + (it.rel || '')).toLowerCase().includes(f)) continue;
-          if (it.type === 'video'
-              && builtinPaths.has((it.file || '').replace(/\\/g, '/').toLowerCase())) continue;
-          // AI 产物是刚生成的文件，生成时间 ≈ 录入时间，没有单独的入库时间
-          out.push({ kind: 'ai', it, t: +(it.mtime || 0), m: +(it.mtime || 0) });
-        }
       }
       const by = sort.value;
       const keyOf = r => (by === 'mtime' ? r.m : r.t);
@@ -379,15 +305,15 @@ const AssetsView = {
       return out;
     });
 
-    function nameOf(row) { return ((row.kind === 'video' ? row.v.name : row.it.name) || '').toLowerCase(); }
-    function libOf(row) { return row.kind === 'video' ? (row.v.lib || '') : 'AI 生成'; }
+    function nameOf(row) { return (row.v.name || '').toLowerCase(); }
+    function libOf(row) { return row.v.lib || ''; }
 
     // 当前这一页（滚动时 limit 递增，纯客户端切片）
     const view = computed(() => merged.value.slice(0, limit.value));
     const allDone = computed(() => limit.value >= merged.value.length);
 
     function rowKey(row) {
-      return row.kind === 'video' ? (row.v.root + '#' + row.v.id) : ('ai-' + (row.it.file || row.it.name));
+      return row.v.root + '#' + row.v.id;
     }
 
     const summary = computed(() => {
@@ -399,7 +325,7 @@ const AssetsView = {
         }).join('、'));
       }
       if (durSel.value.length) bits.push('时长：' + durSel.value.join('/'));
-      return `命中 ${merged.value.length} / 共 ${S.all.length + aiItems.value.length} 条`
+      return `命中 ${merged.value.length} / 共 ${S.all.length} 条`
            + (bits.length ? ' · ' + bits.join(' · ') : ' · 未设条件');
     });
 
@@ -413,7 +339,6 @@ const AssetsView = {
         const data = await api(videosUrl());
         S.all = Array.isArray(data) ? data : (data.items || []);
       } catch (e) { S.all = []; }
-      await loadAi();   // 始终拉取 AI 生成产物（图片 + 未在索引里的视频），统一并入主网格
       primed = true;
       limit.value = PAGE;
       await nextTick();
@@ -681,7 +606,7 @@ const AssetsView = {
       // 不回传时模板拿不到 S，Vue 抛 "Cannot read properties of undefined (reading 'all')"，
       // 整个组件渲染中断 —— 表现是「筛到一条不剩时整页空白」而不是显示空态提示。
       S,
-      kw, sort, aiItems, openPic, openVid, delAi, pic, picOn, vid, vidOn, showFilter, libSel, durSel,
+      kw, sort, showFilter, libSel, durSel,
       allDone, loadingMore, sentinel, pin,
       allLibs, libsAll, view, rowKey, summary, picking, dlg, reOpt, asrOpt, asrEta,
       resetFilters, unpin, copyLink, onCmd, doRetranscribe, doAsr,
@@ -719,7 +644,7 @@ const AssetsView = {
       }),
       prevCount: computed(() => (picking.value || {}).line_count || 0),
       pickName: computed(() => (picking.value || {}).name || ''),
-      fmtDur, fmtAgo: FS.fmtAgo, projMedia,
+      fmtDur, fmtAgo: FS.fmtAgo,
       // 二级目录下的片子，片名加目录前缀，否则满屏「01.mp4 / 02.mp4」分不清是哪部的
       dirOf(v) {
         const rel = v.rel || '';

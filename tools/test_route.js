@@ -90,7 +90,7 @@ console.log('\n== 3. urlFromState 输出（空值不写进 URL） ==');
 eq(urlFromState({ libs: [], kw: '', dur: [], sort: 'time', vid: null, root: '' }), {},
    '默认全空 → 无参数');
 eq(urlFromState({ libs: [0], kw: '', dur: [], sort: 'time', vid: null, root: '' }),
-   { lib: '0' }, 'lib=0（AI 生成）要写出去，不能被当空值吃掉');
+   { lib: '0' }, 'lib=0 也要写出去，不能被当空值吃掉');
 eq(urlFromState({ libs: [1, 2], kw: '亮剑', dur: ['s30'], sort: 'name', vid: null, root: '' }),
    { lib: '1,2', q: '亮剑', dur: 's30', sort: 'name' }, '多条件拼接');
 eq(urlFromState({ libs: [], kw: '', dur: [], sort: 'time', vid: 9, root: '' }),
@@ -177,7 +177,7 @@ if (rows) {
   const t0 = arr.find(v => v.lib_id === 3) || arr[0];
   const hits = arr.filter(v => rowHit(v, { pin: { vid: +t0.id, root: t0.root },
     libs: new Set(), dur: new Set(), kw: t0.name.toLowerCase() }));
-  eq(hits.length, 1, '  pin + 片名关键词叠加仍命中 1 条（goAsset 会同时带上两者）');
+  eq(hits.length, 1, '  pin + 片名关键词叠加仍命中 1 条（锁定片名不同库同名片也不漏）');
 
   // pin + 库 + 时长：多条件与逻辑
   const longOnes = arr.filter(v => v.duration >= 1200);

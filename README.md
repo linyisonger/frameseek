@@ -28,19 +28,18 @@ python app.py                        # http://127.0.0.1:8771
 
 ### 前端架构（2026-10-15 重写 + 按功能拆模块）
 
-原单体 `web/app.js`（约 1600 行：全局状态 + 实时通道 + 6 个页面组件 + 主应用混在一起）
-已拆成「**共享状态层 + 6 个功能模块 + 薄引导文件**」。后续改某一个小功能点只动对应文件，
+原单体 `web/app.js`（约 1600 行：全局状态 + 实时通道 + 5 个页面组件 + 主应用混在一起）
+已拆成「**共享状态层 + 5 个功能模块 + 薄引导文件**」。后续改某一个小功能点只动对应文件，
 不用翻整篇大文件、不浪费 token。
 
 | 文件 | 职责 |
 | --- | --- |
-| `web/index.html` | 主框架（侧栏/页签/进度浮窗/播放器）；删除内联 x-template，底部按序加载 8 个脚本；`<keep-alive>` + kebab 标签切换 6 个视图 |
-| `web/app.js` | **薄引导文件**：只定义 `App` 壳（任务列表过滤 `gen`、浮窗摘要、首屏加载），`createApp` + 注册图标 + `mount('#app')` |
+| `web/index.html` | 主框架（侧栏/页签/进度浮窗/播放器）；删除内联 x-template，底部按序加载 7 个脚本；`<keep-alive>` + kebab 标签切换 5 个视图 |
+| `web/app.js` | **薄引导文件**：只定义 `App` 壳（任务列表、浮窗摘要、首屏加载），`createApp` + 注册图标 + `mount('#app')` |
 | `web/js/state.js` | 共享状态层：工具函数（`api/post/esc/hl/mediaUrl/...`）、`BUS`（订阅可取消）、`S`（reactive 全局态）、`LIVE`（WS→SSE→轮询）、`PHASE`、`onLive`、`loadLibs`、`play`、`clipLine/addClips`；挂到 `window.FS` 与 `window.__FS` |
 | `web/js/libs.js` | 模块 `libs`：素材库（登记/索引/上传/忽略名单 3 个 dialog），`FS.LibsView` |
 | `web/js/search.js` | 模块 `search`：台词检索（含 `boxMark` 方框凭证标记），`FS.SearchView` |
 | `web/js/assets.js` | 模块 `assets`：素材（筛选只留「素材库 + 时长」），`FS.AssetsView` |
-| `web/js/gen.js` | 模块 `gen`：AI 生成（对话气泡进度），`FS.GenView`；`window.__FS.gen` |
 | `web/js/box.js` | 模块 `box`：方框复查（两级选片 / `SEQ` 代次号 / 指标表 / 三路修复），`FS.BoxView`；`window.__FS.box` |
 | `web/js/clips.js` | 模块 `clips`：片段列表，`FS.ClipsView` |
 | `web/style.css` | Element Plus dark 变量覆盖 + 布局样式 |
@@ -48,15 +47,15 @@ python app.py                        # http://127.0.0.1:8771
 
 **解耦方式**：`window.FS` 作为共享命名空间——`state.js` 挂 `S/BUS/LIVE/api/post/...` 等全局依赖，
 各功能模块 `(function(){ const FS = window.FS; ... })()` 从 `FS` 取依赖、把组件挂回 `FS.XxxView`。
-`index.html` 底部按序加载：vue → element-plus → zh-cn → icons → `state.js` → 6 个模块 → `app.js`。
+`index.html` 底部按序加载：vue → element-plus → zh-cn → icons → `state.js` → 5 个模块 → `app.js`。
 后端 `app.py` 新增 `GET /js/<path:name>` 路由（目录穿越防护 + mime 映射），`index()` 给每个 js 模块
 带 `?v={mtime}` 版本号防旧标签缓存。
 
 模块 ↔ 组件：`libs` 素材库、`search` 台词检索、`assets` 素材（多维筛选）、
-`gen` AI 生成（对话窗）、`box` 方框复查、`clips` 片段。
+`box` 方框复查、`clips` 片段。
 页签切换用 `<keep-alive>`——方框复查一部片的清单要 verify 几秒，切回来必须秒开。
 
-回归脚本通过 `window.__FS`（S / api / post / box / gen）驱动页面状态，
+回归脚本通过 `window.__FS`（S / api / post / box）驱动页面状态，
 UI 交互一律走真实 Element Plus 控件（点 checkbox、点 el-select 的 wrapper 弹 popper）。
 
 ---
@@ -88,30 +87,6 @@ CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT);  -- active_id / use_asr
 页面上是一张表：名称 / 路径 / 素材数 / 台词数 / 总时长 / 上次索引 / 状态 / 操作（切换·索引·打开·删除）。  
 **搜索默认跨全部素材库**（结果行标着来自哪个库），也可以切"仅当前库"。  
 上传、视频列表、导出片段都作用于当前选中的那个库。
-
-## 0.5 AI 生成产物单独一档（2026-10-15）
-
-生成物**不进素材库、也不进台词体系**——它自己一档：
-
-| 项        | 素材库                            | AI 生成产物                              |
-| -------- | ------------------------------ | ------------------------------------ |
-| 落点       | 用户登记的任意目录                      | `<项目根>/AI生成/`（hub 设置 `gen_outdir` 可改）  |
-| 登记       | 写进 `hub.db.libraries`          | 不登记，`list_all()` 里凭空合成一条 `id=0` 内置只读 |
-| 索引       | md5 + 封面/动图 + 台词（srt→内嵌→OCR）   | **只登记媒体信息**，台词恒为 0，`line_source='none'` |
-| 页面入口     | 素材库卡片可索引/改名/删除                 | 素材页筛选里「🔒 AI 生成」可勾选，卡片菜单无台词类入口       |
-| 台词筛选     | 有台词/没台词/识别失败                   | 不参与（AI 片不受这项筛选影响）                    |
-
-隔离是**双保险**：
-
-- 前端：AI 片卡片显示「AI 生成」标记而不是「没台词」，三点菜单只留 预览 / 打开文件夹 / 从库中移除 / 删除；
-- 后端：`/api/video/retranscribe`、`/api/video/transcribe_asr`、`/api/video/reimport` 命中 AI 目录直接 400；
-- MCP：`frameseek_add_library` / `retranscribe` / `transcribe_asr` / `recog_line` / `edit_line` /
-  `verify` / `boxaudit` / `export_clip` 一律挡回，`frameseek_scan` 走 `no_lines` 只登记媒体信息；
-- 自愈：早先按普通库索引过、留下台词的 AI 片，下次索引会清空台词（含 FTS）并置 `line_source='none'`。
-
-实现就一个开关：`Indexer(..., no_lines=True)`（`core/indexer.py`）——跳过
-`asr.get_lines`，不读同名 srt、不读内嵌字幕、不 OCR、不落 srt。
-回归：`python tools/scratch/_ai_isolate_ui_check.py`（12 项）。
 
 ## 1. 启动
 
@@ -849,7 +824,7 @@ OCR 进度**每 8 帧或每 2 秒**推一次——再密没有意义，反而刷
 | 空状态  | 空面板要有"下一步做什么"引导                         |
 | 视觉   | 文字截断、溢出视口、暗色正文对比度 ≥4.5                  |
 
-审核范围：4 个主页面 + 5 个典型弹窗 + 375/820/1440 三档视口。  
+审核范围：5 个主页面 + 5 个典型弹窗 + 375/820/1440 三档视口。  
 复跑：`python tools/scratch/_ui_audit.py`，问题清单落 `_out/uiaudit/issues.json`，每页带截图。
 
 **已修的问题**（按用户习惯维度）：
@@ -874,111 +849,29 @@ OCR 进度**每 8 帧或每 2 秒**推一次——再密没有意义，反而刷
   四个筛选项改成等宽 6 栅格，不再出现"最后一个字段被挤到换行"。
 - **选中态**（2026-10-21）：侧栏从整块实心蓝改成品牌色浅染 + 左侧 3px 实色条，
   图标随主色提亮；主区背景加一层极淡的径向光晕，页面不再是一片死平。
+- **方框复查整库概览**（2026-10-22）：145 部片原来逐片调 `box_stats`，TV 库 80 部
+  要 4~8 秒；改成每库一次 `GROUP BY`（`Store.line_box_counts`）后 0.15 秒。
+- **SQLite 连接泄漏**（2026-10-22）：`Store._conn()` 的 `with` 只 commit 不 close，
+  boxaudit 一轮上百条连接堆到 GC；现在短连接用完即关，`journal_mode=WAL` 只在
+  `_init` 设一次——否则每条新连接都要等锁，单条查询从毫秒涨到 2 秒。
+- **空态统一**（2026-10-22）：检索/素材/方框/片段统一成「图标 + 标题 + 一句说明」
+  的 `.fs-empty-tip`；页面里的 `el-divider` 去掉，靠卡片间距分隔。
+- **解说页移除 / 配音拆分**（2026-10-22）：Web 的「解说」页、`/api/narrate/*`、
+  `web/js/narrate.js` 与对应 CSS 全部删除；配音、声音模板、解说成片整体迁到
+  `D:\project\AIProjects\framevoice`（FrameVoice）。
+- **筛选控件统一**（2026-10-22）：全站筛选/搜索控件统一 **32px 高、6px 圆角**
+  （大搜索框 40 做层级）；宽度按功能固定：库 160 / 关键词 220 / 排序 160 /
+  影片 260 / 字幕 180 / 数字 96，不再各页各写一个数；≤820px 自动吃满所在列。
 
 仍存在的 P2 均为度量局限或设计选择，不是缺陷：`::after` 外扩的命中区  
 `getBoundingClientRect` 读不到（vmore 视觉 24×22 实际可点 32×30）；  
 tag 徽标/警示文字在半透明背景上的对比度是脚本计算偏差，目视清晰。
 
-## 5.6 AI 视频生成（对话窗口 → 项目「AI生成」目录）
-
-顶部 **生成** 页是一个对话窗口：输入文案（Enter 发送）→ 生成带音频的 mp4 →
-自动落入项目 `AI生成/` 目录（内置只读 AI 库，素材页可筛选到）。
-成片**只登记媒体信息**（封面/动图/时长），**不做字幕和语音识别**——详见 §0.5。
-
-**双后端（2026-10-18 加 Agnes，与生图的 `img_backend` 同构）**：
-
-| backend | 引擎 | 分辨率 | 时长 | 速度 | 联网 | 说明 |
-| -- | -- | -- | -- | -- | -- | -- |
-| `agnes` | Agnes Video 2.5 Flash（API） | 1280×704 | 4~12 秒 | 数十秒~几分钟 | 要 | 默认优先，**成片自带音轨**；中文提示词可直接写 |
-| `h3` | 本地 MiniMax H3 | 736×416（随像素档变） | 3~15 秒 | 5 秒约 10 分钟、10 秒约 40 分钟 | 不要 | 纯离线兜底，**独占 GPU**；英文提示词效果最好 |
-| `auto` | 按 `agnes → h3` 降级 | — | — | — | — | **默认**。agnes 未就绪或失败才回落 H3 |
-
-- `megapixels` 只对 H3 有意义；Agnes 固定 720P。
-- `2:3` / `3:2` 两种宽高比**只有 H3 支持**，选 agnes 时会直接报错而不是静默降级。
-- 显式指定 `backend` 时**不降级**——该后端失败就直接报错，避免"我以为走的云端，
-  其实悄悄跑到了本地慢引擎"。
-- H3 独占 GPU，两个 H3 任务由 `core/gen.py` 内的 `_H3_LOCK` 串行；云端任务不受此限，
-  可与 H3 并行。
-
-**架构 A：`h3` 后端（单服务 + 直调引擎，2026-10-14 定型，取代早前的双服务方案）**：
-
-```
-对话窗口 / MCP 工具
-      │  prompt + 时长 + 宽高比 + 参考图
-      ▼
-core/gen.py ── spawn ──▶ h3gen.py（ComfyUI 便携版 python_embeded 独立进程）
-                              │  import comfy.* 直接调节点函数，不起服务、不走 HTTP、
-                              │  不加载工作流 JSON
-                              ▼
-                         UNETLoader → CLIPLoader(minimax) → VAELoader×2
-                         → MiniMaxH3ReferenceToVideo → BasicScheduler(simple,12)
-                         → SamplerCustomAdvanced → VAEDecode / VAEDecodeAudio
-                         → ffmpeg 合成 mp4（绕开 SaveVideo 的序列化坑）
-                              │  stdout JSON 行协议回报进度（phase/pct/done）
-                              ▼
-                         项目「AI生成/」目录 → 只登记媒体信息（不 OCR / 不 ASR）
-```
-
-**架构 B：`agnes` 后端（云端 API，2026-10-18 新增）**：
-
-```
-core/gen.py ── spawn ──▶ agnes_video.py（skill 脚本）
-                            │  POST /v1/videos 建任务 → 2s 轮询 /agnesapi
-                            │  → status=completed 时下载（自带 AAC 音轨）
-                            ▼
-                       项目「AI生成/」目录
-```
-
- Agnes 那条线**不走 JSON 行协议**（脚本是提交+轮询+下载一体），所以进度是伪进度：
-提交后推到 92%，下载完收尾。
-
-要点 / 硬约束（H3 后端）：
-
-| 项 | 值 |
-| -- | -- |
-| 引擎 | `h3gen.py`，用 `ComfyUI_windows_portable\python_embeded\python.exe` 跑 |
-| 模型 | H3 ref2va int8 + Qwen3-VL 32B nvfp4 AWQ + 视频 VAE fp16 + 音频 VAE fp32 |
-| 提示词 | < 2000 字符（MiniMax 官方上限） |
-| 帧数 | 124~362（17k+5 栅格，≈5.2s ~ 15.1s @24fps） |
-| 分辨率 | 复刻工作流 ResolutionSelector：宽高比 × 目标像素，32 的倍数（默认 16:9 / 0.3MP → 736×416） |
-| 参考图 | 最多 9 张，prompt 里 `<Picture 1>` 引用 |
-| 耗时 | 4060Ti 8G 低显存模式，5.2s 片约 5~7 分钟（采样为主） |
-
-Agnes 后端的坑：
-
-- **免费账号在高峰会报 `503 video_queue_full`**，这不是请求有问题，是服务端队列满。
-  `agnes_video.py` 内部会退避重试 6 次（20~100s），仍失败才抛错——所以一次失败不代表
-  不能出片，隔几分钟重试通常就好了。
-- 判定队列是否恢复的轻量探针：`POST /v1/videos` 但**故意不传 `mode`**，回
-  `400 mode is required` 说明接口正常受理（此时提交多半能过），回 `503` 说明还堵着。
-  探针不建任务、不计费，但会吃一点 RPM，间隔别太密。
-- 成片**自带 AAC 音轨**，后续裁剪/转码**千万别加 `-an`**。
-- `size` 只能是 `720P`，改清晰度要靠 `--aspect-ratio`（换分辨率由服务端按比例给）。
-
-**关键踩坑：DynamicVRAM 必须复刻**。ComfyUI 服务端 `main.py` 在 import torch 前
-`comfy_aimdo.control.init()`，加载模型前 `init_devices()` 并把
-`CoreModelPatcher` 换成 `ModelPatcherDynamic`。直调脚本若跳过这一步，VAE/CLIP 会用
-静态 `ModelPatcher`——低显存下只部分上卡，`comfy.ops` 的逐 op 搬运覆盖不到
-`ViT3DDecoder.register_tokens`（裸 `torch.cat` 使用），VAE 解码必崩
-`Expected all tensors to be on same device ... cpu vs cuda:0`。`h3gen.py` 1b 节即
-复刻这段启动序列（探针 `tools/scratch/_vae_probe.py` 可单独验证解码路径）。
-
-**关键踩坑：cudaMallocAsync 必须复刻**。服务端 `main.py` 在 import torch 前
-`import cuda_malloc`（torch 2.x + CUDA + 卡不在黑名单时自动设
-`PYTORCH_CUDA_ALLOC_CONF=backend:cudaMallocAsync`）。缺这一步，流式加载 + VAE
-解码的大块激活把原生分配器打碎——reserved 几个 G 却连 30MB 都分不出，直接 OOM。
-环境变量必须在 import torch **之前**设才生效。
-
-MCP 侧两个工具：`frameseek_gen_info`（引擎状态/参数范围）、
-`frameseek_generate_video`（提交生成，异步，用 `frameseek_task` 轮询）。
-
 ## 6. MCP（给 AI 客户端用）
 
-> 实现流程图（架构分层 / 异步时序 / 实现决策与踩坑）：浏览器打开 [`mcp-flow.html`](mcp-flow.html)
-
 `mcp_server.py` 走 stdio，**不依赖 Web 服务是否在跑**：直接读 hub.db 和各库的  
-`.frameseek/index.db`，识别任务起 daemon 线程跑。共 **28** 个工具
-（检索/识别/导出/生成 + 会话辅助）：
+`.frameseek/index.db`，识别任务起 daemon 线程跑。共 **22** 个工具
+（检索/识别/导出 + 会话辅助）：
 
 | 工具 | 作用 |
 | --- | --- |
@@ -1004,12 +897,6 @@ MCP 侧两个工具：`frameseek_gen_info`（引擎状态/参数范围）、
 | `frameseek_boxaudit`       | 方框复查清单（每条凭证指标 + 通过与否 + 原因）                     |
 | `frameseek_recog_line`     | 重新识别**这一句**（`mode=ocr` 看画面 / `mode=asr` 只听这句），只读不写库 |
 | `frameseek_edit_line`      | 改这条台词的文字/起止时间，`save_box=True` 同时写入画面方框         |
-| `frameseek_img_info`       | 生图双后端摸底：agnes（云端/联网）/ sd15（本地/种子可复现）各自 ready、耗时、是否离线 |
-| `frameseek_generate_image` | **出静态图 PNG**（双后端可插拔，默认 auto 按 agnes→sd15 降级）。**同步返回**路径，带同名 sidecar 留痕参数 |
-| `frameseek_reroll_image`   | 按某张图的 sidecar 参数原样复现、只换新种子（**重掷就靠这个**，sd15 下收敛） |
-| `frameseek_list_images`    | 列 `<项目根>/AI生成/绘画/` 的产物（新的在前，带生成时的全部参数） |
-| `frameseek_gen_info`       | 视频生成引擎状态（ready/missing、参数范围、模型文件是否齐全）            |
-| `frameseek_generate_video` | 提交视频生成（**异步**）。`backend` 选 `agnes`/`h3`/`auto`，默认 auto |
 
 异步类工具（scan / retranscribe / transcribe_asr）**立即返回**，之后用  
 `frameseek_task` 轮询，别反复调发起端。`frameseek_transcribe_asr` 的响应里带  
@@ -1032,12 +919,11 @@ MCP 侧两个工具：`frameseek_gen_info`（引擎状态/参数范围）、
 `root` 参数都可以省略——省略时依次看环境变量 `FRAMESEEK_ROOT`、hub 里的激活库。  
 多库场景下，搜索结果里的 `root` 必须带回给后续工具（line_id 只在各自库内唯一）。
 
-自测：`python tools/scratch/_mcp_e2e.py`（stdio JSON-RPC 全流程：握手 → tools/list →  
-只读工具 → 异步扫描 + 进度轮询 → ping，只动 `_testlib`）。
+自测：`python tools/test_mcp.py`（stdio JSON-RPC 全流程，只读工具 + 导出，只动 `_testlib`）。
 
 ### 给 LLM 用的设计（2026-10-17 补齐）
 
-工具面从 29 扩到 **33 个**，并按「模型能不能自己走通」重做了一遍：
+工具面按「模型能不能自己走通」重做了一遍：
 
 **① 参数级说明**——以前所有参数只有名字没有解释（靠函数 docstring 顶着），
 `pre`/`post`/`fast`/`line_ids` 这类只能靠猜。现在全部走
@@ -1080,19 +966,17 @@ Web 端「导出字幕」下拉对应这三档；顺带把原来一个开关管�
 拆成了「导出字幕」和「字幕带」两个独立控件。自动跳过时前端弹提示说明原因。
 
 配套 skill：`.workbuddy/skills/frameseek/SKILL.md`（铁律 / 决策树 / 踩坑清单）。工具面探针 `python tools/mcp_probe.py --tools`（看模型眼里的 schema），
-回归测试 `python tools/test_mcp.py`（70 项，端到端跑真实 stdio 子进程）。
+回归测试 `python tools/test_mcp.py`（端到端跑真实 stdio 子进程）。
 
 UI 回归（都要 Web 服务已在 8771 起；都是无头 Chromium 真点页面）：
 
 | 脚本 | 覆盖 |
 | --- | --- |
-| `tools/scratch/_vue_ui_check.py` | Vue 重写后的整站冒烟：vendor 加载、挂载、深色主题、7 页签、各页控件（52 项） |
-| `tools/scratch/_ai_isolate_ui_check.py` | AI 生成产物不做字幕/语音识别：卡片标记、菜单入口、台词筛选、接口兜底（13 项） |
+| `tools/scratch/_vue_ui_check.py` | Vue 重写后的整站冒烟：vendor 加载、挂载、深色主题、5 页签、各页控件 |
 | `tools/scratch/_boxpick_ui_check.py`   | 复查页选片：库下拉计数 / 按库过滤 / 片名搜索（含多词 AND）/ 二级目录前缀与目录搜索 / 无结果清空（17 项） |
 | `tools/scratch/_scanstop_ui_check.py`  | 中途终止 + 续跑：切 3 个片段真跑索引 → 中途停止 → 断言已完成的保住台词、被中断的没半截台词、下次跳过已完成的接着跑（16 项） |
 | `tools/scratch/_boxedit_ui_check.py` | 方框复查页：编辑台词 / 重新 OCR 识别 / 单句语音识别（32 项） |
-| `tools/scratch/_filter_ui_check.py`   | 素材页多维筛选、内置 AI 库只读、重置（24 项） |
-| `tools/scratch/_gen_ui_check.py`      | AI 生成面板表单与响应式（引擎未就绪时自动降级为禁用态断言） |
+| `tools/scratch/_filter_ui_check.py`   | 素材页多维筛选、重置 |
 | `tools/scratch/_tips_ui_check.py`     | 每个功能按钮都带悬停说明、且不存在「说明」总览页（40 项） |
 | `tools/scratch/_pw.py` | 公共启动辅助：本机 chromium 版本与 playwright 期望对不上时自动回退到已装版本 |
 
@@ -1113,19 +997,13 @@ app.py              Flask Web 服务（API + 页面 + 视频 Range 流）
 mcp_server.py       MCP stdio 服务
 core/hub.py         项目级库登记处（hub.db：libraries / settings / 跨库搜索）
 core/config.py      参数（端口、动图尺寸、ASR 模型、前后秒数…）
-core/gen.py         视频生成调度：**双后端**（agnes 云端 / h3 本地 / auto 降级）→ 校验参数 → spawn 子进程
-h3gen.py            MiniMax H3 直调引擎（ComfyUI 库方式，不起服务；便携版 python 跑）
 core/store.py       SQLite + FTS5 数据层（每个素材目录一个）
 core/media.py       ffprobe / md5 / 封面 / 动图 / 抽帧 / 切片
 core/ocr.py         硬字幕 OCR：字幕位置标定 + 逐帧选框 + 文本净化 + 方框凭证
 core/asr.py         外挂字幕 → 内嵌字幕 → OCR → whisper 转写
 core/verify.py      方框校验：凭证自检（快）+ 现场复核（重抽帧证伪）
 core/indexer.py     扫描入库流程
-core/tts.py         配音音色库（cosy / edge / SAPI / 静音占位）—— 解说链路用
-core/voices.py      声音模板：参考音 + 逐字稿 + 语速/停顿（voices/<id>/）
-core/narrate.py     解说分镜：文案 → 找画面 → 配音 → 切段/拼接/混音
-web/js/narrate.js   解说页：文案编辑 / 解析分镜 / 生成进度 / 成片预览 / 历史产物
-web/                页面（index.html / app.js 引导 / js/state.js 状态层 + 6 个功能模块 / style.css / logo.svg）
+web/                页面（index.html / app.js 引导 / js/state.js 状态层 + 各功能模块 / style.css / logo.svg）
 ```
 
 `logo.svg` 是品牌图标（渐变圆角方 + 帧格播放键），三处共用：网站 favicon、
@@ -1138,151 +1016,32 @@ web/                页面（index.html / app.js 引导 / js/state.js 状态层 
 默认"秒切"（`-c copy`）是秒出，可能有零点几秒误差；要帧精确就取消勾选（重编码，慢一些）。  
 批量导出：多条台词一起选还没做界面，MCP 侧可以循环调 `frameseek_export_clip`。
 
-## 9. 解说分镜 v0 与模块下线（2026-10-21）
+## 9. 配音 / 解说已拆分到 FrameVoice
 
-### 9.1 AI 生成 / AI 绘画下线（`config.ENABLE_GEN = False`）
+配音、声音模板、解说成片已经整体迁到独立项目：
 
-这两个模块和「素材库 → 搜台词 → 出片段」不是一条业务线：抢 GPU、抢开发时间，
-打开软件也不该先看到「AI 生成」。现在默认关闭：
+```
+D:\project\AIProjects\framevoice
+```
 
-| 表面 | 关掉后的行为 |
-| --- | --- |
-| Web 页签 | 「AI 生成 / AI 绘画」不渲染（由 `/api/state.gen_enabled` 驱动）；旧书签 `#gen` / `#aidraw` 回落素材库 |
-| 接口 | `/api/gen/*`、`/api/aidraw/*` 一律 404（`app.py` 的 `before_request` 统一挡） |
-| MCP | **暂未动**：6 个生成类工具仍可用，下一步一起摘（要跑 `tools/test_mcp.py`） |
-| 历史产物 | `AI生成/` 目录和素材页的「🔒 AI 生成」筛选保留，旧文件照样能看 |
+包括：`_tts/`（CosyVoice 环境与模型）、`voices/`（声音模板）、
+`core/tts.py`、`core/voices.py`、`core/narrate.py`、`demo_narrate.py`、
+`tools/make_voice.py`。
 
-恢复：把 `core/config.py` 的 `ENABLE_GEN` / `ENABLE_AIDRAW` 改回 `True` 再重启。
-代码一行没删，后续会搬进 `extras/`（那一步要更新约 40 处引用，留到能跑全量回归时做）。
-
-> 回归脚本里断言「7 个页签」的几条（`tools/scratch/_vue_ui_check.py` / `tools/scratch/_ai_isolate_ui_check.py` /
-> `tools/scratch/_gen_ui_check.py` / `tools/scratch/_filter_ui_check.py`）需要跟着改成按开关跳过，待补。
-
-### 9.2 30 秒解说 demo：先验证「画面配得对不对」
-
-在投 UI 之前先把最短链路跑通——**用真实素材回答一个问题：自动配的画面能不能看。**
-
-| 新文件 | 作用 |
-| --- | --- |
-| `core/tts.py` | 音色库：`cosy`（本地 CosyVoice3，默认优先，见 §9.3）→ `edge`（在线，本机 403）→ `sapi`（离线）→ `silent`（占位） |
-| `core/narrate.py` | 文案 → 找台词（`ref` 或关键词）→ 取窗口 → 配音 → 切段/拼接/混音 → mp4 + srt + 分镜表 |
-| `demo_narrate.py` | 一次性验证脚本，内置 7 句《唐伯虎点秋香》文案 |
+FrameSeek 现在只负责「素材库 → 搜台词 → 导出片段」；需要配音或解说时去 FrameVoice：
 
 ```bat
-python demo_narrate.py --backend sapi --voice Huihui
+cd D:\project\AIProjects\framevoice
+python -m framevoice.cli info
+python -m framevoice.cli synth --text "测试一句" --voice jm-678
+python demo_narrate.py --script scripts/lurk.json --voice jm-678
 ```
 
-实测（`_testlib/test5min.mp4`，7 句文案）：**31.9 秒成片、渲染 5.5 秒**，
-画面 7/7 落在对应场景（集体上吊、宁王来使、装病）。产物在
-`AI生成/解说/demo_唐伯虎_30s/`：`final.mp4` + `narration.srt` + `storyboard.json` + `voice/`。
-
-三条已经定死的规则（后面做 UI 也按这个来）：
-
-1. **配音是主轴**：分段时长 = 配音时长 + 句间停顿，画面永远迁就配音，绝不截断配音；
-2. 同一部片尽量顺着时间线走，上一镜用过的区间不回头重放；贴片尾时允许轻微重叠，
-   但**绝不截短**（分段时长必须等于配音时长，这是音画同步的硬约束）；
-3. 转场只用硬切；
-4. **旁白字幕默认烧进画面**：`build(burn_sub=True)` 用 libass 把 `narration.srt`
-   烧上去（`demo_narrate.py --no-burn` 可关）。原片是 mkv 内封软字幕，不会和旁白
-   字幕叠在一起；烧字幕要重编码，所以这一步比不烧慢一些。
-
-已知短板（下一步按这个顺序解决）：
-
-- **检索还是字面 FTS**：文案写「小帅很生气」，台词里没有「生气」就配不上。
-  两条路：补语义检索（bge-small-zh + 现有 onnxruntime），或让 AI 通过 MCP 写文案时
-  直接带 `line_id`（`ref` 字段已经支持，优先走这条）；
-- 没有 BGM、没有「原声金句」、没有片头片尾；
-- 还没有分镜表 UI——现在换镜头只能改 `storyboard.json` 再重跑。
-
-### 9.3 配音升级：本地 CosyVoice3（2026-10-21）
-
-SAPI 怎么调都是导航音，所以接了一个本地神经 TTS：
-
-| 项 | 值 |
-| --- | --- |
-| 引擎 | CosyVoice3-0.5B（`FunAudioLLM/Fun-CosyVoice3-0.5B-2512`） |
-| 环境 | `_tts/env`（Python 3.10 + torch），**只在本地，不入库**（约 10GB） |
-| 主程序 | 只 spawn `_tts/cosy_worker.py` 子进程，不装 torch（和 `h3gen.py` 一个套路） |
-| 接口 | `core/tts.py` 新增 `cosy` 后端 + `synth_batch()`（一次加载模型、多句合成） |
-| 开关 | `config.TTS_BACKEND="cosy"`；或 `demo_narrate.py --backend cosy` |
-
-A/B 实测（同一段 7 句文案，CPU 跑，4060 Ti 没启用）：
-
-| 方案 | 时长 | 耗时 | RTF | 回听结论 |
-| --- | --- | --- | --- | --- |
-| SAPI（旧） | 32.1s | — | — | 机器味重、断句硬 |
-| **CosyVoice 逐句** | 23.8s | 138s | 5.81 | **文字全对、停顿自然，采用** |
-| CosyVoice 整段 | 24.9s | 132s | 5.30 | 连贯但断句偶有漂移 |
-| CosyVoice + 解说指令 | 25.2s | 131s | 5.17 | 标点被吃掉，更差，弃用 |
-
-产物：`_tts/ab_out/`（`sapi.wav` / `cosy_sentence.wav` / `cosy_whole.wav` /
-`cosy_instruct.wav`）与 `AI生成/解说/demo_唐伯虎_cosy/final.mp4`。
-
-三条已知限制：
-
-1. **GPU 已经接上**：手工解压 `torch-2.3.1+cu121` wheel 到 `_tts/env`（`uv pip install` 在
-   2.3GB wheel 上会卡住，最后是 `zipfile.extractall` 直接铺进 site-packages）。
-   实测 RTF 1.5~2.7，比 CPU 快 2~4 倍；逐句合成仍比整段慢一倍（每句都有前端开销）。
-2. **文本前端没起来**：`wetext` 依赖的 ModelScope 模型要登录 token，数字/英文暂不归一化
-   （纯中文文案不受影响）。
-3. **参考音色走模板**：见 §9.4。`FRAMESEEK_TTS_PROMPT` / `_TEXT` 仍可临时覆盖（A/B 用）。
-   注意：参考音必须有商用授权，真人声音受《民法典》第 1023 条保护。
-
-### 9.4 声音模板（2026-10-21）
-
-声音不再写死在配置里，而是存成模板：
-
-```
-voices/<id>/
-    template.json     名称 / 逐字稿 / 语速 / 句间停顿 / 授权备注
-    prompt.wav        裁好并归一化的参考音（10~20 秒，24kHz 单声道）
-    source.mp3        原始素材（可选，留一份方便重新裁）
-```
-
-当前默认模板：**`jm-678`**（影视解说参考音，10.16 秒 prompt，`speed=1.0`、`gap=0.2`）。
+解说成片通过 `FRAMESEEK_HOME` 读取本项目的素材库：
 
 ```bat
-python tools/make_voice.py --list
-python tools/make_voice.py --src "解说.mp3" --start 2.5 --end 12.7 ^
-    --id my-voice --name "我的解说音" --text "参考音的逐字稿……"
-python demo_narrate.py --voice my-voice
+set FRAMESEEK_HOME=D:\project\AIProjects\frameseek
 ```
 
-- 默认模板由 `config.TTS_VOICE` 指定；`auto` 就是取它。
-- `--gap` 不传时用模板里的停顿；`config.TTS_COSY_SPEED` 仍可全局改语速。
-- `voices/` 是本地数据（参考音可能涉及第三方授权），**已 gitignore**；换机器要自己带过去。
-- 模板只负责“音色”；文案/分镜/出口那套逻辑不受影响。
-
-### 9.5 解说 Web UI（2026-10-21）
-
-左侧导航新增 **「解说」** 页，把命令行那套搬到了页面上：
-
-| 区域 | 作用 |
-| --- | --- |
-| 文案 | 一行一句；「文案 \| 检索词」指定画面；JSON 模式可写 `ref`（精确 `line_id`） |
-| 选项 | 声音模板 / 素材库 / 句间停顿 / 画幅（横屏·竖屏）/ 烧字幕 / 项目名 |
-| **解析分镜** | 只解析不生成：先看每句配到哪部片哪一句、时间码对不对 |
-| **生成成片** | 异步任务，进度条 + 阶段消息；落 `AI生成/解说/<项目名>/` |
-| 成片预览 | 内嵌播放器 + 打开目录 + 下载 |
-| 历史产物 | 列出 `AI生成/解说/` 下所有 `final.mp4`，点一条直接预览 |
-
-接口：
-
-| 方法 | 路径 | 作用 |
-| --- | --- | --- |
-| GET | `/api/narrate/voices` | 声音模板列表 + 默认模板 |
-| POST | `/api/narrate/resolve` | 文案 → 分镜（不生成，毫秒级） |
-| POST | `/api/narrate/build` | 启动生成（异步线程，一次只跑一条） |
-| GET | `/api/narrate/status` | 进度 / 结果（前端 1.2s 轮询） |
-| GET | `/api/narrate/projects` | 历史产物列表 |
-
-实现细节：
-
-- 进度是把 `narrate.build` 的 progress 文本映射成百分比（解析 6 → 配音 12 →
-  切画面 50~88 → 拼接 90 → 混音 96 → 完成 100），没有改 `build` 的签名。
-- 成片自动抽第 1 秒做 `cover.jpg`，历史列表拿它当缩略图。
-- 烧字幕默认开；原片是 mkv 内封软字幕，不会和旁白叠在一起。
-- 页面刷新/切走再回来会从 `/api/narrate/status` 恢复正在跑的任务。
-
-已知短板：**还不能在页面上「换镜头」**。当前只能改文案里的检索词让它重新解析；
-下一步给每行加候选列表 + 「换一个」，再把选择写回 build 的 `ref`。
+这样约 19GB 的配音模型 / CUDA 环境不再跟视频库项目绑在一起，拾帧只保留
+「素材库 → 搜台词 → 导出片段」。

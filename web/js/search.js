@@ -23,61 +23,45 @@ const SearchView = {
         </template>
       </el-input>
     </div>
-    <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
-      <span class="dim">素材库</span>
-      <!-- 宽度交给 CSS（.fs-libpick）：el-select 自带 width:100%，在 flex 行里
-           会被拉满整行；长目录名还会把下拉面板顶宽出屏幕，所以选项文字截断 +
-           title 显示全名，面板宽度跟输入框走。 -->
-      <el-select id="libpick" v-model="libRoot" size="small" class="fs-libpick"
-        popper-class="fs-libpick-pop" fit-input-width
-        title="默认跨全部已登记库搜；库多、或想限定在某部片所在的库里找，就在这里选一个">
-        <el-option label="全部素材库" value=""/>
-        <el-option v-for="o in libOpts" :key="o.path" :label="o.name" :value="o.path" :title="o.full"/>
-      </el-select>
-      <span class="dim" v-if="libs.length" style="font-size:12px">共 {{ libs.length }} 个库</span>
+    <div class="fs-filterrow">
+      <div class="fs-field">
+        <label>素材库 <span class="fs-labnote" v-if="libs.length">共 {{ libs.length }} 个</span></label>
+        <el-select id="libpick" v-model="libRoot" class="fs-libpick"
+          placeholder="全部素材库"
+          popper-class="fs-libpick-pop" fit-input-width
+          title="默认跨全部已登记库搜；库多、或想限定在某部片所在的库里找，就在这里选一个">
+          <el-option label="全部素材库" value=""/>
+          <el-option v-for="o in libOpts" :key="o.path" :label="o.name" :value="o.path" :title="o.full"/>
+        </el-select>
+      </div>
+      <div class="fs-field">
+        <label>导出片段时长（秒）</label>
+        <div class="fs-cfg-inline">
+          前 <el-input-number id="pre" v-model="pre" :min="0" :max="60" class="w96" controls-position="right"/> 后 <el-input-number id="post" v-model="post" :min="0" :max="60" class="w96" controls-position="right"/>
+        </div>
+      </div>
+      <div class="fs-field">
+        <label>剪辑模式</label>
+        <el-switch id="fast" v-model="fast" size="small" active-text="秒切" inactive-text="精确"
+          title="秒切＝直接拷贝原视频流（快，但只能落在关键帧上，切点可能差半秒）。不勾则重编码，切点帧精确，慢一些"/>
+      </div>
+      <div class="fs-field">
+        <label>导出字幕</label>
+        <el-select id="submode" v-model="subMode" class="w180"
+          title="自动＝画面本来就带字幕的素材（台词来自 OCR 识别）跳过烧录，其余照旧烧；关闭＝一律不烧；强制＝一律烧（OCR 字幕有错字、纠完想重烧一份时用）">
+          <el-option label="自动（OCR 跳过）" value="auto"/>
+          <el-option label="关闭" value="off"/>
+          <el-option label="强制" value="force"/>
+        </el-select>
+      </div>
+      <div class="fs-field">
+        <label>字幕带</label>
+        <el-switch id="subtitle" v-model="subBand" size="small" active-text="开" inactive-text="关"
+          title="预览播放时在画面底部显示当前这句台词（只影响预览，不会烧进导出的片段）"/>
+      </div>
     </div>
-    <el-form label-position="top" class="fs-form" @submit.prevent>
-      <el-row :gutter="14">
-        <el-col :xs="24" :sm="12" :md="6" :lg="6">
-          <el-form-item label="导出片段时长（秒）">
-            <div class="fs-cfg-inline">
-              前 <el-input-number id="pre" v-model="pre" :min="0" :max="60" size="small" controls-position="right"/> 后 <el-input-number id="post" v-model="post" :min="0" :max="60" size="small" controls-position="right"/>
-            </div>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="12" :sm="6" :md="6" :lg="6">
-          <el-form-item label="剪辑模式">
-            <el-switch id="fast" v-model="fast" size="small" active-text="秒切" inactive-text="精确"
-              title="秒切＝直接拷贝原视频流（快，但只能落在关键帧上，切点可能差半秒）。不勾则重编码，切点帧精确，慢一些"/>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="12" :sm="6" :md="6" :lg="6">
-          <el-form-item label="导出字幕">
-            <el-select id="submode" v-model="subMode" size="small"
-              title="自动＝画面本来就带字幕的素材（台词来自 OCR 识别）跳过烧录，其余照旧烧；关闭＝一律不烧；强制＝一律烧（OCR 字幕有错字、纠完想重烧一份时用）">
-              <el-option label="自动" value="auto"/>
-              <el-option label="关闭" value="off"/>
-              <el-option label="强制" value="force"/>
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="12" :sm="6" :md="4" :lg="4">
-          <el-form-item label="字幕带">
-            <el-switch id="subtitle" v-model="subBand" size="small" active-text="开" inactive-text="关"
-              title="预览播放时在画面底部显示当前这句台词（只影响预览，不会烧进导出的片段）"/>
-          </el-form-item>
-        </el-col>
-        <!-- 说明文字独占一列：对齐到与上方控件同一基线。
-             原来用 <el-form-item label=" "> 拿空格占位，label 是个真实节点、
-             高度由内容撑出来，跟旁边几列的控件对不齐。改成纯文本 + 底部对齐。 -->
-        <el-col :xs="24" :sm="24" :md="3" :lg="5" class="fs-col-note">
-          <div class="fs-colnote">搜到的每句都能一键导出前后各 N 秒，直接拖进剪映</div>
-        </el-col>
-      </el-row>
-    </el-form>
+    <div class="fs-searchhint">搜到的每句都能一键导出前后各 N 秒，直接拖进剪映</div>
   </el-card>
-
-  <el-divider />
 
   <div v-if="rows.length" class="fs-results" id="results">
     <div class="fs-result-summary dim" id="resultSum">
@@ -102,8 +86,13 @@ const SearchView = {
       </div>
     </div>
   </div>
-  <el-empty v-else-if="searched" description="没有结果，换个词试试"/>
+  <div v-else-if="searched" class="fs-empty-tip">
+    <el-icon class="fs-empty-ic"><Search/></el-icon>
+    <b>没有找到匹配的台词</b>
+    <span>换个词试试，或者只输两个字（支持中文子串）</span>
+  </div>
   <div v-else class="fs-empty-tip" id="searchEmpty">
+    <el-icon class="fs-empty-ic"><Search/></el-icon>
     <b>输入关键词，搜全部素材库里的每一句台词</b>
     <span>支持按台词内容或素材文件名搜；搜到的每句能一键导出前后各 N 秒的片段，直接拖进剪映。</span>
   </div>

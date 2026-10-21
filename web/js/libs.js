@@ -1,10 +1,11 @@
 /* 拾帧 FrameSeek · 素材库模块（登记/索引/上传/忽略名单）
-   2026-10-17 升级：在原版基础上加了「编辑库」「打开目录」「库级实时进度/取消」「库内影片一览」 */
+   库卡片提供「查看素材」直接跳到素材页、并把筛选设成该库；另有「编辑库」
+   「打开目录」「库级实时进度/取消」 */
 (function () {
 'use strict';
-const { reactive, computed, ref, watch, onMounted, onUnmounted, onActivated, nextTick } = Vue;
+const { reactive, computed, ref } = Vue;
 const FS = window.FS;
-const { S, BUS, api, post, toast, esc, fmtDur, fmtAgo, LS, loadLibs, startPoll } = FS;
+const { S, api, post, toast, esc, fmtDur, fmtAgo, LS, loadLibs, startPoll } = FS;
 
 const LibsView = {
   template: `
@@ -158,11 +159,9 @@ const LibsView = {
         <el-button size="small" type="primary" @click="askScan(l)"
           title="扫描这个库：抽台词、封面、动图（会先弹设置确认）">
           <el-icon><RefreshRight/></el-icon><span>索引</span></el-button>
-        <el-button size="small" @click="toggleExpand(l)"
-          :title="isOpen(l) ? '收起影片列表' : '查看库内所有已索引影片、各自台词数'">
-          <el-icon><component :is="isOpen(l) ? 'ArrowUp' : 'ArrowDown'"/></el-icon>
-          <span>{{ isOpen(l) ? '收起' : '影片列表' }}</span>
-        </el-button>
+        <el-button size="small" type="primary" plain @click="viewAssets(l)"
+          title="去素材页，并把筛选设成这个库（只看这个库的素材）">
+          <el-icon><VideoCamera/></el-icon><span>查看素材</span></el-button>
         <el-button size="small" @click="openDir(l)" title="在系统文件管理器里打开这个库">
           <el-icon><FolderOpened/></el-icon><span>打开目录</span></el-button>
         <el-button size="small" @click="editLib(l)" title="改备注名（库对外显示的名字）或修改路径">
@@ -175,54 +174,6 @@ const LibsView = {
         <el-button size="small" type="danger" plain @click="delLib(l)"
           title="把这个库从登记里移除。只删索引，不动磁盘上的视频文件">
           <el-icon><Delete/></el-icon><span>删除</span></el-button>
-      </div>
-
-      <!-- 库内影片一览（展开） -->
-      <div v-if="isOpen(l) && l.exists" class="fs-libexpand">
-        <el-divider style="margin: 12px 0 10px"/>
-        <div v-if="videosLoading[l.id]" class="dim">加载影片列表…</div>
-        <div v-else-if="!videoItems(l).length" class="dim">
-          这个库还没索引出任何视频，点卡片的「索引」按钮抽第一次
-        </div>
-        <el-table v-else :data="videoItems(l)" size="small" stripe
-                  :default-sort="{ prop: 'created_at', order: 'descending' }"
-                  @row-click="goAsset">
-          <el-table-column prop="name" label="影片" min-width="220">
-            <template #default="{ row }">
-              <span :title="row.rel || row.name">{{ row.name }}</span>
-              <span v-if="row.dir" class="dim fs-vdir-sep">· {{ row.dir }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="duration" label="时长" width="80" align="right">
-            <template #default="{ row }">
-              <span class="num">{{ fmtDur(row.duration) }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="lines" label="台词" width="64" align="right" sortable>
-            <template #default="{ row }">
-              <b :class="{ bad: !row.lines }">{{ row.lines || 0 }}</b>
-            </template>
-          </el-table-column>
-          <el-table-column prop="status" label="台词来源" width="110">
-            <template #default="{ row }">
-              <el-tag v-if="row.line_source === 'embedded'" size="small" effect="plain">内封字幕</el-tag>
-              <el-tag v-else-if="row.line_source === 'srt'" size="small" effect="plain" type="success">外挂 SRT</el-tag>
-              <el-tag v-else-if="row.line_source === 'ocr'" size="small" effect="plain" type="warning">OCR 识别</el-tag>
-              <el-tag v-else-if="row.line_source === 'asr'" size="small" effect="plain" type="info">语音识别</el-tag>
-              <el-tag v-else-if="!row.lines" size="small" effect="plain" type="danger">无台词</el-tag>
-              <span v-else class="dim">—</span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="created_at" label="录入时间" width="148" sortable>
-            <template #default="{ row }">{{ fmtAgo(row.created_at) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="68" align="right">
-            <template #default="{ row }">
-              <el-button size="small" link type="primary" @click.stop="goAsset(row)"
-                title="跳到素材页搜索这部电影">查看</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
       </div>
     </el-card>
     <div v-if="!libs.length" class="dim pad">还没有素材库，在上面填路径登记一个</div>
@@ -311,14 +262,6 @@ const LibsView = {
     /* 编辑对话框表单 */
     const editForm = reactive({ name: '', path: '', _oldName: '', _oldPath: '' });
 
-    /* 库内影片一览：展开 / 拉取 / 缓存 */
-    const expanded = ref(new Set());           // 展开的库 id
-    const videosByLib = reactive({});          // lid → items[]
-    const videosLoading = reactive({});        // lid → bool
-
-    function isOpen(l) { return expanded.value.has(l.id); }
-    function videoItems(l) { return videosByLib[l.id] || []; }
-
     const dlgScanTitle = computed(() =>
       target.value ? `索引「${target.value.name}」` : '索引全部素材库');
     const dlgUploadTitle = computed(() =>
@@ -353,59 +296,11 @@ const LibsView = {
         + '画面里的台标、片内数字、片头演员表会自动滤掉。</div>';
     });
 
-    /* 库内影片展开 / 折叠 */
-    async function toggleExpand(l) {
-      if (!l || !l.exists) return;
-      const set = expanded.value;
-      if (set.has(l.id)) { set.delete(l.id); return; }
-      set.add(l.id);
-      // 首次展开才拉，后续用缓存
-      if (!videosByLib[l.id]) {
-        await loadVideos(l);
-      }
-    }
-    async function loadVideos(l) {
-      videosLoading[l.id] = true;
-      try {
-        const r = await api(`/api/libraries/${l.id}/videos`);
-        videosByLib[l.id] = r.items || [];
-        // 把目录前缀算进 row.dir 方便表格显示
-        (videosByLib[l.id]).forEach(v => {
-          const rel = v.rel || '';
-          const i = Math.max(rel.lastIndexOf('/'), rel.lastIndexOf('\\'));
-          v.dir = i > 0 ? rel.slice(0, i).replace(/[\\/]+$/, '') : '';
-        });
-      } catch (e) {
-        toast('拉影片列表失败：' + (e.message || e), 'error');
-        videosByLib[l.id] = [];
-      } finally {
-        videosLoading[l.id] = false;
-      }
-    }
-    function reloadOne(l) {
-      delete videosByLib[l.id];
-      if (expanded.value.has(l.id)) loadVideos(l);
-    }
-    function goAsset(row) {
-      /* 跳素材页并只显示这一部。
-         用 URL 参数（#assets?lib=..&q=..&vid=..&root=..）当唯一信息源：
-         assets.js 认 vid + root 做精确锁定，比按文件名匹配准（多库同名片也能命中）。
-         pushState 而非 replace —— 这是用户主动发起的导航，"后退"应该回素材库。
-         BUS 事件 + S.pendingOpen 保留作双保险（assets 组件首次挂载时可能还没订阅）。 */
-      const libId = row.lib_id != null && row.lib_id !== ''
-        ? row.lib_id
-        : (typeof row.lib === 'number' ? row.lib : '');
-      const payload = { vid: row.id, name: row.name, root: row.root, lib_id: libId };
-      S.pendingOpen = payload;
-      S.tab = 'assets';
-      const Route = FS.Route;
-      Route.set('assets', {
-        lib: libId === '' ? '' : String(libId),
-        q: row.name || '',
-        vid: row.id,
-        root: row.root || '',
-      }, false);
-      BUS.emit('assets:open-by-vid', payload);
+    /* 查看素材：跳到素材页，并把筛选设成这个库。
+       用 URL 参数（#assets?lib=<id>）当唯一信息源：assets.js 认 lib 参数做库筛选。
+       pushState 而非 replace —— 用户主动发起的导航，"后退"应该回素材库。 */
+    function viewAssets(l) {
+      FS.Route.set('assets', { lib: String(l.id) }, false);
     }
 
     /* 库级实时进度：S.tasks 是 reactive object，key=root，value 含 kind/done/total/phase/message/file */
@@ -483,8 +378,6 @@ const LibsView = {
       const r = await post(`/api/libraries/${target.value.id}/edit`, payload);
       if (!r.ok) { toast('保存失败：' + (r.err || ''), 'error'); return; }
       dlg.edit = false;
-      // 后端可能改了 path，本地缓存清掉
-      delete videosByLib[target.value.id];
       await loadLibs();
       toast('已保存', 'success');
     }
@@ -577,30 +470,14 @@ const LibsView = {
           cancelButtonText: '取消', type: 'warning' },
       ).then(async () => {
         const r = await post(`/api/libraries/${l.id}/delete`);
-        delete videosByLib[l.id];
-        expanded.value.delete(l.id);
         await loadLibs();
         toast(r && r.ok ? `已移除「${l.name}」` : '移除失败，看服务端日志',
               r && r.ok ? 'success' : 'error');
       }).catch(() => {});
     }
 
-    /* 监听：库的视频统计变化时刷已展开库的内容；任务结束时卸掉进度卡（task_done 已经 delete S.tasks[k]） */
-    function onLibUpdate() {
-      // 库整体 list 变了（如 last_scan_at、videos、lines）
-      // 还在展开的库，且本地缓存的影片数量跟当前不一致，标记需要重拉
-      for (const l of (S.libs || [])) {
-        if (expanded.value.has(l.id) && videosByLib[l.id]
-            && videosByLib[l.id].length !== (l.videos || 0)
-            && !videosLoading[l.id]) {
-          // 避免抖动：实际跑过索引后自然会写更多
-        }
-      }
-    }
-    let _lu;
-    BUS.on('assets:refresh', () => { loadLibs(); onLibUpdate(); });
-    onMounted(() => { _lu = loadLibs; });
-    onActivated(() => { /* 切回来时不需要重拉，按需 */ });
+    /* 库列表由 S.libs 驱动：服务端在任务结束等时机调用 loadLibs() 刷新，
+       S.libs 变化会自动重渲染，这里无需再挂 assets:refresh 监听。 */
 
     return {
       S, form, dlg, scanOpt, target, uploadFiles, uploadMsg, ignoredRows,
@@ -614,8 +491,7 @@ const LibsView = {
       askScanAll,
       askIgnored, restoreOne, restoreAll, delLib,
       editLib, saveEdit, resetEditForm,
-      openDir,
-      toggleExpand, isOpen, videoItems, videosLoading, loadVideos, goAsset,
+      openDir, viewAssets,
       cancelScan, taskOf, taskPct, taskMsg, taskLabel,
       fmtDur, fmtAgo,
     };

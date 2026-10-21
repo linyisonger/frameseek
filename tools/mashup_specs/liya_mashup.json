@@ -1,0 +1,30 @@
+{
+  "out": "AI生成/混剪/李涯_全剧最惨打工人",
+  "root": "E:\\视频\\电视剧",
+  "size": [1280, 720],
+  "fps": 30,
+  "crop_w": 960,
+  "segments": [
+    {"type": "card", "title": "李涯", "sub": "全剧最惨打工人", "note": "《潜伏》职场观察",
+     "bg": "tools/mashup_specs/liya_bg.jpg", "dur": 2.5},
+
+    {"type": "clip", "line_id": 38166, "pre": 0.6, "post": 0.8},
+
+    {"type": "card", "small": true, "title": "日常", "sub": "干活、背锅、挨骂", "dur": 2.0},
+    {"type": "clip", "line_id": 29379, "pre": 0.6, "post": 1.5},
+    {"type": "clip", "line_id": 38277, "pre": 0.5, "post": 0.8},
+
+    {"type": "card", "small": true, "title": "绩效", "sub": "努力全用来背锅", "dur": 2.0},
+    {"type": "clip", "line_id": 39562, "pre": 0.5, "post": 1.2},
+    {"type": "clip", "line_id": 39612, "pre": 0.5, "post": 1.2},
+    {"type": "clip", "line_id": 39607, "pre": 0.6, "post": 1.2},
+
+    {"type": "card", "small": true, "title": "结局", "sub": "被自己人计划除掉", "dur": 2.0},
+    {"type": "clip", "line_id": 41560, "pre": 0.5, "post": 1.2},
+    {"type": "clip", "video_id": 59, "src_in": 2368, "dur": 14.0},
+    {"type": "clip", "line_id": 41981, "pre": 0.3, "post": 1.0},
+    {"type": "clip", "line_id": 42006, "pre": 0.4, "post": 3.2},
+
+    {"type": "card", "title": "李涯，全剧最惨打工人。", "sub": "下一期：吴站长", "note": "关注不迷路", "dur": 3.0}
+  ]
+}

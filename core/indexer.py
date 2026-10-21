@@ -44,16 +44,10 @@ def list_video_files(root: str) -> List[str]:
 
 class Indexer:
     def __init__(self, root: str, use_asr: bool = None, with_gif: bool = True,
-                 retry_empty: bool = True, write_srt: bool = True,
-                 no_lines: bool = False):
+                 retry_empty: bool = True, write_srt: bool = True):
         self.root = os.path.abspath(root)
         self.store = open_store(self.root)
         self.cd = ensure_layout(self.root)
-        # AI 生成产物库专用（no_lines=True）：只登记媒体信息，**完全不碰台词**——
-        # 不读同名 .srt、不读内嵌字幕、不 OCR 画面、不跑语音识别，也不落 .srt。
-        # 生成物本来就没有台词这回事，让它们出现在台词体系里只会污染检索和复查。
-        # 副作用：已入库的老记录若带着台词，会被清掉并置 line_source='none'。
-        self.no_lines = no_lines
         # 字段名是历史遗留（当时是"用不用语音转写"）。现在语义是
         # **允不允许对没字幕的素材跑 OCR/ASR**；None = 走配置默认值。
         self.use_asr = use_asr
@@ -274,17 +268,6 @@ class Indexer:
             # 同一个 md5 = 同一个素材，不重复入库；只有原路径文件没了才把记录迁到新位置
             old_abs = os.path.join(self.root, old["rel"])
             if os.path.exists(old_abs):
-                if self.no_lines:
-                    # 生成产物库：历史残留的台词清掉（比如早先按普通库索引过一遍）
-                    if (old.get("line_count") or 0):
-                        self.store.clear_lines(old["id"])
-                        self.store.update_video(
-                            old["id"], line_source="none", line_count=0,
-                            status="ok", err="")
-                    elif (old.get("line_source") or "") != "none":
-                        self.store.update_video(old["id"], line_source="none")
-                    return {"id": old["id"], "skipped": True, "name": name,
-                            "no_lines": True}
                 # 上次没拿到台词（可能只是转写失败）→ 这次补一遍
                 if self.retry_empty and self.use_asr and not (old.get("line_count") or 0):
                     return self._fill_lines(old, path, cb)
@@ -321,13 +304,6 @@ class Indexer:
             "line_count": 0, "line_source": "pending", "status": "pending",
             "err": "", "created_at": time.time(),
         })
-
-        if self.no_lines:
-            # 生成产物：到此为止，不再往下走台词链路（OCR / ASR / SRT 全跳过）
-            self.store.update_video(vid, status="ok", line_source="none",
-                                    line_count=0, err="")
-            return {"id": vid, "skipped": False, "name": name, "lines": 0,
-                    "source": "none", "err": "", "no_lines": True}
 
         if cb:
             cb(f"台词 {name}")
@@ -421,9 +397,6 @@ class Indexer:
 
     # 给已入库但没台词的素材补台词
     def _fill_lines(self, old: Dict[str, Any], path: str, cb) -> Dict[str, Any]:
-        if self.no_lines:      # 生成产物库：永远不补台词
-            return {"id": old["id"], "skipped": True, "name": old["name"],
-                    "no_lines": True}
         name = old["name"]
         self._cur_file = old.get("rel") or name
         tag = os.path.splitext(os.path.basename(old["cover"] or name))[0] \

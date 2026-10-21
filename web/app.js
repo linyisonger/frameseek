@@ -1,6 +1,6 @@
 /* 拾帧 FrameSeek · 前端引导（只做装配与挂载，业务逻辑拆在 web/js/*.js）
    加载顺序（index.html）：vue / element-plus / zh-cn / icons →
-   js/state.js → js/{libs,search,assets,gen,box,clips}.js → 本文件。 */
+   js/state.js → js/{libs,search,assets,box,clips}.js → 本文件。 */
 (function () {
 'use strict';
 const { reactive, computed, ref, watch, onMounted, onUnmounted, onActivated, nextTick } = Vue;
@@ -12,7 +12,6 @@ const { S, LIVE, PHASE, Route, api, post, esc, toast, loadLibs, addClips,
 const App = {
   components: {
     LibsView: FS.LibsView, SearchView: FS.SearchView, AssetsView: FS.AssetsView,
-    GenView: FS.GenView, AidrawView: FS.AidrawView,
     BoxView: FS.BoxView, ClipsView: FS.ClipsView,
   },
   setup() {
@@ -22,10 +21,8 @@ const App = {
       ? `${S.libs.length} 个库 · ${S.totals.videos} 个素材 · ${S.totals.lines} 条台词`
       : '还没有登记素材库');
 
-    // AI 生成 / AI 绘画任务不进全局浮窗：各自页面里已有进度展示，
-    // 右下角再弹一张卡是重复信息，而且切走再切回来（keep-alive）状态还在。
-    const taskList = computed(() => Object.values(S.tasks || {})
-      .filter(t => t.kind !== 'gen' && t.kind !== 'aidraw'));
+    // 全局浮窗显示素材索引任务。
+    const taskList = computed(() => Object.values(S.tasks || {}));
 
     function dockPct(t) { return t.total ? Math.min(100, Math.round(t.done / t.total * 100)) : 0; }
     function dockPhase(t) { return PHASE[t.phase] || ''; }
@@ -108,7 +105,8 @@ const App = {
       await loadLibs();
       // 先按 hash 定位页签（无 hash / 非法值回素材库），再让 Route 接管后续变更。
       const r = Route.parse();
-      S.tab = Route.tabs.indexOf(r.tab) >= 0 ? r.tab : 'libs';
+      let want = Route.tabs.indexOf(r.tab) >= 0 ? r.tab : 'libs';
+      S.tab = want;
       Route.init();
       connectLive();
       // 首屏可能正有任务在跑（服务端线程还活着）。只当临时快照——

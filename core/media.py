@@ -842,6 +842,12 @@ def export_clip(video: str, start: float, end: float, out: str,
     dur = max(0.2, end - start)
     base = [C.FFMPEG, "-y", "-ss", f"{max(0.0, start):.3f}",
             "-t", f"{dur:.3f}", "-i", video]
+    # 烧「片源内嵌字幕轨」时必须把 -ss 放到 -i 后面。
+    # 放在 -i 前是输入 seek：ffmpeg 会重写 PTS，而 subtitles 滤镜按原文件
+    # 时间轴取字幕，结果什么都烧不上（ffmpeg 还返回 0，日志里只是没有字幕帧）。
+    # 输出 seek 从文件头解码到切点，略慢，但字幕时间轴是对的。
+    base_sub = [C.FFMPEG, "-y", "-i", video,
+                "-ss", f"{max(0.0, start):.3f}", "-t", f"{dur:.3f}"]
 
     # ---- 轨道映射 ----
     # 烧了硬字幕就别再带软字幕，否则播放时可能叠两遍
@@ -886,7 +892,9 @@ def export_clip(video: str, start: float, end: float, out: str,
     ENC_S = ENC + ["-c:s", "mov_text"]
 
     def _go(maps, extra, timeout=900):
-        run(base + maps + extra + [out], timeout=timeout)
+        # 内嵌字幕烧录走输出 seek，保证 subtitles 滤镜和原字幕时间轴一致
+        head = base_sub if sub_track is not None else base
+        run(head + maps + extra + [out], timeout=timeout)
         return os.path.exists(out) and os.path.getsize(out) > 0
 
     # 1) 烧硬字幕（必然重编码）

@@ -41,8 +41,6 @@ from pydantic import Field  # noqa: E402
 from mcp.server.mcpserver import MCPServer  # noqa: E402
 
 from core import config as C  # noqa: E402
-from core import gen as gen_mod  # noqa: E402
-from core import img_backend as img_mod  # noqa: E402
 from core import indexer as IX  # noqa: E402
 from core import media  # noqa: E402
 from core import store as store_mod  # noqa: E402
@@ -65,8 +63,7 @@ server = MCPServer(C.APP_NAME, title=C.APP_LABEL, instructions=(
     "后续每个工具都要把这个 root 原样带回（line_id 只在它自己的库内唯一，跨库会撞号）→ "
     "frameseek_export_clip 导出片段。\n"
     "\n"
-    "【异步任务】frameseek_scan / frameseek_retranscribe / frameseek_transcribe_asr / "
-    "frameseek_generate_video "
+    "【异步任务】frameseek_scan / frameseek_retranscribe / frameseek_transcribe_asr "
     "都立即返回、不等结果，之后用 frameseek_task 轮询（间隔至少 5~10 秒，别连打）。\n"
     "\n"
     "【找视频但不知道台词】用 frameseek_find_videos 按文件名/关键字找片，"
@@ -76,21 +73,6 @@ server = MCPServer(C.APP_NAME, title=C.APP_LABEL, instructions=(
     "mode=asr 只听这一句），它只报告不改库；采纳后用 frameseek_edit_line 落库"
     "（save_box=True 可同时写入画面方框）。frameseek_verify / frameseek_boxaudit 回答"
     "“这句在画面上真有框吗”，纯读库很快，纠错时优先怀疑 font_dev 超标的行。\n"
-    "\n"
-    "【AI 生成·图】frameseek_generate_image 出**静态图**（PNG），双后端可插拔："
-    "agnes 云端秒级、sd15 本地种子可复现（重掷收敛，主力）。"
-    "默认 auto 按 agnes→sd15 降级。"
-    "产物落项目目录 AI生成/绘画/，**同步返回**（agnes 10~60 秒 / sd15 5~20 秒）。"
-    "不满意用 frameseek_reroll_image 按留痕参数换种子重掷，"
-    "别自己重新拼参数。发起前 frameseek_img_info 看哪个后端就绪。\n"
-    "\n"
-    "【AI 生成·视频】frameseek_generate_video 按提示词生成视频，成片落项目目录 "
-    "AI生成/（不入库），异步。**双后端可选**：backend=agnes（云端 Agnes Video 2.5 "
-    "Flash，1280x704、4~12 秒、自带音轨、几十秒~几分钟、需联网，高峰可能排队）／"
-    "backend=h3（本地 MiniMax H3，736x416、3~15 秒、纯离线、很慢，独占 GPU）／"
-    "backend=auto（默认，agnes→h3 降级）。提示词 H3 用英文、Agnes 可写中文。"
-    "发起前用 frameseek_gen_info 看哪个后端就绪。\n"
-    "\n"
     "\n"
     "【读资源而不是逐个调工具】资源列表见 resources/list，常用的有："
     "frameseek://libraries（全部库+统计）、frameseek://tasks/running（在跑的任务）、"
@@ -203,47 +185,6 @@ def _bg(key: str, fn) -> bool:
         return True
 
 
-def _ai_root() -> str:
-    """内置 AI 生成产物目录（生成物单独一档，不登记进素材库）。"""
-    try:
-        from core import gen as _gen
-        return os.path.abspath(_gen.output_dir())
-    except Exception:
-        return ""
-
-
-def _is_ai_root(p: str) -> bool:
-    a = _ai_root()
-    return bool(a) and bool(p) and \
-        os.path.normcase(os.path.abspath(p)) == os.path.normcase(a)
-
-
-def _ai_guard(p: str):
-    """台词类工具的统一拦截：命中 AI 产物库就返回错误文案，否则 None。
-
-    生成物没有台词这回事——不读字幕、不 OCR、不跑语音识别、不复查方框。
-    """
-    return ("AI 生成产物不做字幕/语音识别，这个工具只对素材库生效"
-            if _is_ai_root(p) else None)
-
-
-def _scan_ai_job(root: str):
-    """AI 产物库扫描：只登记媒体信息（封面/动图/时长），完全不碰台词。"""
-    def job():
-        try:
-            ix = IX.Indexer(root, use_asr=False, with_gif=True, no_lines=True)
-            ix._lib_name = "AI 生成"
-            for f in IX.list_video_files(root):
-                try:
-                    ix.index_file(f)
-                except Exception as e:
-                    print(f"[frameseek-mcp] ai-index {f} 失败: {e}",
-                          file=sys.stderr)
-        except Exception as e:
-            print(f"[frameseek-mcp] ai scan {root} 失败: {e}", file=sys.stderr)
-    return job
-
-
 def _scan_job(root: str, use_asr: bool, with_gif: bool):
     def job():
         try:
@@ -290,52 +231,6 @@ def _asr_device() -> Dict[str, Any]:
         return {"ok": False, "err": f"{type(e).__name__}: {e}"}
 
 
-def _gen_job(root: str, tid: int, params: Dict[str, Any]):
-    """视频生成任务：进度写 tasks 表，和扫描/识别同一套通道。
-    后端由 params['backend'] 决定（auto / agnes / h3）。"""
-    st = IX.open_store(root)
-
-    def tick(pct, msg):
-        try:
-            st.tick_task(tid, int(pct or 0), msg)
-        except Exception:
-            pass
-
-    def job():
-        try:
-            res = gen_mod.generate(root=root, on_tick=tick, **params)
-            st.finish_task(tid, "done",
-                           f"完成：{os.path.basename(res.get('file') or '')}"
-                           f"（{res.get('seconds')}s，{res.get('lines')} 条台词）")
-        except Exception as e:
-            print(f"[frameseek-mcp] generate 失败: {type(e).__name__}: {e}",
-                  file=sys.stderr)
-            try:
-                st.finish_task(tid, "error", f"{type(e).__name__}: {e}")
-            except Exception:
-                pass
-    return job
-
-
-def _gen_info() -> Dict[str, Any]:
-    """生成引擎现状（双后端：Agnes 云端 + 本地 H3）+ 参数默认值。"""
-    try:
-        info = dict(gen_mod.engine_info())
-        info.update({"aspects": list(gen_mod.ASPECTS),
-                     "agnes_aspects": sorted(set(gen_mod.AGNES_ASPECTS.values())),
-                     "agnes_unsupported": list(gen_mod.AGNES_UNSUPPORTED),
-                     "agnes_seconds": [gen_mod.AGNES_SECONDS_MIN,
-                                       gen_mod.AGNES_SECONDS_MAX],
-                     "default_megapixels": gen_mod.DEFAULT_MEGAPIXELS,
-                     "max_prompt": gen_mod.MAX_PROMPT,
-                     "out_dir": gen_mod.output_dir()})
-        return info
-    except Exception as e:
-        return {"ok": False, "err": f"{type(e).__name__}: {e}"}
-
-
-
-
 # ---------------- 工具：总览 ----------------
 @server.tool()
 def frameseek_state() -> str:
@@ -350,8 +245,7 @@ def frameseek_state() -> str:
                settings={"use_asr": _setting_bool("use_asr", True),
                          "with_gif": _setting_bool("with_gif", True)},
                ocr_step=float(C.OCR_STEP), total=total,
-               ocr=ocr_mod.engine_info(), asr=_asr_device(),
-               gen=_gen_info())
+               ocr=ocr_mod.engine_info(), asr=_asr_device())
 
 
 @server.tool()
@@ -380,7 +274,7 @@ def frameseek_list_libraries() -> str:
 def frameseek_doctor() -> str:
     """一键体检：调用任何其它工具前，或工具报错看不懂时，先跑这个。
 
-    一次给全：Python/ffmpeg/OCR/ASR/生成引擎的可用性，
+    一次给全：Python/ffmpeg/OCR/ASR 的可用性，
     每个库的状态（目录在不在、索引了没、素材数/台词数/台词来源），
     还有正在跑的任务和它们的进度。
     `problems` 里非空就是真有问题，照着它给的建议处理即可。
@@ -398,7 +292,6 @@ def frameseek_doctor() -> str:
 
     ocr = ocr_mod.engine_info()
     asr = _asr_device()
-    gen = _gen_info()
     if not ocr.get("ok"):
         problems.append("OCR 引擎不可用（纯 OCR 的素材不会有台词）：" +
                         str(ocr.get("err") or ocr.get("missing") or ""))
@@ -431,8 +324,7 @@ def frameseek_doctor() -> str:
                "videos": sum(l["videos"] for l in libs),
                "lines": sum(l["lines"] for l in libs),
                "duration": round(sum(l["duration"] for l in libs), 1)},
-        engines={"ocr": ocr, "asr": asr, "gen": gen, 
-                 "ffmpeg": bool(_ffmpeg_ok())},
+        engines={"ocr": ocr, "asr": asr, "ffmpeg": bool(_ffmpeg_ok())},
         running=running,
         note=("一切正常。典型用法：frameseek_search 找片 → frameseek_export_clip 导出"
               if not problems else "按 problems 逐条处理后再干活"))
@@ -582,10 +474,7 @@ def frameseek_add_library(
             default=True, description="是否设为当前激活库（后续工具省略 root 时用它）")
         ] = True) -> str:
     """登记一个新的素材文件夹（写进 hub.db，并在该目录下建 .frameseek）。
-    同一路径重复登记不会重复。登记后不会自动扫描，接着调 frameseek_scan。
-    AI 生成产物目录不需要登记——它是内置只读库，单独一档。"""
-    if _is_ai_root(path):
-        return _err("这是内置 AI 生成产物目录，不登记成素材库（素材页可直接筛到它）")
+    同一路径重复登记不会重复。登记后不会自动扫描，接着调 frameseek_scan。"""
     r = HUB.add(path, name, note)
     if not r.get("ok"):
         return json.dumps(r, ensure_ascii=False)
@@ -643,12 +532,6 @@ def frameseek_scan(
     root = pick_root(path)
     if not root or not os.path.isdir(root):
         return _err("目录不存在，先用 frameseek_add_library 登记")
-    if _is_ai_root(root):
-        # AI 产物目录：不登记成素材库，只登记媒体信息（不 OCR / 不 ASR）
-        if not _bg(f"scan:{root}", _scan_ai_job(root)):
-            return _err("这个目录正在扫描中，先用 frameseek_task 看进度")
-        return _ok(started=root, ai=True, lines=False,
-                   note="AI 生成产物只登记媒体信息，不识别台词")
     r = HUB.add(root)                     # 没登记过就登记上，并设为激活
     if r.get("id"):
         HUB.set_active(r["id"])
@@ -664,7 +547,7 @@ def frameseek_task(
         path: Annotated[str, Field(default="",
                                    description="看某个库的最近任务；"
                                                "省略=看当前激活库")]) -> str:
-    """查扫描/识别/生成/渲染任务进度。**所有异步工具的轮询入口**。
+    """查扫描/识别任务进度。**所有异步工具的轮询入口**。
 
     status: running / done / error。done 时 message 里带汇总
     （几个素材、几条台词、来源、成片文件名）。
@@ -903,9 +786,6 @@ def frameseek_recog_line(
     r = pick_root(root)
     if not r or not os.path.isdir(r):
         return _err("未指定素材库")
-    g = _ai_guard(r)
-    if g:
-        return _err(g)
     st = IX.open_store(r)
     row = st.get_line(line_id)
     if not row:
@@ -979,9 +859,6 @@ def frameseek_edit_line(
     r = pick_root(root)
     if not r or not os.path.isdir(r):
         return _err("未指定素材库")
-    g = _ai_guard(r)
-    if g:
-        return _err(g)
     st = IX.open_store(r)
     row = st.get_line(line_id)
     if not row:
@@ -1045,9 +922,6 @@ def frameseek_retranscribe(
         return _err("未指定素材库或目录不存在",
                     "用 frameseek_list_libraries 取 path，"
                     "或省略 root 走激活库")
-    g = _ai_guard(r)
-    if g:
-        return _err(g)
     st = IX.open_store(r)
     v = st.get_video(video_id)
     if not v:
@@ -1082,9 +956,6 @@ def frameseek_transcribe_asr(
     if not r or not os.path.isdir(r):
         return _err("未指定素材库或目录不存在",
                     "用 frameseek_list_libraries 取 path，或省略 root 走激活库")
-    g = _ai_guard(r)
-    if g:
-        return _err(g)
     m = (model or "").strip()
     if m and m not in ASR_MODELS_OK:
         return _err(f"不支持的模型：{m}（可选 {', '.join(ASR_MODELS_OK)}）")
@@ -1110,327 +981,6 @@ def frameseek_transcribe_asr(
                note="用 frameseek_task 查进度")
 
 
-# ---------------- 工具：图片生成（双后端） ----------------
-@server.tool()
-def frameseek_img_info() -> str:
-    """图片生成现状：两个生图后端各自就绪没有、大概多久、要不要联网，
-    以及产物落哪个目录。发起生成前先看这个，别盲目指定后端。"""
-    try:
-        bs = img_mod.backends()
-    except Exception as e:
-        return _err(f"摸底失败：{type(e).__name__}: {e}",
-                    hint="出图依赖 ComfyUI 便携版和 sdgen.py，"
-                         "确认 FRAMESEEK_COMFY_ROOT 指向 D:\\project\\AIProjects\\ComfyUI_windows_portable")
-    ready = [b["id"] for b in bs if b.get("ready")]
-    return _ok(backends=bs, ready=ready, order=list(img_mod.BACKEND_ORDER),
-               default="agnes",
-               out_dir=img_mod.paint_dir(),
-               hint=("没有后端就绪时只能出视频（frameseek_generate_video）"
-                     
-                     if not ready else ""))
-
-
-@server.tool()
-def frameseek_generate_image(
-        prompt: Annotated[str, Field(description=
-            "画面提示词。中文可以直接写（Agnes 是中文模型）；"
-            "走 sd15 后端时英文效果更稳。"
-            "主体、风格、构图、光线都写进去，别写镜头运动")],
-        backend: Annotated[str, Field(default="auto", description=
-            "生图后端。auto（默认）按 agnes → sd15 依次降级，"
-            "前面的没就绪或失败就换下一个。"
-            "agnes=Agnes Image 2.5 Flash（云端，秒级，1K/2K，最多 3 张参考图，需联网）；"
-            "sd15=本地 SD1.5 + 线稿 LoRA + canny ControlNet（2~5 秒，种子可复现，"
-            "参考图走 canny 锁构图不漂，**重掷就靠它**）"
-            )] = "auto",
-        scheme: Annotated[str, Field(default="realistic", description=
-            "出图方案（只对 sd15 本地后端生效，agnes 忽略）。"
-            "realistic=写实（base SD1.5 + 强负向词，靠提示词出写实图）；"
-            "cartoon=卡通/插画（base SD1.5 + 线稿 LoRA + canny 锁构图，"
-            "更贴分镜/插画风）。某个高级参数（lora/负向词/采样器等）没显式给时，"
-            "按方案默认值兜底")] = "realistic",
-        negative: Annotated[str, Field(default="", description=
-            "反向提示词（要避开的东西），如“多余手指、模糊、水印”。"
-            "只有 sd15 后端吃这个参数，agnes 会忽略")] = "",
-        refs: Annotated[Optional[List[str]], Field(default=None, description=
-            "参考图绝对路径列表。agnes 最多 3 张（多图合成）；"
-            "sd15 用首张算 canny 控制图锁构图。"
-            "省略=纯文生图。**必须是磁盘上真实存在的文件**")] = None,
-        width: Annotated[int, Field(default=0, ge=0, le=1024, description=
-            "出图宽度，8 的倍数、256~1024。0=按后端默认（sd15 用 512，"
-            "agnes 按 ratio 推 1K/2K）")] = 0,
-        height: Annotated[int, Field(default=0, ge=0, le=1024, description=
-            "出图高度，规则同 width。宽高都 0 时走后端默认尺寸")] = 0,
-        ratio: Annotated[str, Field(default="", description=
-            "宽高比（如 16:9 / 1:1 / 9:16）。**agnes 后端按它定 1K/2K 分辨率**，"
-            "给了就优先于 width/height。sd15 是方形模型，给了会被忽略")] = "",
-        seed: Annotated[int, Field(default=0, description=
-            "随机种子。0=每次随机；固定同一个 seed 可复现同一张图。"
-            "**换 seed 重掷是 sd15 的正确用法**（参数留痕在同名 sidecar JSON 里）")] = 0,
-        steps: Annotated[int, Field(default=20, ge=1, le=60, description=
-            "采样步数，只对 sd15 有效。20 出图干净；赶时间可降到 12 左右")] = 20,
-        cfg: Annotated[float, Field(default=7.0, ge=1, le=15, description=
-            "提示词服从度，只对 sd15 有效。7~8 常规；要更贴提示词往上调")] = 7.0,
-        name: Annotated[str, Field(default="", description=
-            "产物文件名（不含扩展名），留空按提示词自动生成")] = "",
-        root: Root = "") -> str:
-    """生成一张图片（PNG），落 <项目根>/AI生成/绘画/，旁边带同名 sidecar JSON
-    留痕全部参数。双后端可插拔，见 frameseek_img_info。
-
-    同步执行并直接返回文件路径——agnes 通常 10~60 秒，sd15 5~20 秒。
-    **GPU 同时只能跑一个**，别并发调。
-
-    想要「同一张图换个种子重掷」用 frameseek_reroll_image，
-    它会照 sidecar 里的原参数复现，比自己重新拼参数靠谱。
-    """
-    prompt = (prompt or "").strip()
-    if not prompt:
-        return _err("提示词不能为空")
-    b = (backend or "auto").strip().lower()
-    if b not in ("agnes", "sd15", "auto"):
-        return _err(f"未知后端：{b}（可选 agnes / sd15 / auto）")
-    ref_list = [os.path.abspath(x) for x in (refs or []) if x]
-    for x in ref_list:
-        if not os.path.isfile(x):
-            return _err("参考图不存在：" + x,
-                        hint="refs 要给磁盘绝对路径，"
-                             "不是 URL 也不是素材库里的相对路径")
-    w, h = int(width or 0), int(height or 0)
-    for label, v in (("宽", w), ("高", h)):
-        if v and (v % 8 or not (256 <= v <= 1024)):
-            return _err(f"{label}必须是 8 的倍数且在 256~1024 之间（当前 {v}）")
-    if ratio:
-        ref_list = ref_list[:3] if b == "agnes" else ref_list[:1]
-
-    # 同步执行，进度只能记在闭包里最后回给调用方（MCP 这条路没有事件通道）
-    trace: List[str] = []
-
-    def tick(pct, msg):
-        if msg and (not trace or trace[-1] != msg):
-            trace.append(str(msg))
-
-    try:
-        res = img_mod.gen_image(backend=b, prompt=prompt,
-                                negative=(negative.strip() if negative else None),
-                                refs=ref_list, seed=int(seed or 0),
-                                w=w, h=h, out_dir="",
-                                name=(name or "").strip(), steps=int(steps),
-                                cfg=float(cfg), scheme=(scheme or "realistic"),
-                                on_tick=tick)
-    except ValueError as e:
-        return _err(str(e))
-    except Exception as e:
-        return _err(f"{type(e).__name__}: {e}",
-                    hint="看 %s 里的 stderr；agnes 后端要联网，"
-                         "sd15 失败通常是 ComfyUI 目录或模型权重缺失" %
-                         img_mod.__name__.rsplit(".", 1)[0])
-    if not res or not res.get("file"):
-        return _err("出图没有产物",
-                    hint="auto 模式下三个后端可能都没就绪，先 frameseek_img_info")
-    res["note"] = res.get("note") or ""
-    if trace:
-        res["progress"] = trace
-    res["reroll_hint"] = ("不满意就 frameseek_reroll_image(file=该png路径)，"
-                          "同参数换新种子")
-    return _ok(**res)
-
-
-@server.tool()
-def frameseek_reroll_image(
-        file: Annotated[str, Field(description=
-            "要重掷的那张图的**绝对路径**（frameseek_generate_image 返回的 file，"
-            "或 frameseek_list_images 列表里的）。"
-            "工具会读它旁边的同名 .json 取出原始参数")],
-        root: Root = "") -> str:
-    """按某张图留痕的参数原样复现一张，只换新随机种子。**重掷就靠这个**，
-    不用自己重新拼提示词和参数。sd15 后端下种子可复现，所以重掷是收敛的：
-    连着掷几次就能挑到想要的构图。
-
-    同步执行，直接返回新图路径。产物同样落 <项目根>/AI生成/绘画/。
-    """
-    f = (file or "").strip()
-    if not f or not os.path.isfile(f):
-        return _err("文件不存在：" + f,
-                    hint="要给绝对路径。frameseek_list_images 能列出所有产物")
-    side = os.path.splitext(f)[0] + ".json"
-    if not os.path.isfile(side):
-        return _err("没有参数留痕（sidecar JSON 缺失）",
-                    hint="sidecar 是出图时自动写的；"
-                         "缺它就没法复现，只能重新调 frameseek_generate_image")
-    try:
-        with open(side, encoding="utf-8") as fh:
-            meta = json.load(fh)
-    except Exception as e:
-        return _err(f"sidecar 读取失败：{e}")
-    if not meta.get("prompt"):
-        return _err("sidecar 里没有提示词")
-    _rb = meta.get("backend") or "agnes"
-    if _rb not in ("agnes", "sd15"):   # 老 sidecar 若记了已下线的 h3，回落 auto
-        _rb = "auto"
-    kwargs = dict(
-        backend=_rb,
-        prompt=meta.get("prompt") or "",
-        negative=meta.get("negative") or "",
-        refs=[x for x in (meta.get("refs") or []) if x and os.path.isfile(x)],
-        seed=0,                       # 0 = 随机新种子
-        w=int(meta.get("w") or 0), h=int(meta.get("h") or 0),
-        lora="" if meta.get("lora") is None else str(meta.get("lora")),
-        lora_scale=(img_mod.DEFAULT_LORA_SCALE if meta.get("lora_scale") is None
-                    else float(meta["lora_scale"])),
-        control_strength=(img_mod.DEFAULT_CONTROL_STRENGTH
-                          if meta.get("control_strength") is None
-                          else float(meta["control_strength"])),
-        steps=int(meta.get("steps") or 20), cfg=float(meta.get("cfg") or 7.0),
-        scheme=meta.get("scheme") or "realistic")
-    try:
-        res = img_mod.gen_image(**kwargs)
-    except Exception as e:
-        return _err(f"{type(e).__name__}: {e}")
-    if not res or not res.get("file"):
-        return _err("重掷失败，没有新产物")
-    res["rerolled_from"] = f
-    return _ok(**res)
-
-
-@server.tool()
-def frameseek_list_images(
-        limit: Annotated[int, Field(default=30, ge=1, le=200, description=
-            "最多返回几条（新的在前）。默认 30")] = 30) -> str:
-    """列出 <项目根>/AI生成/绘画/ 里的图片产物（新的在前），
-    每条带生成时留痕的参数（提示词/后端/种子/尺寸/参考图）。
-    想重掷其中某张就拿它的 file 调 frameseek_reroll_image。"""
-    try:
-        items = img_mod.list_outputs(limit)
-    except Exception as e:
-        return _err(f"{type(e).__name__}: {e}")
-    slim = [{"file": x["file"], "name": x["name"],
-             "size_kb": x.get("size_kb"), "backend": (x.get("meta") or {}).get("backend"),
-             "prompt": ((x.get("meta") or {}).get("prompt") or "")[:80],
-             "seed": (x.get("meta") or {}).get("seed"),
-             "w": (x.get("meta") or {}).get("w"), "h": (x.get("meta") or {}).get("h")}
-            for x in items]
-    return _ok(count=len(slim), dir=img_mod.paint_dir(), images=slim)
-
-
-# ---------------- 工具：视频生成（MiniMax H3） ----------------
-@server.tool()
-def frameseek_gen_info() -> str:
-    """视频生成现状：**双后端**（Agnes Video 2.5 Flash 云端 / 本地 MiniMax H3）、
-    各自就绪状态、支持宽高比、默认像素档、提示词长度上限、成片落入哪个子目录。"""
-    return json.dumps(_gen_info(), ensure_ascii=False)
-
-
-@server.tool()
-def frameseek_generate_video(
-        prompt: Annotated[str, Field(description=
-            "画面提示词。**H3 用英文效果最好**（这套模型中文理解弱）；"
-            "**Agnes 是中文模型，直接写中文即可**。必须 <2000 字符。"
-            "相机运动 H3 可写成 [slow zoom in] / [pan left] 这类方括号标注")],
-        backend: Annotated[str, Field(default="auto", description=
-            "视频后端。auto（默认）= agnes → h3 依次降级（云端快，失败回落本地）；"
-            "agnes = Agnes Video 2.5 Flash（云端，1280x704，4~12 秒，数十秒~几分钟，"
-            "需联网，免费账号高峰可能排队报 video_queue_full）；"
-            "h3 = 本地 MiniMax H3（离线，736x416，3~15 秒，12 步采样，慢，"
-            "10 秒片约 40 分钟，且同一时刻只能跑一个）")] = "auto",
-        duration: Annotated[float, Field(default=5.0, ge=3, le=15, description=
-            "成片秒数。H3 内部按 24fps 折成 124~362 帧；"
-            "Agnes 取整到 4~12 秒。越久越慢，先用 5 秒试构图再决定") ] = 5.0,
-        aspect: Annotated[str, Field(default="16:9 (Widescreen)", description=
-            "宽高比，见 frameseek_gen_info 返回的 aspects 列表（要用原字符串，"
-            "带括号和空格，别自己简写）。注意 2:3 和 3:2 只有 H3 支持")] = "16:9 (Widescreen)",
-        megapixels: Annotated[float, Field(default=0.3, gt=0, description=
-            "像素档，0.3 适配 8G 显存（4060Ti）。**只对 H3 有效**，"
-            "Agnes 固定 720P/1280x704。调大会更清晰但更慢、显存不够会失败")] = 0.3,
-        seed: Annotated[int, Field(default=0, description=
-            "随机种子。0=每次随机；固定同一个非 0 值 H3 可复现同一构图，"
-            "调提示词时用同一 seed 反复试省时间（Agnes 仅记录，不保证复现）")] = 0,
-        name: Annotated[str, Field(default="",
-                                    description="成片文件名（不含扩展名），留空自动生成")] = "",
-        ref_image: Annotated[str, Field(default="", description=
-            "参考图绝对路径（可选）。H3 在 prompt 里用 <Picture 1> 引用它锁形象/风格；"
-            "Agnes 自动切 reference 模式。文件必须存在，不存在会直接报错")] = "",
-        index: Annotated[str, Field(default="none", description=
-            "已停用的兼容参数，保持 none 即可")] = "none",
-        root: Root = "") -> str:
-    """按提示词生成视频，成片落 <项目根>/AI生成/，**不进素材库**（素材库只放原始素材）。
-
-    两个后端可选：
-    - **Agnes Video 2.5 Flash**（默认优先，云端）：1280x704、4~12 秒、**成片自带音轨**，
-      通常几十秒到几分钟，需联网。免费账号在高峰可能排队，报 video_queue_full。
-    - **本地 MiniMax H3**（离线兜底）：736x416、3~15 秒，12 步采样，很慢
-      （10 秒片约 40 分钟），且 **GPU 同时只能跑一个**。
-
-    backend=auto 时按 agnes → h3 降级；显式指定则只跑那一个，不达标直接报错。
-    prompt：H3 用英文、Agnes 用中文；<2000 字符；相机运动 H3 可用 [slow zoom in] 标注。
-    duration/aspect/seed：见各参数说明；megapixels 只对 H3 生效。
-    ref_image：参考图路径（可选），H3 用 <Picture 1> 引用。
-
-    异步：立即返回 task_id，用 frameseek_task 轮询（间隔 10 秒以上）。
-    H3 每次生成都是独立子进程（模型即用即加载、跑完即退），冷启动要等模型加载。
-    """
-    r = pick_root(root)
-    if not r or not os.path.isdir(r):
-        return _err("目标素材库目录不存在，先用 frameseek_add_library 登记",
-                    "root 只是用来记任务进度，随便给一个已登记的库即可；"
-                    "或省略 root 走激活库")
-    backend = (backend or "auto").strip().lower()
-    if backend not in ("auto", "agnes", "h3"):
-        return _err(f"未知后端：{backend}（可选 agnes / h3 / auto）")
-    # 启动前先挡掉明显不合法的参数（线程里才报就太晚了）
-    try:
-        gen_mod.frames_for(duration)
-        if aspect not in gen_mod.ASPECTS:
-            raise ValueError(f"不支持的宽高比：{aspect}")
-        p = (prompt or "").strip()
-        if not p:
-            raise ValueError("prompt 不能为空")
-        if len(p) > gen_mod.MAX_PROMPT:
-            raise ValueError(
-                f"prompt 超长（{len(p)} > {gen_mod.MAX_PROMPT} 字符上限）")
-        if ref_image and not os.path.isfile(ref_image):
-            raise ValueError("参考图不存在：" + ref_image)
-        if index not in ("asr", "scan", "none"):
-            raise ValueError("index 只支持 asr / scan / none")
-        if backend == "agnes" and aspect in gen_mod.AGNES_UNSUPPORTED:
-            raise ValueError(
-                f"Agnes 不支持宽高比 {aspect}，"
-                "可选 " + ", ".join(sorted(set(gen_mod.AGNES_ASPECTS.values()))))
-    except ValueError as e:
-        return _err(str(e),
-                    "aspect 必须是 frameseek_gen_info 的 aspects 里那个原字符串；"
-                    "H3 建议改用英文、Agnes 可直接写中文，控制在 2000 字符内")
-    params = {"prompt": p, "duration": float(duration), "aspect": aspect,
-              "megapixels": float(megapixels), "seed": int(seed or 0),
-              "name": name, "ref_image": ref_image, "index": index,
-              "backend": backend}
-    # 后端全部未就绪时提前报错，别建一张注定失败的空任务卡
-    chain = gen_mod.BACKEND_ORDER if backend == "auto" else (backend,)
-    if not any(gen_mod.backend_ready(b) for b in chain):
-        st = IX.open_store(r)
-        tid = st.new_task("gen", r, 100)
-        st.finish_task(tid, "error", "没有就绪的视频后端")
-        return _err("没有就绪的视频后端：" +
-                    ", ".join(f"{b}({'就绪' if gen_mod.backend_ready(b) else '缺依赖'})"
-                              for b in chain),
-                    "Agnes 需要 AGNES_API_KEY 或 ~/.workbuddy/models.json 里有 Key；"
-                    "H3 需要 ComfyUI 便携版 + h3gen.py")
-    st = IX.open_store(r)
-    tid = st.new_task("gen", r, 100)
-    # 云端 agnes 不占 GPU，可以和本地 H3 并行；两个 H3 由 gen 内部的
-    # _H3_LOCK 串行化，所以这里按后端拆 key，不该互相挡。
-    job_key = "gen" if backend == "h3" else f"gen:{backend}"
-    if not _bg(job_key, _gen_job(r, tid, params)):
-        st.finish_task(tid, "error", "已有同后端生成任务在进行中")
-        return _err(f"已经有一个 {backend} 生成任务在跑了，先用 frameseek_task 看进度。"
-                    + ("（H3 走 GPU 独占；云端 agnes 可与它并行）"
-                       if backend == "auto" else ""))
-    return _ok(started=True, task_id=tid, root=r, params=params,
-               eta_hint="backend=agnes 云端出片通常几十秒~几分钟（高峰会排队退避）；"
-                        "backend=h3 本地子进程冷启动 + 12 步采样，"
-                        "5 秒片段约 10 分钟、10 秒片约 40 分钟",
-               note="用 frameseek_task 查进度")
-
-
 # ---------------- 工具：校验 / 复查 ----------------
 @server.tool()
 def frameseek_verify(
@@ -1452,9 +1002,6 @@ def frameseek_verify(
     if not r or not os.path.isdir(r):
         return _err("未指定素材库（仅用于记录任务进度，工程不在库里）",
                                    hint="用 frameseek_list_libraries 取一个库 的 path 传进来，或省略 root 走激活库")
-    g = _ai_guard(r)
-    if g:
-        return _err(g)
     st = IX.open_store(r)
     v = st.get_video(video_id)
     if not v:
@@ -1505,9 +1052,6 @@ def frameseek_boxaudit(
     if not r or not os.path.isdir(r):
         return _err("未指定素材库（仅用于记录任务进度，工程不在库里）",
                                    hint="用 frameseek_list_libraries 取一个库 的 path 传进来，或省略 root 走激活库")
-    g = _ai_guard(r)
-    if g:
-        return _err(g)
     st = IX.open_store(r)
     v = st.get_video(video_id)
     if not v:
@@ -1662,9 +1206,6 @@ def frameseek_export_clip(
         return _err("未指定素材库，或目录已不存在",
                     "用 frameseek_list_libraries 确认路径，"
                     "或直接复用 frameseek_search 结果里的 root 字段")
-    g = _ai_guard(r)
-    if g:
-        return _err(g)
     ids: List[int] = []
     if line_ids:
         ids = [int(x) for x in line_ids]
@@ -1795,7 +1336,7 @@ def _res_libraries() -> str:
 
 @server.resource("frameseek://tasks/running",
                  name="正在跑的任务",
-                 description="所有库当前正在跑的扫描/识别/生成/渲染任务及进度。"
+                 description="所有库当前正在跑的扫描/识别任务及进度。"
                              "发起异步操作前后读这个。",
                  mime_type="application/json")
 def _res_tasks() -> str:
@@ -1852,54 +1393,10 @@ def _res_clips() -> str:
               "note": "每库最多列最近 40 个；要完整清单用工具 frameseek_list_clips"})
 
 
-@server.resource("frameseek://images/backends",
-                 name="生图后端说明与当前就绪状态",
-                 description="双后端（agnes 云端 / sd15 本地可复现）"
-                             "各自的能力、参数适用性、耗时，以及**此刻**哪些就绪。"
-                             "选后端前读这个，别盲目指定。",
-                 mime_type="application/json")
-def _res_img_backends() -> str:
-    try:
-        bs = img_mod.backends()
-    except Exception as e:
-        return _j({"ok": False, "err": f"{type(e).__name__}: {e}"})
-    ready = [b["id"] for b in bs if b.get("ready")]
-    return _j({
-        "auto_order": list(img_mod.BACKEND_ORDER),
-        "ready_now": ready,
-        "out_dir": img_mod.paint_dir(),
-        "backends": bs,
-        "parameter_matrix": {
-            "agnes": "吃 prompt(中文友好) / refs(≤3张多图合成) / ratio(定1K·2K)；"
-                     "忽略 negative、steps、cfg、lora、control_strength。"
-                     "**联网**，会把提示词和参考图发到云端。",
-            "sd15": "吃全部参数；固定 seed 可复现同一张（重掷主力）；"
-                    "refs 首张算 canny 控制图锁构图；方形模型，ratio 无效，"
-                    "width/height 用 512。纯本地。",
-        },
-        "how_to_reroll": [
-            "1. frameseek_generate_image 出图，返回 file 绝对路径",
-            "2. 不满意就 frameseek_reroll_image(file=那个路径)",
-            "   —— 它读同名 .json sidecar 复现全部参数，只换 seed=0（随机）",
-            "3. sd15 下同 seed 出同一张，所以连掷几次能挑到想要的构图",
-            "别自己重新拼 prompt 重出，那样参数容易和原来不一样",
-        ],
-        "sizes": "width/height 必须是 8 的倍数、256~1024；"
-                 "给 ratio（如 16:9）优先于 width/height，agnes 按它出 1K/2K。",
-        "pitfalls": [
-            "GPU 同时只能跑一个，别并发调",
-            "refs 必须是磁盘绝对路径，不是 URL 也不是素材库相对路径",
-            "出图是**同步**的（ags 10~60 秒 / sd15 5~20 秒），"
-            "不像视频生成那样异步轮询",
-            "产物不入素材库索引，落 <项目根>/AI生成/绘画/",
-        ],
-    })
-
-
 @server.resource("frameseek://tool-catalog",
                  name="工具速查表",
                  description="按「我想干什么」组织的工具索引——"
-                             "比读 33 个 tools/list 的描述快得多。",
+                             "比逐个读 tools/list 的描述快得多。",
                  mime_type="application/json")
 def _res_catalog() -> str:
     return _j({
@@ -1917,7 +1414,6 @@ def _res_catalog() -> str:
             "「给目录建索引」": "frameseek_add_library → frameseek_scan（异步）",
             "「这片没台词」": "frameseek_retranscribe（有字幕的）/ "
                            "frameseek_transcribe_asr（没字幕的）",
-            "「生成 AI 视频」": "frameseek_gen_info → frameseek_generate_video（异步）",
         },
         "三条铁律": [
             "1. 多库场景 root 必须带：video_id / line_id 只在各自库内唯一，跨库撞号",

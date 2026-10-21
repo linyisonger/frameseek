@@ -1,4 +1,4 @@
-/* 拾帧 FrameSeek · 方框复查模块（台词帧 / 台词框 / 文字 逐句核对） */
+﻿/* 拾帧 FrameSeek · 方框复查模块（台词帧 / 台词框 / 文字 逐句核对） */
 (function () {
 'use strict';
 const { reactive, computed, ref, watch, onMounted, onUnmounted, onActivated, nextTick } = Vue;
@@ -12,23 +12,21 @@ const BoxView = {
     <div><h1>方框复查 <span class="dim" v-if="rep">{{ curFile }} · {{ rep.total }} 条台词</span></h1>
       <p>台词帧 · 台词框 · 文字 —— 把框画回画面上，逐句核对圈得对不对</p></div>
     <div class="fs-tools">
-      <el-select id="bxLibPick" v-model="libKey" size="small" class="w160" clearable
+      <el-select id="bxLibPick" v-model="libKey" class="w160" clearable
         placeholder="全部库" title="只看某个素材库的片子。默认「全部库」= 列出所有库里已索引、且有台词的素材">
         <el-option v-for="o in libOpts" :key="o.value" :label="o.label" :value="o.value"/>
       </el-select>
-      <el-input id="bxSearch" v-model="vq" size="small" class="w160" placeholder="搜索片名/目录…" clearable
+      <el-input id="bxSearch" v-model="vq" class="w220" placeholder="搜索片名/目录…" clearable
         title="按片名或所在目录过滤右边的片单，边打边生效。多个词用空格分隔，要全部命中"/>
-      <el-select id="bxPick" v-model="pick" size="small" class="w260" filterable
+      <el-select id="bxPick" v-model="pick" class="w260" filterable
         placeholder="选一部片子" title="选一部片子：会列出它全部台词，逐句核对画面方框圈得对不对">
         <el-option v-for="o in pickOpts" :key="o.value" :label="o.label" :value="o.value"/>
       </el-select>
       <span class="dim" id="bxHit">{{ hitText }}</span>
-      <el-button id="bxReload" size="small" @click="reload"
+      <el-button id="bxReload" @click="reload"
         title="重新拉这部片子的台词清单和校验结论。刚改过字幕或补过框就点它">刷新</el-button>
     </div>
   </div>
-
-  <el-divider />
 
   <div class="fs-bxsum" id="bxSum" v-if="rep">
     <div class="bxs"><b>{{ rep.total }}</b><span>台词</span></div>
@@ -62,15 +60,26 @@ const BoxView = {
           <div class="bxtx">{{ x.text }}</div>
           <div class="bxmark" :class="cls(x)">{{ mark(x) }}</div>
         </div>
-        <div v-if="!visible.length" class="dim pad">
-          {{ pick ? '没有符合条件的台词' : (raw.length ? '没有匹配的片子' : '还没有已索引的素材') }}</div>
+        <div v-if="loading" class="fs-bxloading dim">
+          <el-icon class="is-loading"><Loading/></el-icon><span>正在加载片单…</span>
+        </div>
+        <div v-else-if="!visible.length" class="fs-empty-tip compact">
+          <el-icon class="fs-empty-ic"><Aim/></el-icon>
+          <b>{{ pick ? '没有符合条件的台词' : (raw.length ? '没有匹配的片子' : '还没有已索引的素材') }}</b>
+          <span>{{ pick ? '换个筛选条件试试' : (raw.length ? '换个片名或目录关键词' : '先去「素材库」索引出台词') }}</span>
+        </div>
       </div>
     </div>
 
     <div class="fs-bxview" id="bxView">
-      <div v-if="!curRow" class="dim pad">
-        {{ pick ? '左边点一条台词'
-                : (raw.length ? '没有匹配的片子' : '先去「素材库」索引出台词') }}</div>
+      <div v-if="loading" class="fs-bxloading dim">
+        <el-icon class="is-loading"><Loading/></el-icon><span>正在加载片单…</span>
+      </div>
+      <div v-else-if="!curRow" class="fs-empty-tip compact">
+        <el-icon class="fs-empty-ic"><Aim/></el-icon>
+        <b>{{ pick ? '左边点一条台词' : '先选一部片' }}</b>
+        <span>{{ pick ? '可以逐句核对画面上的框' : (raw.length ? '从上面的片单里选一部' : '先去「素材库」索引出台词') }}</span>
+      </div>
       <template v-else>
         <div class="fs-bxhead">
           <div class="bxhts">{{ curRow.start_str }} → {{ curRow.end_str }}
@@ -166,6 +175,7 @@ const BoxView = {
 `,
   setup() {
     const raw = ref([]);                  // 整份片单（接口只拉一次）
+    const loading = ref(true);            // 首次拉片单中：别把「加载中」显示成「没有素材」
     const libKey = ref('');               // 库筛选
     const vq = ref('');                   // 片名搜索（跟台词过滤的 lq 分开）
     const pick = ref('');                 // "root|id"
@@ -254,7 +264,14 @@ const BoxView = {
 
     async function loadLibs_() {
       let libs = [];
-      try { libs = await api('/api/boxaudit/library'); } catch (e) { libs = []; }
+      loading.value = true;
+      try {
+        libs = await api('/api/boxaudit/library');
+      } catch (e) {
+        libs = [];
+      } finally {
+        loading.value = false;
+      }
       raw.value = libs;
       S.boxNoBox = libs.reduce((a, x) => a + (x.no_box || 0), 0);
       const keep = pick.value;

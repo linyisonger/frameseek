@@ -16,11 +16,6 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HUB_DB = os.path.join(BASE, "hub.db")
 CFG_FILE = os.path.join(BASE, "frameseek.json")
 
-# 内置只读库：AI 生成产物目录（2026-10-15 起生成物不再落素材库）。
-# 特殊之处——不登记进 hub.db，而是在 list_all() 里凭空合成一条 builtin 记录：
-# 素材页筛选里能勾选、能预览，但不进「素材库」卡片列表、不能编辑/删除/改名。
-BUILTIN_AI = {"name": "AI 生成", "note": "内置 · 生成产物，只读"}
-
 # 测试/自测用的库不进用户可见列表（回归脚本登记的 _testlib、名字带「测试」的库）。
 # 只影响"列出来"：按 id / 路径直接访问（扫描、激活、删除）照样能用，
 # 这样回归脚本不受影响，用户界面上也不会看到一堆测试库。
@@ -153,38 +148,14 @@ class Hub:
             if self.is_test_lib(r):
                 continue
             r["exists"] = os.path.isdir(r["path"])
-            r["builtin"] = False
             st = self.stats_of(r["path"])
             r.update(st)
             out.append(r)
         return out
 
-    def list_all(self, with_builtin: bool = True
-                 ) -> List[Dict[str, Any]]:
-        """所有库 = 用户登记的 + 内置 AI 库（凭空合成，不落 hub.db）。"""
-        rows = self.list()
-        if with_builtin:
-            rows = rows + self._builtin_ai_rows()
-        return rows
-
-    def _builtin_ai_rows(self) -> List[Dict[str, Any]]:
-        from core import gen as gen_mod
-        path = gen_mod.output_dir()
-        st = self.stats_of(path)
-        return [{
-            "id": 0, "name": BUILTIN_AI["name"], "path": path,
-            "enabled": 1, "note": BUILTIN_AI["note"],
-            "created_at": 0, "last_scan_at": 0,
-            "exists": os.path.isdir(path), "builtin": True, **st,
-        }]
-
-    def builtin_by_path(self, path: str) -> Dict[str, Any]:
-        """给定的 path 是不是内置 AI 库；是则返回记录，否则 None。"""
-        p = os.path.abspath(path or "")
-        for r in self._builtin_ai_rows():
-            if os.path.normcase(r["path"]) == os.path.normcase(p):
-                return r
-        return None
+    def list_all(self) -> List[Dict[str, Any]]:
+        """所有用户登记的库（历史调用点保留这个名字）。"""
+        return self.list()
 
     def stats_of(self, path: str) -> Dict[str, Any]:
         """读该素材库自己的 index.db；没索引过就返回 0"""

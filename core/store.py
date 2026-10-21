@@ -8,6 +8,7 @@ import json
 import os
 import sqlite3
 import time
+from contextlib import contextmanager
 from typing import List, Dict, Any, Optional
 
 from core import config as C
@@ -99,15 +100,31 @@ class Store:
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self._init()
 
+    @contextmanager
     def _conn(self):
-        conn = sqlite3.connect(self.db_path, timeout=30)
+        """短连接：用完就关。
+
+        以前 `with self._conn() as conn` 只 commit、**不 close**，连接要等 GC 才回收；
+        boxaudit 这种一次请求开上百条连接的场景会把读锁堆起来，之后每条新连接执行
+        `PRAGMA journal_mode=WAL` 都要等锁，实测单条 box_stats 从毫秒涨到 2 秒。
+        这里显式 close，并把 journal_mode 只在 _init 里设一次。
+        """
+        conn = sqlite3.connect(self.db_path, timeout=5)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA synchronous=NORMAL")
-        return conn
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def _init(self):
         with self._conn() as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
             conn.execute(
                 "INSERT OR IGNORE INTO meta(key,value) VALUES('schema','1')")
@@ -399,6 +416,21 @@ class Store:
                 " SUM(CASE WHEN box IS NOT NULL AND box<>'' THEN 1 ELSE 0 END) b "
                 "FROM lines WHERE video_id=?", (vid,)).fetchone()
         return {"total": r["t"] or 0, "boxed": r["b"] or 0}
+
+    def line_box_counts(self) -> Dict[int, tuple]:
+        """整库一次 GROUP BY：video_id → (台词数, 带框数)。
+
+        方框复查首屏要列出所有片子的框统计。逐片调 box_stats 是 N 条 SQL，
+        TV 库 80 部片实测 4~8 秒、还会随片子增加线性变慢；整库聚合一次
+        扫 6 万行只要几十毫秒。
+        """
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT video_id, COUNT(*) total,"
+                " SUM(CASE WHEN box IS NOT NULL AND box<>'' THEN 1 ELSE 0 END) boxed "
+                "FROM lines GROUP BY video_id").fetchall()
+        return {int(r["video_id"]): (int(r["total"] or 0), int(r["boxed"] or 0))
+                for r in rows}
 
     def lines_of(self, vid: int) -> List[Dict[str, Any]]:
         with self._conn() as conn:

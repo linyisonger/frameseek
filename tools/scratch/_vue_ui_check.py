@@ -92,8 +92,6 @@ def main():
             "libs":   ".fs-libcards, .fs-libcard",
             "search": "#q",
             "assets": "#videos",
-            "gen":    "#genPrompt",
-            "hd":     ".fs-steps",
             "box":    "#bxPick",
             "clips":  "#clips",
         }
@@ -191,25 +189,6 @@ def main():
             check(n_f <= n_row, f"过滤后条数不增（{n_f} <= {n_row}）")
             pg.fill("#bxFilter", "")
             pg.wait_for_timeout(900)
-
-        # ---- 8 AI 生成 / 手绘 ----
-        print("\n[8] AI 生成与手绘")
-        pg.click('.fs-menu .el-menu-item[data-tab="gen"]')
-        pg.wait_for_timeout(1500)
-        check(pg.is_visible("#genPrompt"), "提示词输入框在")
-        check(pg.is_visible("#genDur"), "时长下拉在")
-        check(len(pg.query_selector_all(".fs-composer-row .el-button")) >= 4,
-              "示例提示词按钮在")
-        pg.click('.fs-menu .el-menu-item[data-tab="hd"]')
-        pg.wait_for_timeout(1500)
-        check(pg.is_visible(".fs-steps"), "六步进度条在")
-        n_step = len(pg.query_selector_all(".fs-steps .el-step"))
-        check(n_step == 6, f"正好 6 步（实际 {n_step}）")
-        check(pg.is_visible("#hdInit"), "建工程按钮在")
-        # 2026-10-15：手绘改分步向导，标注框在第 3 步，先点步骤条跳过去
-        pg.click(".fs-steps .el-step:nth-child(3)")
-        pg.wait_for_timeout(350)
-        check(pg.is_visible("#hdAnn"), "标注输入框在（第 3 步）")
 
         # ---- 9 控制台无错 ----
         print("\n[9] 控制台")

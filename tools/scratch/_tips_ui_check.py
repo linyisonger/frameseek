@@ -26,11 +26,6 @@ STATIC = {
     "libs":   ["#btnAddLib", "#btnScanAll", "#libPath"],
     "search": ["#btnSearch", "#fast"],
     "assets": ["#vMoreBtn", "#vResetBtn", "#vfilter"],
-    "gen":    ["#btnGen", "#btnGenRef", "#genMore",
-               ".fs-composer-row .el-button"],
-    "hd":     ["#hdUpScript", "#hdInit", "#hdSuggest", "#hdRegions", "#hdUpImage",
-               "#hdTplAnn", "#hdAnnotate", "#hdApprove", "#hdPreview", "#hdRender",
-               "#hdAudition", "#hdMix", "#hdQa", "#hdClear"],
     "box":    ["#bxLibPick", "#bxSearch", "#bxPick", "#bxReload", "#bxFilter"],
 }
 

@@ -365,19 +365,12 @@ def api_scan_all():
 
 @app.get("/api/state")
 def api_state():
-    # libraries 只给用户登记的库（内置 AI 库不占卡片列表）；
-    # builtin_libs 单独给素材页筛选下拉用。
     libs = HUB.list()
-    builtins = HUB._builtin_ai_rows()
-    total = {"videos": sum(l["videos"] for l in libs) +
-                      sum(b["videos"] for b in builtins),
-             "lines": sum(l["lines"] for l in libs) +
-                      sum(b["lines"] for b in builtins),
-             "duration": sum(l["duration"] for l in libs) +
-                      sum(b["duration"] for b in builtins)}
+    total = {"videos": sum(l["videos"] for l in libs),
+             "lines": sum(l["lines"] for l in libs),
+             "duration": sum(l["duration"] for l in libs)}
     return jsonify({
         "libraries": libs,
-        "builtin_libs": builtins,
         "active": active_root(),
         "hub_db": HUB_DB,
         "settings": {"use_asr": setting_bool("use_asr", True),
@@ -415,436 +408,6 @@ def api_settings():
             HUB.set_setting(k, "1" if d[k] else "0")
     return jsonify({"ok": True})
 
-
-# ---------------- AI 视频生成（MiniMax H3，h3gen 直调 ComfyUI 库） ----------------
-# GPU 同时只能跑一个生成任务；起了就不许起第二个（排队没意义，用户看不到
-# 两个进度条哪个是自己的）。锁只在本进程内有效——MCP 连接器是另一个进程，
-# 两端同时发起时 GPU 自己会排队，属于可接受的边缘情况。
-_GEN_BUSY = threading.Lock()
-
-
-@app.get("/api/gen/info")
-def api_gen_info():
-    """生成面板摸底：**双后端**（Agnes Video 2.5 Flash 云端 / 本地 MiniMax H3）
-    各自就绪状态、宽高比选项、默认像素档、提示词上限、成片落哪个目录。"""
-    from core import gen as gen_mod
-    try:
-        info = dict(gen_mod.engine_info())
-        info.update({"aspects": gen_mod.ASPECTS,
-                     "agnes_aspects": sorted(set(gen_mod.AGNES_ASPECTS.values())),
-                     "agnes_unsupported": list(gen_mod.AGNES_UNSUPPORTED),
-                     "agnes_seconds": [gen_mod.AGNES_SECONDS_MIN,
-                                       gen_mod.AGNES_SECONDS_MAX],
-                     "default_megapixels": gen_mod.DEFAULT_MEGAPIXELS,
-                     "max_prompt": gen_mod.MAX_PROMPT,
-                     "out_dir": gen_mod.output_dir()})
-        return jsonify(info)
-    except Exception as e:
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"})
-
-
-@app.post("/api/gen/upload")
-def api_gen_upload():
-    """参考图上传（multipart）。存进项目 uploads 目录，路径交给 /api/generate。
-
-    2026-10-15 起生成链路彻底脱离素材库：参考图/文稿/线稿等中间物都在项目目录下。
-    """
-    from core import gen as gen_mod
-    files = request.files.getlist("file")
-    if not files:
-        return jsonify({"ok": False, "err": "没有文件"}), 400
-    f = files[0]
-    fn = os.path.basename(f.filename or "")
-    ext = os.path.splitext(fn)[1].lower()
-    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".bmp"):
-        return jsonify({"ok": False, "err": "参考图只支持 png/jpg/webp/bmp"}), 400
-    up = os.path.join(gen_mod.output_dir(), "_uploads")
-    os.makedirs(up, exist_ok=True)
-    p = os.path.join(up, f"ref_{int(time.time())}{ext}")
-    f.save(p)
-    return jsonify({"ok": True, "path": p, "name": fn})
-
-
-def _gen_job(root: str, tid: int, params: dict):
-    """生成任务：进度同时写 tasks 表（frameseek_task / 轮询可见）和
-    实时事件通道（页面顶部进度卡可见）。"""
-    from core import gen as gen_mod
-    st = store_of(root)
-    lib = _lib_name_of(root)
-
-    def tick(pct, msg):
-        try:
-            st.tick_task(tid, int(pct or 0), msg)
-            events.ev_progress(root, lib, int(pct or 0), 100, phase="gen",
-                               message=msg, kind="gen")
-        except Exception:
-            pass
-
-    try:
-        res = gen_mod.generate(root=root, on_tick=tick, **params)
-        base = os.path.basename(res.get("file") or "")
-        # 成片登记进内置 AI 产物库（只登记媒体信息，不做字幕/语音识别）
-        if res.get("file"):
-            index_gen_file(res["file"])
-        st.finish_task(tid, "done",
-                       f"完成：{base}（{res.get('seconds')}s，"
-                       f"{res.get('w')}×{res.get('h')}）")
-        events.ev_task_done(root, lib, {
-            "total": 1, "skipped": 0, "failed": [], "gen": True,
-            "file": res.get("file"), "lines": 0,
-            "seconds": res.get("seconds"), "name": base,
-            "w": res.get("w"), "h": res.get("h")})
-    except Exception as e:
-        print("[generate error]", e)
-        st.finish_task(tid, "error", f"{type(e).__name__}: {e}")
-        events.ev_task_done(root, lib, {
-            "total": 1, "skipped": 0, "failed": [], "gen": True,
-            "error": f"{type(e).__name__}: {e}"})
-    finally:
-        # 只还 H3 的信号量——云端 agnes 不占 GPU，不该碰这把锁
-        if params.get("backend") == "h3":
-            _GEN_BUSY.release()
-
-
-@app.post("/api/generate")
-def api_generate():
-    """发起视频生成（异步）。**双后端可选**：agnes 云端 / h3 本地 / auto 降级。
-    成片落 <项目根>/AI生成/，不入库。
-
-    root 只用于把任务进度记到某个库的 tasks 表，不影响成片落点。
-    """
-    d = request.get_json(force=True) or {}
-    root = os.path.abspath((d.get("root") or active_root() or "").strip())
-    if not root or not os.path.isdir(root):
-        return jsonify({"ok": False,
-                        "err": "先选一个素材库（用于记录任务进度）"}), 400
-    from core import gen as gen_mod
-    backend = (d.get("backend") or "auto").strip().lower()
-    if backend not in ("auto", "agnes", "h3"):
-        return jsonify({"ok": False,
-                        "err": f"未知后端 {backend}（可选 agnes / h3 / auto）"}), 400
-    prompt = (d.get("prompt") or "").strip()
-    duration = float(d.get("duration") or 5.0)
-    aspect = (d.get("aspect") or "16:9 (Widescreen)").strip()
-    megapixels = float(d.get("megapixels") or 0.3)
-    seed = int(d.get("seed") or 0)
-    name = (d.get("name") or "").strip()
-    ref_image = (d.get("ref_image") or "").strip()
-    index = (d.get("index") or "asr").strip()
-    # 和 MCP 工具同一套校验（线程里才报错就太晚了）
-    try:
-        gen_mod.frames_for(duration)
-        if aspect not in gen_mod.ASPECTS:
-            raise ValueError(f"不支持的宽高比：{aspect}")
-        if not prompt:
-            raise ValueError("提示词不能为空")
-        if len(prompt) > gen_mod.MAX_PROMPT:
-            raise ValueError(f"提示词超长（{len(prompt)} > "
-                             f"{gen_mod.MAX_PROMPT} 字符上限）")
-        if ref_image and not os.path.isfile(ref_image):
-            raise ValueError("参考图不存在：" + ref_image)
-        if index not in ("asr", "scan", "none"):
-            raise ValueError("index 只支持 asr / scan / none")
-        if backend == "agnes" and aspect in gen_mod.AGNES_UNSUPPORTED:
-            raise ValueError(
-                f"Agnes 不支持宽高比 {aspect}，可选 "
-                + ", ".join(sorted(set(gen_mod.AGNES_ASPECTS.values()))))
-    except ValueError as e:
-        return jsonify({"ok": False, "err": str(e)}), 400
-    chain = gen_mod.BACKEND_ORDER if backend == "auto" else (backend,)
-    if not any(gen_mod.backend_ready(b) for b in chain):
-        return jsonify({"ok": False,
-                        "err": "没有就绪的视频后端：" +
-                               ", ".join(f"{b}({'就绪' if gen_mod.backend_ready(b) else '缺依赖'})"
-                                         for b in chain)}), 400
-    # 云端 agnes 不占 GPU，可与本地 H3 并行；两个 H3 由 gen 内部锁串行
-    if backend == "h3" and not _GEN_BUSY.acquire(blocking=False):
-        return jsonify({"ok": False,
-                        "err": "本地 H3 已有生成任务在跑（GPU 独占），"
-                                "稍后再试或改用 backend=agnes 走云端"}), 409
-    try:
-        st = store_of(root)
-        tid = st.new_task("gen", root, 100)
-    except Exception as e:
-        if backend == "h3":
-            _GEN_BUSY.release()
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 500
-    params = {"prompt": prompt, "duration": duration, "aspect": aspect,
-              "megapixels": megapixels, "seed": seed, "name": name,
-              "ref_image": ref_image, "index": index, "backend": backend}
-    threading.Thread(target=_gen_job, args=(root, tid, params),
-                     daemon=True).start()
-    return jsonify({"ok": True, "task_id": tid, "root": root,
-                    "backend": backend,
-                    "out_dir": gen_mod.output_dir(),
-                    "eta_hint": "backend=agnes 云端通常几十秒~几分钟"
-                                "（高峰会排队退避）；backend=h3 本地冷启动 + "
-                                "12 步采样，5 秒约 10 分钟、10 秒约 40 分钟"})
-
-
-# ---------------- AI 绘画（双后端生图：Agnes / SD1.5） ----------------
-_AD_BUSY = threading.Semaphore(1)   # GPU 同时只能跑一个（与 _GEN_BUSY 同思路）
-
-
-@app.get("/api/aidraw/info")
-def api_aidraw_info():
-    """绘画面板摸底：双后端就绪状态、默认后端、产物目录。"""
-    from core import img_backend as ib
-    try:
-        return jsonify({"ok": True, "backends": ib.backends(),
-                        "default": "agnes", "order": list(ib.BACKEND_ORDER),
-                        "lora_default": ib.LORA_DEFAULT,
-                        "schemes": [{"id": k, "label": v["label"]}
-                                    for k, v in ib.SCHEMES.items()],
-                        "out_dir": ib.paint_dir()})
-    except Exception as e:
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"})
-
-
-@app.post("/api/aidraw/upload")
-def api_aidraw_upload():
-    """参考图上传（multipart）。存项目 uploads 目录，路径回传给生成接口。"""
-    files = request.files.getlist("file")
-    if not files:
-        return jsonify({"ok": False, "err": "没有文件"}), 400
-    f = files[0]
-    fn = os.path.basename(f.filename or "")
-    ext = os.path.splitext(fn)[1].lower()
-    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".bmp"):
-        return jsonify({"ok": False, "err": "参考图只支持 png/jpg/webp/bmp"}), 400
-    from core import gen as gen_mod
-    up = os.path.join(gen_mod.output_dir(), "_uploads")
-    os.makedirs(up, exist_ok=True)
-    p = os.path.join(up, f"ref_{int(time.time())}{ext}")
-    f.save(p)
-    return jsonify({"ok": True, "path": p, "name": fn})
-
-
-def _aidraw_job(root: str, tid: int, params: dict):
-    """绘画任务：进度写 tasks 表 + 实时事件通道（与 _gen_job 同一套机制）。"""
-    from core import img_backend as ib
-    st = store_of(root)
-    lib = _lib_name_of(root)
-
-    def tick(pct, msg):
-        try:
-            st.tick_task(tid, int(pct or 0), msg)
-            events.ev_progress(root, lib, int(pct or 0), 100, phase="aidraw",
-                               message=msg, kind="aidraw")
-        except Exception:
-            pass
-
-    try:
-        res = ib.gen_image(on_tick=tick, **params)
-        base = os.path.basename(res.get("file") or "")
-        st.finish_task(tid, "done",
-                       f"完成：{base}（{res.get('w')}×{res.get('h')}，"
-                       f"{res.get('note') or res.get('backend')}）")
-        events.ev_task_done(root, lib, {
-            "total": 1, "skipped": 0, "failed": [], "aidraw": True,
-            "file": res.get("file"), "name": base,
-            "backend": res.get("backend")})
-    except Exception as e:
-        print("[aidraw error]", e)
-        st.finish_task(tid, "error", f"{type(e).__name__}: {e}")
-        events.ev_task_done(root, lib, {
-            "total": 1, "skipped": 0, "failed": [], "aidraw": True,
-            "error": f"{type(e).__name__}: {e}"})
-    finally:
-        _AD_BUSY.release()
-
-
-@app.post("/api/aidraw/generate")
-def api_aidraw_generate():
-    """发起绘画生成（异步）。双后端可选，默认 Agnes；auto 按优先级降级。
-
-    产物落 <项目根>/AI生成/绘画/，旁边带 sidecar JSON 留痕（重掷用）。
-    root 只用于把任务进度记到某个库的 tasks 表，不影响产物落点。
-    """
-    d = request.get_json(force=True) or {}
-    root = os.path.abspath((d.get("root") or active_root() or "").strip())
-    if not root or not os.path.isdir(root):
-        return jsonify({"ok": False,
-                        "err": "先选一个素材库（用于记录任务进度）"}), 400
-    from core import img_backend as ib
-    backend = (d.get("backend") or "agnes").strip().lower()
-    if backend not in ("agnes", "sd15", "auto"):
-        return jsonify({"ok": False, "err": f"未知后端：{backend}"}), 400
-    scheme = (d.get("scheme") or "realistic").strip().lower()
-    if scheme not in ib.SCHEME_IDS:
-        return jsonify({"ok": False, "err": f"未知方案：{scheme}"}), 400
-    prompt = (d.get("prompt") or "").strip()
-    if not prompt:
-        return jsonify({"ok": False, "err": "提示词不能为空"}), 400
-    refs = [os.path.abspath(r) for r in (d.get("refs") or []) if r]
-    for r in refs:
-        if not os.path.isfile(r):
-            return jsonify({"ok": False, "err": "参考图不存在：" + r}), 400
-    try:
-        w = int(d.get("w") or 0)
-        h = int(d.get("h") or 0)
-    except (TypeError, ValueError):
-        return jsonify({"ok": False, "err": "宽高必须是数字"}), 400
-    if w and (w % 8 or not (256 <= w <= 1024)):
-        return jsonify({"ok": False, "err": "宽必须是 8 的倍数且在 256~1024"}), 400
-    if h and (h % 8 or not (256 <= h <= 1024)):
-        return jsonify({"ok": False, "err": "高必须是 8 的倍数且在 256~1024"}), 400
-    # 调参项：UI 没显式传（None）就交给方案给默认值；传了就用传的。
-    # 这样前端只发覆盖项，方案负责兜底，两个方案开箱即用。
-    def _num(key, cast=float):
-        v = d.get(key)
-        return None if v is None else cast(v)
-
-    params = {"backend": backend, "prompt": prompt,
-              "negative": d.get("negative"),   # None → 方案负向词；"" → 显式清空
-              "refs": refs, "seed": int(d.get("seed") or 0),
-              "w": w, "h": h, "name": (d.get("name") or "").strip(),
-              "scheme": scheme,
-              "lora": d.get("lora"),
-              "lora_scale": _num("lora_scale"),
-              "control_strength": _num("control_strength"),
-              "steps": _num("steps", int),
-              "cfg": _num("cfg"),
-              "sampler": d.get("sampler"),
-              "scheduler": d.get("scheduler"),
-              "ckpt": d.get("ckpt")}
-    if not _AD_BUSY.acquire(blocking=False):
-        return jsonify({"ok": False,
-                        "err": "已经有一个绘画任务在跑（GPU 同时只能跑一个）"}), 409
-    try:
-        st = store_of(root)
-        tid = st.new_task("aidraw", root, 100)
-    except Exception as e:
-        _AD_BUSY.release()
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 500
-    threading.Thread(target=_aidraw_job, args=(root, tid, params),
-                     daemon=True).start()
-    eta = {"agnes": "约 10~60 秒", "sd15": "约 5~20 秒",
-           "auto": "视后端而定"}[backend]
-    return jsonify({"ok": True, "task_id": tid, "root": root,
-                    "out_dir": ib.paint_dir(), "eta_hint": eta})
-
-
-@app.get("/api/aidraw/outputs")
-def api_aidraw_outputs():
-    """绘画产物列表（新的在前，带 sidecar 参数）。"""
-    from core import img_backend as ib
-    try:
-        return jsonify({"ok": True, "items": ib.list_outputs()})
-    except Exception as e:
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"})
-
-
-@app.post("/api/aidraw/reroll")
-def api_aidraw_reroll():
-    """重掷：按某张产物的 sidecar 参数复现，只换新种子（seed=0 即随机）。"""
-    d = request.get_json(force=True) or {}
-    f = (d.get("file") or "").strip()
-    if not f or not os.path.isfile(f):
-        return jsonify({"ok": False, "err": "文件不存在：" + f}), 400
-    side = os.path.splitext(f)[0] + ".json"
-    if not os.path.isfile(side):
-        return jsonify({"ok": False, "err": "没有参数留痕（sidecar JSON 缺失）"}), 400
-    try:
-        with open(side, encoding="utf-8") as fh:
-            meta = json.load(fh)
-    except Exception as e:
-        return jsonify({"ok": False, "err": f"sidecar 读取失败：{e}"}), 400
-    root = os.path.abspath((d.get("root") or active_root() or "").strip())
-    if not root or not os.path.isdir(root):
-        return jsonify({"ok": False,
-                        "err": "先选一个素材库（用于记录任务进度）"}), 400
-    from core import img_backend as ib
-    meta_lora = meta.get("lora")
-    meta_scale = meta.get("lora_scale")
-    meta_ctrl = meta.get("control_strength")
-    _rb = meta.get("backend") or "agnes"
-    if _rb not in ("agnes", "sd15"):   # 老 sidecar 若记了已下线的 h3，回落 auto
-        _rb = "auto"
-    params = {"backend": _rb,
-              "prompt": meta.get("prompt") or "",
-              "negative": meta.get("negative") or "",
-              "refs": [r for r in (meta.get("refs") or [])
-                       if r and os.path.isfile(r)],
-              "seed": 0,   # 0 = 随机新种子
-              "w": int(meta.get("w") or 0), "h": int(meta.get("h") or 0),
-              "lora": "" if meta_lora is None else str(meta_lora),
-              "lora_scale": ib.DEFAULT_LORA_SCALE if meta_scale is None
-                            else float(meta_scale),
-              "control_strength": (ib.DEFAULT_CONTROL_STRENGTH
-                                   if meta_ctrl is None else float(meta_ctrl)),
-              "steps": int(meta.get("steps") or 20),
-              "cfg": float(meta.get("cfg") or 7.0),
-              "scheme": meta.get("scheme") or "realistic"}
-    if not params["prompt"]:
-        return jsonify({"ok": False, "err": "sidecar 里没有提示词"}), 400
-    if not _AD_BUSY.acquire(blocking=False):
-        return jsonify({"ok": False,
-                        "err": "已经有一个绘画任务在跑（GPU 同时只能跑一个）"}), 409
-    try:
-        st = store_of(root)
-        tid = st.new_task("aidraw", root, 100)
-    except Exception as e:
-        _AD_BUSY.release()
-        return jsonify({"ok": False, "err": f"{type(e).__name__}: {e}"}), 500
-    threading.Thread(target=_aidraw_job, args=(root, tid, params),
-                     daemon=True).start()
-    return jsonify({"ok": True, "task_id": tid, "root": root,
-                    "out_dir": ib.paint_dir(),
-                    "eta_hint": "重掷（新种子，同参数）"})
-
-
-@app.post("/api/aidraw/delete")
-def api_aidraw_delete():
-    """删除一张绘画产物（连同同名 sidecar 参数留痕）。删源文件，不可恢复。"""
-    d = request.get_json(force=True) or {}
-    f = (d.get("file") or "").strip()
-    if not f:
-        return jsonify({"ok": False, "err": "缺少 file"}), 400
-    from core import img_backend as ib
-    f = os.path.abspath(f)
-    base = os.path.abspath(ib.paint_dir())
-    if not (f == base or f.startswith(base + os.sep)):
-        return jsonify({"ok": False,
-                        "err": "只能删除绘画目录内的文件"}), 403
-    if not os.path.isfile(f):
-        return jsonify({"ok": False, "err": "文件不存在：" + f}), 404
-    deleted = []
-    for cand in (f, os.path.splitext(f)[0] + ".json"):
-        if os.path.isfile(cand):
-            try:
-                os.remove(cand)
-                deleted.append(cand)
-            except OSError as e:
-                return jsonify({"ok": False, "err": f"删除失败：{e}"}), 500
-    return jsonify({"ok": True, "deleted": deleted})
-
-
-@app.post("/api/ai-gallery/delete")
-def api_ai_gallery_delete():
-    """删除一个 AI 生成素材（图片/视频，连同同名 sidecar）。删源文件，不可恢复。"""
-    d = request.get_json(force=True) or {}
-    f = (d.get("file") or "").strip()
-    if not f:
-        return jsonify({"ok": False, "err": "缺少 file"}), 400
-    from core import img_backend as ib
-    from core import gen
-    f = os.path.abspath(f)
-    base = gen.output_dir()
-    if not (f == base or f.startswith(base + os.sep)):
-        return jsonify({"ok": False,
-                        "err": "只能删除 AI 生成目录内的文件"}), 403
-    if not os.path.isfile(f):
-        return jsonify({"ok": False, "err": "文件不存在：" + f}), 404
-    deleted = []
-    for cand in (f, os.path.splitext(f)[0] + ".json"):
-        if os.path.isfile(cand):
-            try:
-                os.remove(cand)
-                deleted.append(cand)
-            except OSError as e:
-                return jsonify({"ok": False, "err": f"删除失败：{e}"}), 500
-    return jsonify({"ok": True, "deleted": deleted})
 
 # ---------------- 扫描 ----------------
 # 正在跑的索引器实例：root -> Indexer，给「停止」接口用来找到线程里的那个对象。
@@ -922,74 +485,6 @@ def _lib_name_of(path: str) -> str:
     return os.path.basename(path.rstrip("\\/"))
 
 
-def is_ai_root(root: str) -> bool:
-    """这个路径是不是内置 AI 生成产物库。
-
-    生成物不参与台词体系（不 OCR / 不 ASR / 不导字幕 / 不复查），
-    前端入口已经藏掉，这里是后端兜底——防止 MCP 或旧书签绕过界面直接打接口。
-    """
-    try:
-        from core import gen as _gen
-        p = os.path.abspath(root or "")
-        return os.path.normcase(p) == os.path.normcase(
-            os.path.abspath(_gen.output_dir()))
-    except Exception:
-        return False
-
-
-def ai_root_guard(root: str):
-    """台词类接口的统一拦截：命中 AI 库就返回一个 400 响应，否则 None。"""
-    if is_ai_root(root):
-        return jsonify({"ok": False,
-                        "err": "AI 生成产物不做字幕/语音识别，这条只对素材库生效"}), 400
-    return None
-
-
-def scan_ai_dir(path: str):
-    """后台把 AI 生成产物目录增量索引一遍（只登记媒体信息，不做字幕/语音识别）。"""
-    def job():
-        ix = None
-        try:
-            ix = IX.Indexer(path, use_asr=False, with_gif=True, no_lines=True)
-            ix._lib_name = "AI 生成"
-            _register_scan(ix)
-            n = 0
-            for f in IX.list_video_files(path):
-                if ix._cancel.is_set():
-                    ix.stopped = True
-                    break
-                try:
-                    ix.index_file(f)
-                    n += 1
-                except Exception as e:
-                    print(f"内置 AI 库索引失败 {f}: {e}", file=sys.stderr)
-            if n:
-                print(f"内置 AI 库：索引 {n} 个生成产物 → {path}")
-        except Exception as e:
-            print("内置 AI 库索引失败：", e)
-        finally:
-            if ix is not None:
-                _unregister_scan(ix)
-    threading.Thread(target=job, daemon=True).start()
-
-
-def index_gen_file(path: str) -> bool:
-    """把一条新生成的成片登记进内置 AI 库（只登记媒体信息，不碰台词）。
-
-    生成完立刻索引一次，素材页马上就能看到新片，不用等下次启动。
-    """
-    try:
-        from core import gen as _gen
-        root = _gen.output_dir()
-        ix = IX.Indexer(root, use_asr=False, with_gif=True, no_lines=True)
-        ix._lib_name = "AI 生成"
-        ix.index_file(path)
-        return True
-    except Exception as e:
-        print(f"[gen index] {path}: {e}", file=sys.stderr)
-        return False
-
-
 @app.post("/api/video/retranscribe")
 def api_video_retranscribe():
     """只对这一个素材重新识别台词（忽略已有结果，强制重跑一遍优先级链）"""
@@ -998,9 +493,6 @@ def api_video_retranscribe():
     vid = int(d.get("video_id") or 0)
     if not root or not vid:
         return jsonify({"ok": False, "err": "参数不全"}), 400
-    g = ai_root_guard(root)
-    if g:
-        return g
     st = store_of(root)
     v = st.get_video(vid)
     if not v:
@@ -1038,9 +530,6 @@ def api_video_transcribe_asr():
     vid = int(d.get("video_id") or 0)
     if not root or not vid:
         return jsonify({"ok": False, "err": "参数不全"}), 400
-    g = ai_root_guard(root)
-    if g:
-        return g
     st = store_of(root)
     v = st.get_video(vid)
     if not v:
@@ -1075,9 +564,6 @@ def api_video_reimport():
     vid = int(d.get("video_id") or 0)
     if not root or not vid:
         return jsonify({"ok": False, "err": "参数不全"}), 400
-    g = ai_root_guard(root)
-    if g:
-        return g
     st = store_of(root)
     v = st.get_video(vid)
     if not v:
@@ -1100,11 +586,6 @@ def api_scan():
     if not os.path.isdir(path):
         return jsonify({"ok": False, "err": "目录不存在"}), 400
     path = os.path.abspath(path)
-    if is_ai_root(path):
-        # AI 生成产物目录：不登记成素材库、不进台词链路，只登记媒体信息
-        scan_ai_dir(path)
-        return jsonify({"ok": True, "root": path, "cache": IX.cache_dir(path),
-                        "ai": True, "id": 0})
     if d.get("use_asr") is not None:
         HUB.set_setting("use_asr", "1" if d["use_asr"] else "0")
     if d.get("with_gif") is not None:
@@ -1234,11 +715,9 @@ def api_videos():
                 r["duration_str"] = store_mod.fmt_ts(r.get("duration") or 0)
                 r["root"] = lib["path"]
                 r["lib"] = lib["name"]
-                r["builtin"] = bool(lib.get("builtin"))
                 r["lib_id"] = int(lib.get("id") or 0)
                 out.append(r)
-        out.sort(key=lambda r: (r.get("builtin", False),
-                                r.get("lib", ""), r.get("name", "")))
+        out.sort(key=lambda r: (r.get("lib", ""), r.get("name", "")))
         if limit is not None:
             total = len(out)
             page = out[offset:offset + limit]
@@ -1253,54 +732,6 @@ def api_videos():
         r["duration_str"] = store_mod.fmt_ts(r.get("duration") or 0)
         r["root"] = os.path.abspath(root)
     return jsonify(rows)
-
-
-@app.get("/api/ai-gallery")
-def api_ai_gallery():
-    """扫描项目「AI生成」目录，返回图片 + 视频产物（gen 成片 / aidraw 绘画）。
-
-    这些产物不进素材库索引，单独给「素材」页的「AI生成素材库」视图用。
-    """
-    from core import gen
-    ai_dir = gen.output_dir()
-    if not os.path.isdir(ai_dir):
-        return jsonify([])
-    # gif 不算成片：AI生成/.frameseek/gifs/ 下全是预览动图，混进素材库会刷屏
-    IMG = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
-    VID = {".mp4", ".webm", ".mov", ".mkv", ".avi"}
-    # 这些目录里全是缓存 / 中间产物，不是给用户看的成片，一律跳过：
-    #   .frameseek  = 封面图(covers)、动图(gifs)、台词截图(shots)等索引缓存
-    SKIP_DIRS = {".frameseek", "工程", "projects", "temp", "tmp"}
-    out = []
-    for root, dirs, files in os.walk(ai_dir):
-        rel_root = root.replace("\\", "/")
-        # 就地裁剪 dirs，让 os.walk 不再往下钻
-        dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
-        for f in files:
-            if f.startswith("."):
-                continue
-            ext = os.path.splitext(f)[1].lower()
-            if ext in IMG:
-                t = "image"
-            elif ext in VID:
-                t = "video"
-            else:
-                continue
-            fp = os.path.join(root, f)
-            try:
-                st = os.stat(fp)
-            except OSError:
-                continue
-            out.append({
-                "type": t,
-                "file": fp,
-                "name": f,
-                "rel": os.path.relpath(fp, ai_dir).replace("\\", "/"),
-                "mtime": int(st.st_mtime),
-                "size": st.st_size,
-            })
-    out.sort(key=lambda r: -r["mtime"])
-    return jsonify(out)
 
 
 @app.post("/api/video/delete")
@@ -1737,8 +1168,8 @@ def api_boxaudit_backfill():
 def api_boxaudit_library():
     """整库的方框体检概览：每个素材有多少条带框、多少条可疑。
 
-    只读 box_stats（一条 SQL 聚合），不跑 verify，所以 65 部片也是
-    秒回——点进某个素材才做逐条核算。
+    只读一次 GROUP BY 聚合（line_box_counts），不跑 verify，也不逐片开 SQL，
+    所以片子再多也是毫秒级——点进某个素材才做逐条核算。
     """
     out = []
     for lib in HUB.list():
@@ -1746,18 +1177,19 @@ def api_boxaudit_library():
             continue
         try:
             st = store_of(lib["path"])
+            counts = st.line_box_counts()
         except Exception:
             continue
         for v in st.list_videos(limit=5000):
             if not (v.get("line_count") or 0):
                 continue
-            s = st.box_stats(v["id"])
+            total, boxed = counts.get(int(v["id"]), (int(v.get("line_count") or 0), 0))
             out.append({"id": v["id"], "name": v["name"], "root": lib["path"],
                         "rel": v.get("rel") or "",
                         "lib": lib["name"], "lib_id": int(lib["id"]),
-                        "lines": s["total"],
-                        "boxed": s["boxed"],
-                        "no_box": s["total"] - s["boxed"],
+                        "lines": total,
+                        "boxed": boxed,
+                        "no_box": total - boxed,
                         "duration": v.get("duration") or 0,
                         "line_source": v.get("line_source") or ""})
     out.sort(key=lambda x: (-x["no_box"], -x["lines"]))
@@ -1822,35 +1254,6 @@ def api_media():
     if not os.path.exists(p):
         abort(404)
     return send_partial(p, mt)
-
-
-
-
-@app.get("/proj/media")
-def api_proj_media():
-    """项目目录内的图片 / 视频预览（AI 绘画成片、AI 生成素材等）。
-
-    这些产物落在项目目录（<项目根>/AI生成/...），不在素材库 cache 内，
-    不能走 /media（那只放行 cache 相对路径，防穿越）。这里限定「必须落在
-    项目根目录内」再放行。
-    """
-    from core import gen
-    base = os.path.normcase(gen.BASE)
-    p = request.args.get("p", "")
-    if not p:
-        abort(404)
-    full = os.path.abspath(p if os.path.isabs(p) else os.path.join(gen.BASE, p))
-    fn = os.path.normcase(full)
-    if fn != base and not fn.startswith(base + os.sep):
-        abort(403)          # 只允许读 FrameSeek 项目目录内的东西
-    if not os.path.isfile(full):
-        abort(404)
-    ext = os.path.splitext(full)[1].lower()
-    mt = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
-          ".gif": "image/gif", ".webp": "image/webp", ".mp4": "video/mp4",
-          ".wav": "audio/wav", ".srt": "text/plain; charset=utf-8"
-          }.get(ext, "application/octet-stream")
-    return send_partial(full, mt)
 
 
 
@@ -1987,7 +1390,7 @@ def api_clips():
     历史导出的也在里面（不再只是本次会话内存里的那几条）"""
     scope = request.args.get("scope") or "all"
     want_dur = request.args.get("dur", "1") not in ("0", "false", "")
-    libs = HUB.list_all(with_builtin=True)
+    libs = HUB.list_all()
     roots = []
     if scope == "active":
         roots = [{"path": active_root(), "name": ""}]
@@ -2090,8 +1493,16 @@ def api_clip():
         e = (ln.get("end") or ln["start"]) + post
         tag = "".join(ch if ch not in '\\/:*?"<>| .' else "_"
                       for ch in f"{os.path.splitext(v['name'])[0][:24]}_{ln['start']:.2f}")
-        rel = f"{C.CLIP_DIR}/{tag}_{int(time.time()) % 100000}.mp4"
+        # 同一秒内连续导两条会撞名、后一条静默覆盖前一条（实测很容易发生：
+        # 先导 force 再导 auto，看起来就像「强制烧录没生效」）。撞名时加序号。
+        stem = f"{tag}_{int(time.time()) % 100000}"
+        rel = f"{C.CLIP_DIR}/{stem}.mp4"
         dst = os.path.join(IX.cache_dir(root), rel)
+        n = 2
+        while os.path.exists(dst):
+            rel = f"{C.CLIP_DIR}/{stem}_{n}.mp4"
+            dst = os.path.join(IX.cache_dir(root), rel)
+            n += 1
         line_src = v.get("line_source") or ln.get("src") or ""
         # 本次这条用哪条字幕轨。不能直接改写循环外的 sub_track——那样下一次
         # 迭代会带着上一条的回退结果，多片段导出时第二片起全被污染。
@@ -2186,18 +1597,6 @@ def main():
         except Exception as e:
             print("OCR 预热失败：", e)
     threading.Thread(target=_probe, daemon=True).start()
-
-    # 内置 AI 库：生成产物目录，素材页要能筛到它，所以启动时顺手增量索引。
-    # 只登记媒体信息——不读字幕、不 OCR、不跑语音识别（2026-10-15）。
-    def _idx_builtin():
-        try:
-            from core import gen as _gen
-            root = _gen.output_dir()
-            if os.path.isdir(root):
-                scan_ai_dir(root)
-        except Exception as e:
-            print("内置 AI 库索引失败：", e)
-    threading.Thread(target=_idx_builtin, daemon=True).start()
 
     for l in libs:
         print(f"  #{l['id']} {l['name']}  {l['path']}  "

@@ -48,16 +48,6 @@
           <span class="fs-navtxt"><b>素材</b><em>浏览已索引的片子</em></span>
           <i class="fs-badge" v-if="viewCount">{{ viewCount }}</i>
         </el-menu-item>
-        <el-menu-item index="gen" data-tab="gen">
-          <el-icon><magic-stick></magic-stick></el-icon>
-          <span class="fs-navtxt"><b>AI 生成</b><em>对话式出片</em></span>
-        </el-menu-item>
-        <el-menu-item index="aidraw" data-tab="aidraw">
-          <!-- 注意：不能用 <picture>，它是原生 HTML 元素，Vue 会当普通标签解析、图标不显示。
-               侧栏是 in-DOM 模板，图标必须写 kebab-case。 -->
-          <el-icon><brush-filled></brush-filled></el-icon>
-          <span class="fs-navtxt"><b>AI 绘画</b><em>双后端生图</em></span>
-        </el-menu-item>
         <el-menu-item index="box" data-tab="box">
           <el-icon><aim></aim></el-icon>
           <span class="fs-navtxt"><b>方框复查</b><em>逐句核对台词框</em></span>
@@ -86,8 +76,6 @@
           <libs-view     v-if="tab === 'libs'"></libs-view>
           <search-view   v-else-if="tab === 'search'"></search-view>
           <assets-view   v-else-if="tab === 'assets'"></assets-view>
-          <gen-view      v-else-if="tab === 'gen'"></gen-view>
-          <aidraw-view   v-else-if="tab === 'aidraw'"></aidraw-view>
           <box-view      v-else-if="tab === 'box'"></box-view>
           <clips-view    v-else-if="tab === 'clips'"></clips-view>
         </keep-alive>
@@ -98,7 +86,7 @@
   <!-- ==================== 全局进度浮窗 ====================
        挂在最外层而不是某个页签里：在「素材」页点「重新识别台词」时
        进度也能当场看见，不用切回素材库页找。没任务时整块不渲染；
-       AI 生成任务不进来（生成页气泡自带进度）；默认收起只露一条细条。
+       默认收起只露一条细条。
        收起状态下也常显一行「当前视频 + 已识别画面帧数 + 台词数」，
        OCR 一部片要跑十几分钟，不展开也知道现在扫到哪、扫了多少帧。 -->
   <div class="fs-dock" v-if="taskList.length" id="tasksLibs">
@@ -148,8 +136,6 @@
 <script src="/js/libs.js"></script>
 <script src="/js/search.js"></script>
 <script src="/js/assets.js"></script>
-<script src="/js/gen.js"></script>
-<script src="/js/aidraw.js"></script>
 <script src="/js/box.js"></script>
 <script src="/js/clips.js"></script>
 <script src="/app.js"></script>

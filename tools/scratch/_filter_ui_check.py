@@ -88,37 +88,6 @@ def main():
                      "#fHasGif", "#fHasCover", "#fNoGif"):
             check(pg.query_selector(gone) is None, f"{gone} 已移除")
 
-        # 3. 库多选含内置 AI 库（🔒 标记）
-        chips = pg.eval_on_selector_all(
-            "#fLibs .el-checkbox", "els => els.map(e => e.textContent.trim())")
-        check(any("AI 生成" in c for c in chips),
-              f"库筛选里有内置 AI 生成库：{chips}")
-        check(sum(1 for c in chips if "🔒" in c) == 1, "内置库带只读锁标记")
-
-        # 4. 素材库卡片列表不含内置库
-        libnames = pg.eval_on_selector_all(
-            "#libCards .fs-libcard b", "els => els.map(e => e.textContent.trim())")
-        check("AI 生成" not in libnames,
-              f"素材库卡片列表不含内置库：{libnames}")
-
-        # 5. 素材列表默认能看到 AI 库片子
-        metas = pg.eval_on_selector_all(
-            "#videos .fs-vmeta span", "els => els.map(e => e.textContent)")
-        check(any("AI 生成" in x for x in metas), "素材列表含 AI 生成库条目")
-
-        total = pg.evaluate("__FS.S.all.length")
-
-        # 6. 只勾 AI 库 → 剩下的全是内置库
-        pg.click("#vResetBtn")
-        settle(pg)
-        pg.click('#fLibs .el-checkbox:has-text("AI 生成")')
-        settle(pg)
-        cnt = pg.evaluate("__FS.S.viewCount")
-        metas = pg.eval_on_selector_all(
-            "#videos .fs-vmeta span", "els => els.map(e => e.textContent)")
-        all_ai = metas and all("AI 生成" in x for x in metas)
-        check(all_ai and cnt >= 1, f"只勾 AI 库 → {cnt} 条且全是内置库")
-
         # 7. 时长筛选 + 数据交叉验证
         pg.click("#vResetBtn")
         settle(pg)
