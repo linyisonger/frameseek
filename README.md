@@ -111,7 +111,7 @@ CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT);  -- active_id / use_asr
 
 实现就一个开关：`Indexer(..., no_lines=True)`（`core/indexer.py`）——跳过
 `asr.get_lines`，不读同名 srt、不读内嵌字幕、不 OCR、不落 srt。
-回归：`python _ai_isolate_ui_check.py`（12 项）。
+回归：`python tools/scratch/_ai_isolate_ui_check.py`（12 项）。
 
 ## 1. 启动
 
@@ -262,7 +262,7 @@ RapidOCR 认的是"画面里所有字"，不是"台词"。直接用会混进一�
 
 **最终效果：5 分钟片段 206.5s → 27.7s（7.5 倍），102 条 / 860 字与修复前完全一致。**
 
-试过但**否决**的两条（数据在 `_out/`，脚本 `_bench_seq.py` / `_analyze_seq.py`）：
+试过但**否决**的两条（数据在 `_out/`，基准脚本 `tools/scratch/_bench_one.py` / `tools/scratch/_bench_par.py`）：
 
 - **"同一句字幕还在，就跳过识别"**：对检测框 crop 出来的图缩到 64×16 做平均绝对差，  
   同一句相邻帧 MAD p50=23.6，不同句 min=22.8 —— **两类完全重叠**，阈值 20 也只能跳过 16%  
@@ -786,7 +786,7 @@ OCR 进度**每 8 帧或每 2 秒**推一次——再密没有意义，反而刷
 `was_cancelled` 标记分流，`core/asr.py` 见到 `"__cancelled__"` **不落库、不写 srt**。
 
 单素材的「重新识别台词」「语音识别台词」同样可停（走 `_stop_single`，清空后中断就停在空状态，
-下次重新跑一遍即可）。回归：`python _scanstop_ui_check.py`（16 项，真切 3 个片段跑完整流程）。
+下次重新跑一遍即可）。回归：`python tools/scratch/_scanstop_ui_check.py`（16 项，真切 3 个片段跑完整流程）。
 
 ### 重新识别台词
 
@@ -836,7 +836,7 @@ OCR 进度**每 8 帧或每 2 秒**推一次——再密没有意义，反而刷
 
 ## 5.5 UI 习惯审核（2026-10 实测）
 
-`_ui_audit.py`（Playwright，无头 Chromium）按"日常行为习惯 + 操作大小"两个维度  
+`tools/scratch/_ui_audit.py`（Playwright，无头 Chromium）按"日常行为习惯 + 操作大小"两个维度  
 逐页审核，输出分级问题（P0 点不到 / P1 明显不合规 / P2 待改进）：
 
 | 维度   | 检查项                                     |
@@ -850,7 +850,7 @@ OCR 进度**每 8 帧或每 2 秒**推一次——再密没有意义，反而刷
 | 视觉   | 文字截断、溢出视口、暗色正文对比度 ≥4.5                  |
 
 审核范围：4 个主页面 + 5 个典型弹窗 + 375/820/1440 三档视口。  
-复跑：`python _ui_audit.py`，问题清单落 `_out/uiaudit/issues.json`，每页带截图。
+复跑：`python tools/scratch/_ui_audit.py`，问题清单落 `_out/uiaudit/issues.json`，每页带截图。
 
 **已修的问题**（按用户习惯维度）：
 
@@ -864,6 +864,16 @@ OCR 进度**每 8 帧或每 2 秒**推一次——再密没有意义，反而刷
   弹窗关闭 × 撑到 ~42×40（`::after` inset 负值，`vcard` 已 `overflow:visible`）。
 - **可读性**：辅助文字 `--dim2` 从 `#5d6a7c`（对比度 3.5）提亮到 `#7a89a0`（5.3）。
 - **空状态**：检索页没搜过时显示"输入关键词，搜全部素材库里的每一句台词"引导。
+- **窄屏侧栏**（2026-10-21）：≤820px 时只写 `width: 68px` 不生效——基础规则把
+  `flex-basis` 也钉在 220px，flex 行里真正起作用的是 flex-basis。现在 width 和
+  flex 一起改，侧栏收成 68px 图标栏；375px 下内容区从 155px 恢复到 307px。
+- **方框复查首屏**（2026-10-21）：片单接口要 3~5 秒，加载期间原来显示
+  "还没有已索引的素材"（125 部片明明在库）。现在显示"正在加载片单…"旋转图标，
+  加载完再决定空态。
+- **检索页控件行**（2026-10-21）：说明文字从字段行里挪到控件下方右对齐，
+  四个筛选项改成等宽 6 栅格，不再出现"最后一个字段被挤到换行"。
+- **选中态**（2026-10-21）：侧栏从整块实心蓝改成品牌色浅染 + 左侧 3px 实色条，
+  图标随主色提亮；主区背景加一层极淡的径向光晕，页面不再是一片死平。
 
 仍存在的 P2 均为度量局限或设计选择，不是缺陷：`::after` 外扩的命中区  
 `getBoundingClientRect` 读不到（vmore 视觉 24×22 实际可点 32×30）；  
@@ -951,7 +961,7 @@ Agnes 后端的坑：
 静态 `ModelPatcher`——低显存下只部分上卡，`comfy.ops` 的逐 op 搬运覆盖不到
 `ViT3DDecoder.register_tokens`（裸 `torch.cat` 使用），VAE 解码必崩
 `Expected all tensors to be on same device ... cpu vs cuda:0`。`h3gen.py` 1b 节即
-复刻这段启动序列（探针 `_vae_probe.py` 可单独验证解码路径）。
+复刻这段启动序列（探针 `tools/scratch/_vae_probe.py` 可单独验证解码路径）。
 
 **关键踩坑：cudaMallocAsync 必须复刻**。服务端 `main.py` 在 import torch 前
 `import cuda_malloc`（torch 2.x + CUDA + 卡不在黑名单时自动设
@@ -1022,7 +1032,7 @@ MCP 侧两个工具：`frameseek_gen_info`（引擎状态/参数范围）、
 `root` 参数都可以省略——省略时依次看环境变量 `FRAMESEEK_ROOT`、hub 里的激活库。  
 多库场景下，搜索结果里的 `root` 必须带回给后续工具（line_id 只在各自库内唯一）。
 
-自测：`python _mcp_e2e.py`（stdio JSON-RPC 全流程：握手 → tools/list →  
+自测：`python tools/scratch/_mcp_e2e.py`（stdio JSON-RPC 全流程：握手 → tools/list →  
 只读工具 → 异步扫描 + 进度轮询 → ping，只动 `_testlib`）。
 
 ### 给 LLM 用的设计（2026-10-17 补齐）
@@ -1076,18 +1086,18 @@ UI 回归（都要 Web 服务已在 8771 起；都是无头 Chromium 真点页�
 
 | 脚本 | 覆盖 |
 | --- | --- |
-| `_vue_ui_check.py` | Vue 重写后的整站冒烟：vendor 加载、挂载、深色主题、7 页签、各页控件（52 项） |
-| `_ai_isolate_ui_check.py` | AI 生成产物不做字幕/语音识别：卡片标记、菜单入口、台词筛选、接口兜底（13 项） |
-| `_boxpick_ui_check.py`   | 复查页选片：库下拉计数 / 按库过滤 / 片名搜索（含多词 AND）/ 二级目录前缀与目录搜索 / 无结果清空（17 项） |
-| `_scanstop_ui_check.py`  | 中途终止 + 续跑：切 3 个片段真跑索引 → 中途停止 → 断言已完成的保住台词、被中断的没半截台词、下次跳过已完成的接着跑（16 项） |
-| `_boxedit_ui_check.py` | 方框复查页：编辑台词 / 重新 OCR 识别 / 单句语音识别（32 项） |
-| `_filter_ui_check.py`   | 素材页多维筛选、内置 AI 库只读、重置（24 项） |
-| `_gen_ui_check.py`      | AI 生成面板表单与响应式（引擎未就绪时自动降级为禁用态断言） |
-| `_tips_ui_check.py`     | 每个功能按钮都带悬停说明、且不存在「说明」总览页（40 项） |
-| `_pw.py` | 公共启动辅助：本机 chromium 版本与 playwright 期望对不上时自动回退到已装版本 |
+| `tools/scratch/_vue_ui_check.py` | Vue 重写后的整站冒烟：vendor 加载、挂载、深色主题、7 页签、各页控件（52 项） |
+| `tools/scratch/_ai_isolate_ui_check.py` | AI 生成产物不做字幕/语音识别：卡片标记、菜单入口、台词筛选、接口兜底（13 项） |
+| `tools/scratch/_boxpick_ui_check.py`   | 复查页选片：库下拉计数 / 按库过滤 / 片名搜索（含多词 AND）/ 二级目录前缀与目录搜索 / 无结果清空（17 项） |
+| `tools/scratch/_scanstop_ui_check.py`  | 中途终止 + 续跑：切 3 个片段真跑索引 → 中途停止 → 断言已完成的保住台词、被中断的没半截台词、下次跳过已完成的接着跑（16 项） |
+| `tools/scratch/_boxedit_ui_check.py` | 方框复查页：编辑台词 / 重新 OCR 识别 / 单句语音识别（32 项） |
+| `tools/scratch/_filter_ui_check.py`   | 素材页多维筛选、内置 AI 库只读、重置（24 项） |
+| `tools/scratch/_gen_ui_check.py`      | AI 生成面板表单与响应式（引擎未就绪时自动降级为禁用态断言） |
+| `tools/scratch/_tips_ui_check.py`     | 每个功能按钮都带悬停说明、且不存在「说明」总览页（40 项） |
+| `tools/scratch/_pw.py` | 公共启动辅助：本机 chromium 版本与 playwright 期望对不上时自动回退到已装版本 |
 
 > 功能说明一律挂在**按钮的 title 上**（鼠标停一秒就出），不单独做总览页——
-> 要用说明的时候人就在那个模块里，不会切回总览去找。`_tips_ui_check.py`
+> 要用说明的时候人就在那个模块里，不会切回总览去找。`tools/scratch/_tips_ui_check.py`
 > 守着这条：哪个按钮的说明掉了，或者又冒出一个 help 页，测试就红。
 
 > 写 Playwright 测试的两条硬规矩（都踩过）：  
@@ -1111,6 +1121,10 @@ core/ocr.py         硬字幕 OCR：字幕位置标定 + 逐帧选框 + 文本�
 core/asr.py         外挂字幕 → 内嵌字幕 → OCR → whisper 转写
 core/verify.py      方框校验：凭证自检（快）+ 现场复核（重抽帧证伪）
 core/indexer.py     扫描入库流程
+core/tts.py         配音音色库（cosy / edge / SAPI / 静音占位）—— 解说链路用
+core/voices.py      声音模板：参考音 + 逐字稿 + 语速/停顿（voices/<id>/）
+core/narrate.py     解说分镜：文案 → 找画面 → 配音 → 切段/拼接/混音
+web/js/narrate.js   解说页：文案编辑 / 解析分镜 / 生成进度 / 成片预览 / 历史产物
 web/                页面（index.html / app.js 引导 / js/state.js 状态层 + 6 个功能模块 / style.css / logo.svg）
 ```
 
@@ -1123,3 +1137,152 @@ web/                页面（index.html / app.js 引导 / js/state.js 状态层 
 搜到台词 → 点 **±片段** → 打开 `.frameseek\clips\` → 拖进剪映/PR。  
 默认"秒切"（`-c copy`）是秒出，可能有零点几秒误差；要帧精确就取消勾选（重编码，慢一些）。  
 批量导出：多条台词一起选还没做界面，MCP 侧可以循环调 `frameseek_export_clip`。
+
+## 9. 解说分镜 v0 与模块下线（2026-10-21）
+
+### 9.1 AI 生成 / AI 绘画下线（`config.ENABLE_GEN = False`）
+
+这两个模块和「素材库 → 搜台词 → 出片段」不是一条业务线：抢 GPU、抢开发时间，
+打开软件也不该先看到「AI 生成」。现在默认关闭：
+
+| 表面 | 关掉后的行为 |
+| --- | --- |
+| Web 页签 | 「AI 生成 / AI 绘画」不渲染（由 `/api/state.gen_enabled` 驱动）；旧书签 `#gen` / `#aidraw` 回落素材库 |
+| 接口 | `/api/gen/*`、`/api/aidraw/*` 一律 404（`app.py` 的 `before_request` 统一挡） |
+| MCP | **暂未动**：6 个生成类工具仍可用，下一步一起摘（要跑 `tools/test_mcp.py`） |
+| 历史产物 | `AI生成/` 目录和素材页的「🔒 AI 生成」筛选保留，旧文件照样能看 |
+
+恢复：把 `core/config.py` 的 `ENABLE_GEN` / `ENABLE_AIDRAW` 改回 `True` 再重启。
+代码一行没删，后续会搬进 `extras/`（那一步要更新约 40 处引用，留到能跑全量回归时做）。
+
+> 回归脚本里断言「7 个页签」的几条（`tools/scratch/_vue_ui_check.py` / `tools/scratch/_ai_isolate_ui_check.py` /
+> `tools/scratch/_gen_ui_check.py` / `tools/scratch/_filter_ui_check.py`）需要跟着改成按开关跳过，待补。
+
+### 9.2 30 秒解说 demo：先验证「画面配得对不对」
+
+在投 UI 之前先把最短链路跑通——**用真实素材回答一个问题：自动配的画面能不能看。**
+
+| 新文件 | 作用 |
+| --- | --- |
+| `core/tts.py` | 音色库：`cosy`（本地 CosyVoice3，默认优先，见 §9.3）→ `edge`（在线，本机 403）→ `sapi`（离线）→ `silent`（占位） |
+| `core/narrate.py` | 文案 → 找台词（`ref` 或关键词）→ 取窗口 → 配音 → 切段/拼接/混音 → mp4 + srt + 分镜表 |
+| `demo_narrate.py` | 一次性验证脚本，内置 7 句《唐伯虎点秋香》文案 |
+
+```bat
+python demo_narrate.py --backend sapi --voice Huihui
+```
+
+实测（`_testlib/test5min.mp4`，7 句文案）：**31.9 秒成片、渲染 5.5 秒**，
+画面 7/7 落在对应场景（集体上吊、宁王来使、装病）。产物在
+`AI生成/解说/demo_唐伯虎_30s/`：`final.mp4` + `narration.srt` + `storyboard.json` + `voice/`。
+
+三条已经定死的规则（后面做 UI 也按这个来）：
+
+1. **配音是主轴**：分段时长 = 配音时长 + 句间停顿，画面永远迁就配音，绝不截断配音；
+2. 同一部片尽量顺着时间线走，上一镜用过的区间不回头重放；贴片尾时允许轻微重叠，
+   但**绝不截短**（分段时长必须等于配音时长，这是音画同步的硬约束）；
+3. 转场只用硬切；
+4. **旁白字幕默认烧进画面**：`build(burn_sub=True)` 用 libass 把 `narration.srt`
+   烧上去（`demo_narrate.py --no-burn` 可关）。原片是 mkv 内封软字幕，不会和旁白
+   字幕叠在一起；烧字幕要重编码，所以这一步比不烧慢一些。
+
+已知短板（下一步按这个顺序解决）：
+
+- **检索还是字面 FTS**：文案写「小帅很生气」，台词里没有「生气」就配不上。
+  两条路：补语义检索（bge-small-zh + 现有 onnxruntime），或让 AI 通过 MCP 写文案时
+  直接带 `line_id`（`ref` 字段已经支持，优先走这条）；
+- 没有 BGM、没有「原声金句」、没有片头片尾；
+- 还没有分镜表 UI——现在换镜头只能改 `storyboard.json` 再重跑。
+
+### 9.3 配音升级：本地 CosyVoice3（2026-10-21）
+
+SAPI 怎么调都是导航音，所以接了一个本地神经 TTS：
+
+| 项 | 值 |
+| --- | --- |
+| 引擎 | CosyVoice3-0.5B（`FunAudioLLM/Fun-CosyVoice3-0.5B-2512`） |
+| 环境 | `_tts/env`（Python 3.10 + torch），**只在本地，不入库**（约 10GB） |
+| 主程序 | 只 spawn `_tts/cosy_worker.py` 子进程，不装 torch（和 `h3gen.py` 一个套路） |
+| 接口 | `core/tts.py` 新增 `cosy` 后端 + `synth_batch()`（一次加载模型、多句合成） |
+| 开关 | `config.TTS_BACKEND="cosy"`；或 `demo_narrate.py --backend cosy` |
+
+A/B 实测（同一段 7 句文案，CPU 跑，4060 Ti 没启用）：
+
+| 方案 | 时长 | 耗时 | RTF | 回听结论 |
+| --- | --- | --- | --- | --- |
+| SAPI（旧） | 32.1s | — | — | 机器味重、断句硬 |
+| **CosyVoice 逐句** | 23.8s | 138s | 5.81 | **文字全对、停顿自然，采用** |
+| CosyVoice 整段 | 24.9s | 132s | 5.30 | 连贯但断句偶有漂移 |
+| CosyVoice + 解说指令 | 25.2s | 131s | 5.17 | 标点被吃掉，更差，弃用 |
+
+产物：`_tts/ab_out/`（`sapi.wav` / `cosy_sentence.wav` / `cosy_whole.wav` /
+`cosy_instruct.wav`）与 `AI生成/解说/demo_唐伯虎_cosy/final.mp4`。
+
+三条已知限制：
+
+1. **GPU 已经接上**：手工解压 `torch-2.3.1+cu121` wheel 到 `_tts/env`（`uv pip install` 在
+   2.3GB wheel 上会卡住，最后是 `zipfile.extractall` 直接铺进 site-packages）。
+   实测 RTF 1.5~2.7，比 CPU 快 2~4 倍；逐句合成仍比整段慢一倍（每句都有前端开销）。
+2. **文本前端没起来**：`wetext` 依赖的 ModelScope 模型要登录 token，数字/英文暂不归一化
+   （纯中文文案不受影响）。
+3. **参考音色走模板**：见 §9.4。`FRAMESEEK_TTS_PROMPT` / `_TEXT` 仍可临时覆盖（A/B 用）。
+   注意：参考音必须有商用授权，真人声音受《民法典》第 1023 条保护。
+
+### 9.4 声音模板（2026-10-21）
+
+声音不再写死在配置里，而是存成模板：
+
+```
+voices/<id>/
+    template.json     名称 / 逐字稿 / 语速 / 句间停顿 / 授权备注
+    prompt.wav        裁好并归一化的参考音（10~20 秒，24kHz 单声道）
+    source.mp3        原始素材（可选，留一份方便重新裁）
+```
+
+当前默认模板：**`jm-678`**（影视解说参考音，10.16 秒 prompt，`speed=1.0`、`gap=0.2`）。
+
+```bat
+python tools/make_voice.py --list
+python tools/make_voice.py --src "解说.mp3" --start 2.5 --end 12.7 ^
+    --id my-voice --name "我的解说音" --text "参考音的逐字稿……"
+python demo_narrate.py --voice my-voice
+```
+
+- 默认模板由 `config.TTS_VOICE` 指定；`auto` 就是取它。
+- `--gap` 不传时用模板里的停顿；`config.TTS_COSY_SPEED` 仍可全局改语速。
+- `voices/` 是本地数据（参考音可能涉及第三方授权），**已 gitignore**；换机器要自己带过去。
+- 模板只负责“音色”；文案/分镜/出口那套逻辑不受影响。
+
+### 9.5 解说 Web UI（2026-10-21）
+
+左侧导航新增 **「解说」** 页，把命令行那套搬到了页面上：
+
+| 区域 | 作用 |
+| --- | --- |
+| 文案 | 一行一句；「文案 \| 检索词」指定画面；JSON 模式可写 `ref`（精确 `line_id`） |
+| 选项 | 声音模板 / 素材库 / 句间停顿 / 画幅（横屏·竖屏）/ 烧字幕 / 项目名 |
+| **解析分镜** | 只解析不生成：先看每句配到哪部片哪一句、时间码对不对 |
+| **生成成片** | 异步任务，进度条 + 阶段消息；落 `AI生成/解说/<项目名>/` |
+| 成片预览 | 内嵌播放器 + 打开目录 + 下载 |
+| 历史产物 | 列出 `AI生成/解说/` 下所有 `final.mp4`，点一条直接预览 |
+
+接口：
+
+| 方法 | 路径 | 作用 |
+| --- | --- | --- |
+| GET | `/api/narrate/voices` | 声音模板列表 + 默认模板 |
+| POST | `/api/narrate/resolve` | 文案 → 分镜（不生成，毫秒级） |
+| POST | `/api/narrate/build` | 启动生成（异步线程，一次只跑一条） |
+| GET | `/api/narrate/status` | 进度 / 结果（前端 1.2s 轮询） |
+| GET | `/api/narrate/projects` | 历史产物列表 |
+
+实现细节：
+
+- 进度是把 `narrate.build` 的 progress 文本映射成百分比（解析 6 → 配音 12 →
+  切画面 50~88 → 拼接 90 → 混音 96 → 完成 100），没有改 `build` 的签名。
+- 成片自动抽第 1 秒做 `cover.jpg`，历史列表拿它当缩略图。
+- 烧字幕默认开；原片是 mkv 内封软字幕，不会和旁白叠在一起。
+- 页面刷新/切走再回来会从 `/api/narrate/status` 恢复正在跑的任务。
+
+已知短板：**还不能在页面上「换镜头」**。当前只能改文案里的检索词让它重新解析；
+下一步给每行加候选列表 + 「换一个」，再把选择写回 build 的 `ref`。

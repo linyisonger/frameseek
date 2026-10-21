@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <!-- 拾帧 FrameSeek 品牌图标：渐变圆角方 + 白色帧格 + 深色播放键
        三个使用位：① 网站 favicon ② 侧边栏 .mark ③ WorkBuddy 连接器卡片（mcp.json x-workbuddy.icon）
-       改这个文件后，用 _logo_datauri.py 重新生成 data URI 再贴到 mcp.json -->
+       改这个文件后，用 tools/scratch/_logo_datauri.py 重新生成 data URI 再贴到 mcp.json -->
   <defs>
     <linearGradient id="fsg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#5aa8ff"/>
