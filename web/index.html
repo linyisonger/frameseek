@@ -101,7 +101,7 @@
         <el-button id="dockStop" size="small" type="danger" plain @click="onStop(t)"
           title="中途停止。已经识别完的素材都会保留，下次索引会跳过它们、从断点接着往下跑"><el-icon><circle-close/></el-icon><span>停止</span></el-button>
       </div>
-      <el-progress :percentage="dockPct(t)" :stroke-width="8" :show-text="false"/>
+      <el-progress :percentage="dockPct(t)" :stroke-width="8" :show-text="false"></el-progress>
       <div class="fs-dock-file" :title="t.file || ''">
         <el-icon><video-play></video-play></el-icon>
         <span v-if="t.file">{{ t.file }}</span>

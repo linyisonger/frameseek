@@ -24,7 +24,16 @@ const App = {
     // 全局浮窗显示素材索引任务。
     const taskList = computed(() => Object.values(S.tasks || {}));
 
-    function dockPct(t) { return t.total ? Math.min(100, Math.round(t.done / t.total * 100)) : 0; }
+    function filePct(t) { return t.total ? Math.min(100, Math.round(t.done / t.total * 100)) : 0; }
+    /* 主进度条优先显示「当前文件 OCR 帧进度」。
+       OCR 一集 4K 要跑好几分钟，文件级 done/total 在这几分钟里不动，
+       看起来像卡住；帧级 frames_pct 是实时走的。没有帧数据时退回文件进度。 */
+    function dockPct(t) {
+      if (t.frames_total > 0 && (t.phase === 'ocr' || t.phase === 'calib')) {
+        return Math.min(100, Math.round(t.frames_pct || 0));
+      }
+      return filePct(t);
+    }
     function dockPhase(t) { return PHASE[t.phase] || ''; }
     function dockEta(t) {
       if (!(t.eta_min > 0)) return '';
@@ -32,27 +41,28 @@ const App = {
                                         : Math.round(t.eta_min) + ' 分钟'}`;
     }
 
-    /* 收起状态下也常显的一行摘要：跑到第几个、当前是哪部、出了多少条台词。
+    /* 收起状态下也常显的一行摘要：总文件进度 + 当前文件 + 出了多少条台词。
        二级目录下的片子后端给的就是相对路径（亮剑/01.mp4），这里照搬。 */
     function dockLive(t) {
       const parts = [];
       if (t.kind !== 'video' && t.total) {
-        parts.push(`第 ${Math.min((t.done || 0) + 1, t.total)}/${t.total} 个`);
+        parts.push(`总 ${Math.min((t.done || 0) + 1, t.total)}/${t.total}（${filePct(t)}%）`);
       }
-      if (t.lines) parts.push(`已出 ${t.lines} 条台词`);
+      if (t.lines) parts.push(`${t.lines} 条台词`);
       return parts.join(' · ') || (t.file || '');
     }
 
-    /* 已识别的画面帧数——用户要的「目前视频的识别画面数量」。
-       frames 是已扫过的采样帧数；frames_total 是外推的总帧数（跑一会才准）。 */
+    /* 当前文件的 OCR 帧进度。frames 是已扫过的采样帧数；
+       frames_total 是外推的总帧数（跑一会才准）。 */
     function docFrames(t) {
       const n = t.frames || 0;
-      if (!n) return '';
       const tot = t.frames_total || 0;
+      if (!n && !tot) return '';
       const p = t.frames_pct ? ` · ${t.frames_pct}%` : '';
+      const overall = t.total ? ` · 总 ${filePct(t)}%` : '';
       return tot
-        ? `已识别画面 ${n.toLocaleString()} 帧 / 约 ${tot.toLocaleString()} 帧${p}`
-        : `已识别画面 ${n.toLocaleString()} 帧${p}`;
+        ? `OCR ${n.toLocaleString()} / ${tot.toLocaleString()} 帧${p}${overall}`
+        : `OCR 已识别 ${n.toLocaleString()} 帧${p}${overall}`;
     }
 
     function dockMsg(t) { return (t.message || '') + dockEta(t); }
